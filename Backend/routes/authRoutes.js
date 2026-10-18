@@ -523,6 +523,12 @@ router.post("/verify-otp", async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+    const stored = otpStore.get(cleanEmail);
+
+    if (!stored) {
+      return res.status(400).json({ success: false, message: "No OTP request found for this email. Please request a new OTP code first." });
+    }
+
     const userRole = (req.body.role || stored.role || "").toLowerCase();
 
     if (userRole === "student" && !/^[a-zA-Z0-9]+$/.test(newPassword)) {
@@ -530,12 +536,6 @@ router.post("/verify-otp", async (req, res) => {
         success: false, 
         message: "Student password must contain only alphabets and numbers (no special characters allowed)." 
       });
-    }
-
-    const stored = otpStore.get(cleanEmail);
-
-    if (!stored) {
-      return res.status(400).json({ success: false, message: "No OTP request found for this email. Please request a new OTP code first." });
     }
 
     if (Date.now() > stored.expires) {
