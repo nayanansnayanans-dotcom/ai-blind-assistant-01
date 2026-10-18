@@ -1,0 +1,132 @@
+.exam-assistant-container {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 24px;
+  color: #f5f3ee;
+}
+
+.exam-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.language-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.language-selector select {
+  padding: 8px 12px;
+  background: #10122a;
+  color: #ffffff;
+  border: 1px solid #212454;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.question-card, .submission-card {
+  background: #181b3d;
+  border: 1px solid #212454;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.question-number {
+  color: #f2a65a;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.question-text {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  line-height: 1.4;
+}
+
+.options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.option-btn {
+  padding: 14px 18px;
+  background: #10122a;
+  border: 1px solid #212454;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.option-btn:hover {
+  border-color: #f2a65a;
+}
+
+.option-btn.selected {
+  background: #f2a65a;
+  color: #10122a;
+  font-weight: 700;
+  border-color: #f2a65a;
+}
+
+.voice-controls-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.ctrl-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.read-btn {
+  background: #212454;
+  color: #ffffff;
+}
+
+.mic-btn {
+  background: #1e3a8a;
+  color: #ffffff;
+}
+
+.nav-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #212454;
+  padding-top: 20px;
+}
+
+.nav-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid #212454;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.nav-btn.primary, .nav-btn.submit {
+  background: #f2a65a;
+  color: #10122a;
+  border: none;
+  font-weight: 700;
+}

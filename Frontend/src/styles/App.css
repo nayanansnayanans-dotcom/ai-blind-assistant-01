@@ -1,0 +1,275 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  font-family:
+    "Segoe UI",
+    Arial,
+    sans-serif;
+
+  background: #eaf7ff;
+  color: #17324d;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 4px solid #1e88e5;
+  outline-offset: 3px;
+}
+
+.app-container {
+  min-height: 100vh;
+  width: 100%;
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #0c0d1d;
+  color: #f5f3ee;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  min-height: 100vh;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 32px;
+  background: #10122a;
+  border-bottom: 1px solid #212454;
+}
+
+.app-header h1 {
+  font-size: 20px;
+  color: #f2a65a;
+}
+
+.nav-links {
+  display: flex;
+  gap: 12px;
+}
+
+.nav-links button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #212454;
+  background: transparent;
+  color: #a9afcb;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.nav-links button.active {
+  background: #212454;
+  color: #ffffff;
+  border-color: #f2a65a;
+}
+
+.nav-links .logout-btn {
+  border-color: #dc2626;
+  color: #ef4444;
+}
+
+.main-content {
+  flex: 1;
+  padding: 24px;
+}
+
+/* Polished Exam Assistant dashboard (Teacher Purple Theme: #9333ea) */
+.exam-assistant{min-height:100vh;display:grid;grid-template-columns:250px 1fr;background:#faf5ff!important;color:#0f172a!important;font-family:Arial,sans-serif}.exam-assistant *{box-sizing:border-box}.exam-assistant aside{padding:25px 16px;background:#f3e8ff;border-right:1px solid #e9d5ff;color:#7e22ce;display:flex;flex-direction:column}.ea-brand{font-size:22px;font-weight:800;color:#7e22ce;padding:0 10px 30px}.ea-brand small{display:block;font-size:9px;letter-spacing:1px;color:#9333ea;margin:5px 0 0 24px}.exam-assistant nav{display:grid;gap:5px}.exam-assistant nav button{border:0;background:transparent;color:#7e22ce;font-weight:600;text-align:left;border-radius:8px;padding:11px;cursor:pointer}.exam-assistant nav button span{display:inline-block;width:23px;color:#9333ea;font-size:11px}.exam-assistant nav button.active,.exam-assistant nav button:hover{background:#e9d5ff;color:#581c87;font-weight:bold;box-shadow:inset 3px 0 #9333ea}.ea-help{margin-top:auto;background:#ffffff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;display:grid;gap:6px;font-size:12px;color:#7e22ce}.ea-help small{color:#9333ea}.exam-assistant header{height:72px;background:#fff;border-bottom:1px solid #e9d5ff;display:flex;align-items:center;gap:12px;padding:0 40px;color:#7e22ce}.exam-assistant header span{margin-right:auto}.exam-assistant header strong{background:#f3e8ff;color:#9333ea;border-radius:50%;width:32px;height:32px;display:grid;place-items:center;font-size:11px}.ea-content{max-width:1240px;margin:auto;padding:40px}.ea-title{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:27px}.ea-title p{font-size:10px;letter-spacing:1.4px;color:#9333ea;font-weight:bold;margin:0 0 8px}.ea-title h1{font:600 30px Georgia,serif;margin:0;color:#7e22ce}.ea-title span,.ea-card p{color:#64748b}.ea-card{background:#fff;border:1px solid #e9d5ff;border-radius:12px;padding:22px;box-shadow:0 2px 10px rgba(147, 51, 234, 0.05)}.ea-card h2{font-size:16px;margin:0 0 12px;color:#7e22ce}.ea-primary,.exam-assistant button:not(.ea-link):not(.ea-delete){padding:10px 14px;border:1px solid #e9d5ff;border-radius:7px;background:#fff;color:#7e22ce;font-weight:600;cursor:pointer}.ea-primary{background:#9333ea!important;color:#fff!important;border-color:#9333ea!important}.ea-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}.ea-metrics strong{font:600 29px Georgia,serif;display:block;color:#7e22ce}.ea-metrics span{font-size:12px;color:#64748b}.ea-two{display:grid;grid-template-columns:1.65fr 1fr;gap:20px}.ea-three{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}.ea-heading{display:flex;justify-content:space-between;align-items:center}.ea-link{border:0;background:none;color:#9333ea;font-weight:bold;cursor:pointer}.ea-event{display:flex;gap:13px;align-items:center;border-top:1px solid #e9d5ff;padding:16px 0}.ea-event>b{background:#f3e8ff;color:#7e22ce;border-radius:7px;padding:5px 9px;text-align:center}.ea-event b small,.ea-event span small{display:block;font-size:10px}.ea-event span{flex:1}.ea-event em{font-style:normal;color:#9333ea;background:#f3e8ff;border-radius:99px;padding:5px 8px;font-size:10px}.ea-event .draft{color:#8c6511;background:#fff1cd}.ea-ready{text-align:center;color:#9333ea;font:600 36px Georgia;padding:12px}.ea-ready small{display:block;font:12px Arial;color:#64748b}.ea-warning{color:#b66c16!important}.ea-form{display:grid;grid-template-columns:1fr 1fr;gap:17px}.ea-field{display:grid;gap:7px;font-size:12px;font-weight:bold;color:#7e22ce}.ea-field:has(textarea){grid-column:1/-1}.ea-field input,.ea-field select,.ea-field textarea,.ea-toolbar input{width:100%;border:1px solid #e9d5ff;border-radius:7px;padding:10px;font:14px Arial}.ea-field textarea{min-height:100px}.ea-toolbar{display:flex;gap:12px;margin-bottom:16px;padding:15px}.ea-toolbar input{flex:1}.ea-list{padding:0}.ea-list article{display:flex;gap:14px;padding:17px 20px;border-bottom:1px solid #e9d5ff}.ea-list article div{flex:1}.ea-list p{color:#0f172a}.ea-chip{font-size:10px;background:#f3e8ff;color:#9333ea;border-radius:4px;padding:3px 6px}.ea-delete{border:0;background:none;color:#94a3b8;font-size:23px;cursor:pointer}.ea-generator{max-width:760px;display:grid;gap:20px}.ea-generator .ea-form{grid-template-columns:1fr 130px 130px}.ea-sparkle{width:43px;height:43px;border-radius:14px;display:grid;place-items:center;background:#f3e8ff;color:#9333ea;font-size:21px}.ea-toggle{display:flex;justify-content:space-between;padding:13px 0;border-bottom:1px solid #e9d5ff}.ea-toggle b,.ea-toggle small{display:block}.ea-toggle small{font-size:11px;color:#64748b;margin-top:3px}.ea-toggle input{position:absolute;opacity:0}.ea-toggle i{width:36px;height:21px;background:#cbd5e1;border-radius:99px;position:relative}.ea-toggle i:after{content:'';position:absolute;width:15px;height:15px;background:#fff;border-radius:50%;top:3px;left:3px}.ea-toggle input:checked+i{background:#9333ea}.ea-toggle input:checked+i:after{left:18px}.ea-check{display:block;padding:10px 0;border-bottom:1px solid #e9d5ff}.ea-bar{display:grid;grid-template-columns:140px 1fr 65px;gap:9px;align-items:center;margin:16px 0}.ea-bar i{height:8px;background:#f3e8ff;border-radius:8px}.ea-bar i b{display:block;height:100%;background:#9333ea;border-radius:8px}.ea-student{display:flex;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid #e9d5ff}.ea-student span{display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:#f3e8ff;color:#9333ea}.ea-student b{margin-left:auto}.ea-upload{text-align:center;min-height:280px;display:grid;place-content:center;gap:7px;border-style:dashed}.ea-upload strong{font-size:30px;color:#9333ea}.ea-export button{width:100%;text-align:left;border:0!important;border-bottom:1px solid #e9d5ff!important;border-radius:0!important;padding:14px 2px!important}.ea-export button span{float:right;color:#9333ea}.ea-notice{position:fixed;top:86px;right:26px;background:#7e22ce;color:#fff;border-radius:8px;padding:12px 16px;z-index:5}@media(max-width:850px){.exam-assistant{grid-template-columns:70px 1fr}.ea-brand{font-size:0}.ea-brand:first-letter{font-size:20px}.ea-brand small,.ea-help{display:none}.exam-assistant nav button{font-size:0}.ea-three{grid-template-columns:1fr 1fr}}@media(max-width:650px){.exam-assistant{display:block}.exam-assistant aside{display:none}.ea-content{padding:25px 16px}.ea-title{align-items:start;flex-direction:column}.ea-two,.ea-three,.ea-metrics,.ea-form,.ea-generator .ea-form{grid-template-columns:1fr}.ea-toolbar{display:grid}.ea-event em{display:none}}
+/* High contrast accessibility mode */
+.high-contrast-mode {
+  background: #000000 !important;
+  color: #ffff00 !important;
+}
+.high-contrast-mode aside {
+  background: #111111 !important;
+  border-right: 2px solid #ffff00 !important;
+}
+.high-contrast-mode .ea-card,
+.high-contrast-mode header {
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 2px solid #ffffff !important;
+}
+.high-contrast-mode h1,
+.high-contrast-mode h2,
+.high-contrast-mode strong,
+.high-contrast-mode b {
+  color: #ffff00 !important;
+}
+.high-contrast-mode input,
+.high-contrast-mode select,
+.high-contrast-mode textarea {
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 2px solid #ffff00 !important;
+}
+.high-contrast-mode button {
+  background: #ffff00 !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  border: 2px solid #ffffff !important;
+}
+
+/* ============================================================
+   3D UI & TACTILE ACCESSIBILITY ENGINE
+   ============================================================ */
+
+/* 1. 3D Card Class with Perspective Hover & Beveled Lighting */
+.card-3d {
+  perspective: 1000px;
+  transform-style: preserve-3d;
+  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.25s ease, border-color 0.25s ease;
+  box-shadow: 0 10px 25px -5px rgba(2, 132, 199, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.card-3d:hover {
+  transform: translateY(-6px) rotateX(3deg) rotateY(-2deg) translateZ(10px);
+  box-shadow: 0 20px 35px -5px rgba(2, 132, 199, 0.22), 0 12px 16px -4px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 1);
+  border-color: #38bdf8 !important;
+}
+
+/* 2. 3D Extruded Tactile Push Button */
+.button-3d {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transform-style: preserve-3d;
+  box-shadow: 0 6px 0 #0284c7, 0 12px 20px rgba(2, 132, 199, 0.35);
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 800 !important;
+}
+
+.button-3d:hover {
+  transform: translateY(-2px) translateZ(4px);
+  box-shadow: 0 8px 0 #0284c7, 0 16px 25px rgba(2, 132, 199, 0.45);
+}
+
+.button-3d:active {
+  transform: translateY(4px) translateZ(0);
+  box-shadow: 0 2px 0 #0284c7, 0 4px 8px rgba(2, 132, 199, 0.2);
+}
+
+/* Purple 3D Button Variant */
+.button-3d-purple {
+  box-shadow: 0 6px 0 #7e22ce, 0 12px 20px rgba(147, 51, 234, 0.35);
+}
+.button-3d-purple:hover {
+  box-shadow: 0 8px 0 #7e22ce, 0 16px 25px rgba(147, 51, 234, 0.45);
+}
+.button-3d-purple:active {
+  transform: translateY(4px) translateZ(0);
+  box-shadow: 0 2px 0 #7e22ce, 0 4px 8px rgba(147, 51, 234, 0.2);
+}
+
+/* Green 3D Button Variant */
+.button-3d-green {
+  box-shadow: 0 6px 0 #15803d, 0 12px 20px rgba(22, 163, 74, 0.35);
+}
+.button-3d-green:hover {
+  box-shadow: 0 8px 0 #15803d, 0 16px 25px rgba(22, 163, 74, 0.45);
+}
+.button-3d-green:active {
+  transform: translateY(4px) translateZ(0);
+  box-shadow: 0 2px 0 #15803d, 0 4px 8px rgba(22, 163, 74, 0.2);
+}
+
+/* Red SOS 3D Button Variant */
+.button-3d-red {
+  box-shadow: 0 6px 0 #b91c1c, 0 12px 20px rgba(239, 68, 68, 0.4);
+  animation: pulse3d 2s infinite ease-in-out;
+}
+.button-3d-red:hover {
+  box-shadow: 0 8px 0 #b91c1c, 0 16px 25px rgba(239, 68, 68, 0.55);
+}
+.button-3d-red:active {
+  transform: translateY(4px) translateZ(0);
+  box-shadow: 0 2px 0 #b91c1c, 0 4px 8px rgba(239, 68, 68, 0.2);
+}
+
+@keyframes pulse3d {
+  0%, 100% { transform: scale(1) translateZ(0); }
+  50% { transform: scale(1.03) translateZ(8px); }
+}
+
+/* 3. Floating 3D Glowing AI Orb Animation */
+.orb-3d {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #7dd3fc 0%, #0284c7 40%, #0369a1 70%, #0f172a 100%);
+  box-shadow: 0 0 30px rgba(56, 189, 248, 0.6), inset 0 0 15px rgba(255, 255, 255, 0.8), inset -8px -8px 20px rgba(0, 0, 0, 0.5);
+  animation: floatOrb 3.5s ease-in-out infinite alternate, spinGlow 12s linear infinite;
+  position: relative;
+}
+
+.orb-3d::after {
+  content: '';
+  position: absolute;
+  top: 12%;
+  left: 18%;
+  width: 28%;
+  height: 28%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  filter: blur(2px);
+}
+
+@keyframes floatOrb {
+  0% { transform: translateY(0) rotate(0deg) scale(1); }
+  100% { transform: translateY(-12px) rotate(15deg) scale(1.06); }
+}
+
+@keyframes spinGlow {
+  0% { filter: hue-rotate(0deg) drop-shadow(0 0 15px #38bdf8); }
+  100% { filter: hue-rotate(360deg) drop-shadow(0 0 25px #0284c7); }
+}
+
+/* 4. 3D Stat Badge with Metallic Bevel */
+.stat-3d {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid #bae6fd;
+  background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%);
+  box-shadow: 5px 5px 15px rgba(2, 132, 199, 0.1), -5px -5px 15px rgba(255, 255, 255, 0.9);
+  transition: all 0.25s ease;
+}
+
+.stat-3d:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 8px 8px 22px rgba(2, 132, 199, 0.18), -8px -8px 22px rgba(255, 255, 255, 1);
+}
+

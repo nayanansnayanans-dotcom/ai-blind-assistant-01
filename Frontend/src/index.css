@@ -1,0 +1,57 @@
+/* Frontend/src/index.css - Light Blue & White Theme */
+:root {
+  --bg: #f0f9ff;
+  --surface: #ffffff;
+  --surface-raised: #e0f2fe;
+  --accent: #0284c7;
+  --accent-dim: #0369a1;
+  --text: #0f172a;
+  --text-dim: #475569;
+  --ring: rgba(2, 132, 199, 0.35);
+  --good: #16a34a;
+  --bad: #dc2626;
+  --focus: #38bdf8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #f0f9ff;
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

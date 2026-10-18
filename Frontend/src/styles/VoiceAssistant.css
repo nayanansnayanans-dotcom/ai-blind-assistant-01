@@ -1,0 +1,165 @@
+.voice-assistant {
+  position: fixed;
+  right: 25px;
+  bottom: 25px;
+  z-index: 9999;
+  width: 290px;
+  padding: 16px;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  border: 1px solid #d0e4ef;
+  text-align: center;
+}
+
+/* MODE TOGGLE BUTTONS */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+  background: #f0f4f8;
+  padding: 4px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #174c6b;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.mode-btn.active {
+  background: #1685b5;
+  color: #ffffff;
+}
+
+/* VOICE MODE */
+.voice-status {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #174c6b;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1685b5;
+}
+
+.status-dot.listening {
+  background: #d32f2f;
+  animation: pulse 1s infinite;
+}
+
+.voice-button {
+  width: 65px;
+  height: 65px;
+  border: none;
+  border-radius: 50%;
+  background: #1685b5;
+  color: #ffffff;
+  font-size: 28px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.voice-button:hover {
+  background: #126f98;
+  transform: scale(1.05);
+}
+
+.voice-button:active {
+  transform: scale(0.95);
+}
+
+/* TYPING MODE */
+.typing-interface {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.typing-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #b3cbe0;
+  border-radius: 10px;
+  font-size: 14px;
+  outline: none;
+}
+
+.typing-input:focus {
+  border-color: #1685b5;
+  box-shadow: 0 0 0 2px rgba(22, 133, 181, 0.2);
+}
+
+.typing-send-btn {
+  padding: 10px 14px;
+  background: #1685b5;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.typing-send-btn:hover {
+  background: #126f98;
+}
+
+/* STATUS MESSAGE */
+.voice-message {
+  margin-top: 10px;
+  color: #4a5860;
+  font-size: 13px;
+  line-height: 1.4;
+  min-height: 38px;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* OVERLAY FOR BLIND ACCESSIBILITY TOUCH */
+.screen-touch-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9990;
+  pointer-events: auto;
+  background: transparent;
+}
+
+@media (max-width: 600px) {
+  .voice-assistant {
+    right: 10px;
+    bottom: 10px;
+    width: 250px;
+  }
+}
