@@ -728,7 +728,7 @@ export default function VoiceLoginPage() {
 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <label style={{ fontSize: '12px', color: '#0369a1', fontWeight: '800' }}>Password</label>
+              <label style={{ fontSize: '12px', color: '#0369a1', fontWeight: '800' }}>Password {role === 'student' ? '(alphabets & numbers only)' : ''}</label>
               <button type="button" onClick={() => startGuidedFlow('password')} style={{ background: '#e0f2fe', color: '#0284c7', border: '1px solid #bae6fd', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Mic size={12} /> Speak Password
               </button>
@@ -740,9 +740,12 @@ export default function VoiceLoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 name="voice_login_password"
                 autoComplete="new-password"
-                placeholder="••••••••"
+                placeholder={role === 'student' ? "Enter Password (alphabets & numbers only)" : "••••••••"}
                 value={password}
-                onChange={(e) => updateField('password', e.target.value)}
+                onChange={(e) => {
+                  const val = role === 'student' ? e.target.value.replace(/[^a-zA-Z0-9]/g, '') : e.target.value;
+                  updateField('password', val);
+                }}
                 style={{ ...inputStyle, paddingRight: '44px', border: activeField === 'password' ? '2px solid #0284c7' : '1px solid #bae6fd' }}
                 required
               />
@@ -753,6 +756,9 @@ export default function VoiceLoginPage() {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            {role === 'student' && (
+              <small style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>Student passwords contain only letters (a-z, A-Z) and numbers (0-9).</small>
+            )}
           </div>
 
           <div style={{ textAlign: 'right', marginTop: '-4px' }}>

@@ -1,0 +1,9 @@
+{
+  "name": "ai-blind-assistant",
+  "version": "1.0.0",
+  "description": "AI-Powered Vision & Voice Examination Assistant for Blind Students",
+  "scripts": {
+    "build": "cd Frontend && npm install && npm run build && cd .. && node -e \"const fs=require('fs'); if(!fs.existsSync('Backend/public')) fs.mkdirSync('Backend/public', {recursive:true}); fs.cpSync('Frontend/dist', 'Backend/public', {recursive:true});\"",
+    "start": "node Backend/server.js"
+  }
+}

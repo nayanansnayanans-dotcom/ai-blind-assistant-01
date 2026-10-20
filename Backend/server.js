@@ -18,6 +18,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// 1. API routes
 app.get('/api/health', (_req, res) => res.json({ success: true, message: 'Backend is running' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/tts', ttsRoutes);
@@ -25,7 +26,46 @@ app.use('/api', teacherRoutes);
 app.use('/api/student-exams', examRoutes);
 app.use('/api', apiRoutes);
 
+// 2. Static Frontend file serving
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+
+// 3. Fallback for Single Page Application (SPA) client routes (Express 4 & 5 safe)
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    return next();
+  }
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  const indexPath = path.join(publicDir, 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      res.status(200).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>VisionAssist AI</title></head>
+        <body style="font-family:sans-serif;text-align:center;padding:50px;">
+          <h2>VisionAssist AI Server is Running</h2>
+          <p>API endpoints are active at <code>/api/...</code></p>
+        </body>
+        </html>
+      `);
+    }
+  });
+});
+
 const port = process.env.PORT || 5000;
 connectDB().then(() => {
-  app.listen(port, () => console.log(`Backend running at http://localhost:${port}`));
+  if (!process.env.VERCEL) {
+    app.listen(port, () => console.log(`Backend running at http://localhost:${port}`));
+  }
+}).catch((err) => {
+  console.error('Database connection error:', err);
+  if (!process.env.VERCEL) {
+    app.listen(port, () => console.log(`Backend running with fallbacks at http://localhost:${port}`));
+  }
 });
+
+module.exports = app;
+

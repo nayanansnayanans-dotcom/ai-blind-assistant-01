@@ -179,7 +179,9 @@ export default function ForgotPassword() {
     } else if (targetField === "confirm_email") {
       promptMsg = `You entered email address ${pendingEmailRef.current || email}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === "password") {
-      promptMsg = "Step 2: Please speak your new password now.";
+      promptMsg = isStudent
+        ? "Step 2: Please speak your new password now. Your password must contain only alphabets and numbers."
+        : "Step 2: Please speak your new password now.";
     } else if (targetField === "confirm_password") {
       promptMsg = `You entered new password ${pendingPasswordRef.current || newPassword}. Please speak your password once again to confirm.`;
     } else if (targetField === "final_confirm") {
@@ -350,6 +352,13 @@ export default function ForgotPassword() {
         return;
       }
 
+      if (isStudent && !/^[a-zA-Z0-9]+$/.test(cleanPass)) {
+        speak("Student password must contain only alphabets and numbers, with no spaces or special characters. Please speak your password again.", () => {
+          setTimeout(() => triggerVoiceReset("password"), 300);
+        });
+        return;
+      }
+
       setNewPassword(cleanPass);
       pendingPasswordRef.current = cleanPass;
       triggerVoiceReset("confirm_password");
@@ -362,6 +371,13 @@ export default function ForgotPassword() {
         .replace(/^confirm password is\s+/i, '')
         .replace(/^password is\s+/i, '')
         .replace(/\s+/g, '');
+
+      if (isStudent && cleanPass2 && !/^[a-zA-Z0-9]+$/.test(cleanPass2)) {
+        speak("Confirm Password must contain only alphabets and numbers. Please speak your confirmation password again.", () => {
+          setTimeout(() => triggerVoiceReset("confirm_password"), 300);
+        });
+        return;
+      }
 
       setConfirmPassword(cleanPass2 || pendingPasswordRef.current);
       pendingConfirmPassRef.current = cleanPass2 || pendingPasswordRef.current;
@@ -432,6 +448,13 @@ export default function ForgotPassword() {
 
     if (!targetPass || targetPass.length < 6) {
       const msg = "New password must be at least 6 characters long.";
+      setErrorMessage(msg);
+      speak(msg, () => setTimeout(() => triggerVoiceReset("password"), 400));
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9]+$/.test(targetPass)) {
+      const msg = "Student password must contain only alphabets and numbers (no special characters).";
       setErrorMessage(msg);
       speak(msg, () => setTimeout(() => triggerVoiceReset("password"), 400));
       return;
@@ -821,11 +844,19 @@ export default function ForgotPassword() {
               </div>
             </div>
 
+            {/* Password Rule Notice */}
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '10px 12px', fontSize: '12px', color: '#1e40af', fontWeight: '600', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <span style={{ fontSize: '15px', lineHeight: '1.2' }}>ℹ️</span>
+              <div style={{ lineHeight: '1.4' }}>
+                <strong style={{ color: '#1d4ed8' }}>Password Rule:</strong> Must contain <strong>only alphabets (A-Z, a-z) and numbers (0-9)</strong>. No special characters or symbols are allowed.
+              </div>
+            </div>
+
             {/* 2. Set Password */}
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                 <label style={{ fontSize: "12px", color: "#0369a1", fontWeight: "800" }}>
-                  SET PASSWORD
+                  SET PASSWORD (alphabets & numbers only)
                 </label>
                 <button 
                   type="button" 
@@ -845,10 +876,11 @@ export default function ForgotPassword() {
                   type={showPassword ? "text" : "password"}
                   name="forgot_student_new_password"
                   autoComplete="new-password"
-                  placeholder="Enter new password (min 6 chars)"
+                  placeholder="Enter new password (alphabets & numbers only, min 6 chars)"
                   value={newPassword}
                   onChange={(e) => {
-                    setNewPassword(e.target.value);
+                    const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                    setNewPassword(val);
                     setErrorMessage("");
                   }}
                   style={{ ...inputStyle, paddingRight: "44px" }}
@@ -862,6 +894,7 @@ export default function ForgotPassword() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              <small style={{ fontSize: "11px", color: "#64748b", marginTop: "4px", display: "block" }}>Only letters (a-z, A-Z) and numbers (0-9) are allowed.</small>
             </div>
 
             {/* 3. Confirm Password */}
@@ -875,10 +908,11 @@ export default function ForgotPassword() {
                   type={showPassword ? "text" : "password"}
                   name="forgot_student_confirm_password"
                   autoComplete="new-password"
-                  placeholder="Re-enter password to confirm"
+                  placeholder="Re-enter password to confirm (alphabets & numbers only)"
                   value={confirmPassword}
                   onChange={(e) => {
-                    setConfirmPassword(e.target.value);
+                    const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                    setConfirmPassword(val);
                     setErrorMessage("");
                   }}
                   style={{ ...inputStyle, paddingRight: "44px" }}

@@ -172,11 +172,11 @@ export default function StudentRegistrationPage() {
     } else if (targetField === 'confirm_email') {
       promptMsg = `You entered Email Address ${formatSpokenEmail(pendingEmailRef.current || email)}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'password') {
-      promptMsg = "Step 5: Please speak your New Password now.";
+      promptMsg = "Step 5: Please speak your New Password now. Your password must contain only alphabets and numbers.";
     } else if (targetField === 'confirm_password_entry') {
       promptMsg = `You entered Password ${pendingPasswordRef.current || password}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'confirmPassword') {
-      promptMsg = "Step 6: Please speak Confirm Password now.";
+      promptMsg = "Step 6: Please speak Confirm Password now. It must match your password and contain only alphabets and numbers.";
     } else if (targetField === 'confirm_confirmPassword') {
       promptMsg = `You entered Confirm Password ${pendingConfirmPasswordRef.current || confirmPassword}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'role') {
@@ -443,6 +443,12 @@ export default function StudentRegistrationPage() {
     // --- STEP 5: NEW PASSWORD ---
     if (fieldKey === 'password') {
       const cleanPass = rawText.replace(/\s+/g, '');
+      if (!/^[a-zA-Z0-9]+$/.test(cleanPass)) {
+        speak("Password must contain only alphabets and numbers, with no spaces or special characters. Please speak your password again.", () => {
+          setTimeout(() => triggerVoiceRegistration('password'), 400);
+        });
+        return;
+      }
       setPassword(cleanPass);
       pendingPasswordRef.current = cleanPass;
       triggerVoiceRegistration('confirm_password_entry');
@@ -462,6 +468,12 @@ export default function StudentRegistrationPage() {
     // --- STEP 6: CONFIRM PASSWORD ---
     if (fieldKey === 'confirmPassword') {
       const cleanPass = rawText.replace(/\s+/g, '');
+      if (!/^[a-zA-Z0-9]+$/.test(cleanPass)) {
+        speak("Confirm Password must contain only alphabets and numbers. Please speak your confirm password again.", () => {
+          setTimeout(() => triggerVoiceRegistration('confirmPassword'), 400);
+        });
+        return;
+      }
       setConfirmPassword(cleanPass);
       pendingConfirmPasswordRef.current = cleanPass;
       triggerVoiceRegistration('confirm_confirmPassword');
@@ -734,6 +746,13 @@ export default function StudentRegistrationPage() {
       });
       return;
     }
+    if (!/^[a-zA-Z0-9]+$/.test(password)) {
+      setErrorMessage('Password must contain only alphabets and numbers (no special characters).');
+      speak("Password must contain only alphabets and numbers. Special characters are not allowed.", () => {
+        setTimeout(() => triggerVoiceRegistration('password'), 400);
+      });
+      return;
+    }
     if (password !== confirmPassword) {
       setErrorMessage('Passwords do not match.');
       speak("Passwords do not match. Please re-enter passwords.", () => {
@@ -836,7 +855,7 @@ export default function StudentRegistrationPage() {
               ) : (
                 <>
                   <button 
-                    onClick={() => { setFirstName('Priya'); setLastName('Sharma'); setEmail('priya@gmail.com'); setPhone('9876543210'); setPassword('Priya@123'); setConfirmPassword('Priya@123'); speak("Filled demo registration details."); }}
+                    onClick={() => { setFirstName('Priya'); setLastName('Sharma'); setEmail('priya@gmail.com'); setPhone('9876543210'); setPassword('Priya123'); setConfirmPassword('Priya123'); speak("Filled demo registration details."); }}
                     style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
                   >
                     👤 Fill Demo Details
@@ -1160,9 +1179,16 @@ export default function StudentRegistrationPage() {
           {/* NEW PASSWORD & CONFIRM PASSWORD - SHOWN ONLY IN PASSWORD REGISTRATION MODE */}
           {registrationMethod === 'password' && (
             <>
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '10px 12px', fontSize: '12px', color: '#1e40af', fontWeight: '600', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <span style={{ fontSize: '15px', lineHeight: '1.2' }}>ℹ️</span>
+                <div style={{ lineHeight: '1.4' }}>
+                  <strong style={{ color: '#1d4ed8' }}>Password Rule:</strong> Must contain <strong>only alphabets (A-Z, a-z) and numbers (0-9)</strong>. No special characters or symbols are allowed.
+                </div>
+              </div>
+
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '12px', color: '#0369a1', fontWeight: '800' }}>New Password</label>
+                  <label style={{ fontSize: '12px', color: '#0369a1', fontWeight: '800' }}>New Password (alphabets & numbers only)</label>
                   <button 
                     type="button" 
                     onClick={() => triggerVoiceRegistration('password')}
@@ -1173,11 +1199,24 @@ export default function StudentRegistrationPage() {
                 </div>
                 <div style={{ position: 'relative' }}>
                   <Lock size={18} color="#0284c7" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input type={showPassword ? 'text' : 'password'} name="student_reg_password" autoComplete="new-password" placeholder="New Password (min 6 chars)" value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: '44px', border: '1px solid #0284c7' }} required={registrationMethod === 'password'} />
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    name="student_reg_password" 
+                    autoComplete="new-password" 
+                    placeholder="New Password (alphabets & numbers only, min 6 chars)" 
+                    value={password} 
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                      setPassword(val);
+                    }} 
+                    style={{ ...inputStyle, paddingRight: '44px', border: '1px solid #0284c7' }} 
+                    required={registrationMethod === 'password'} 
+                  />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+                <small style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>Only letters (A-Z, a-z) and numbers (0-9) are accepted.</small>
               </div>
 
               <div>
@@ -1193,7 +1232,19 @@ export default function StudentRegistrationPage() {
                 </div>
                 <div style={{ position: 'relative' }}>
                   <Lock size={18} color="#0284c7" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input type={showPassword ? 'text' : 'password'} name="student_reg_confirm_password" autoComplete="new-password" placeholder="Confirm Password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} style={{ ...inputStyle, paddingRight: '44px', border: '1px solid #0284c7' }} required={registrationMethod === 'password'} />
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    name="student_reg_confirm_password" 
+                    autoComplete="new-password" 
+                    placeholder="Confirm Password (alphabets & numbers only)" 
+                    value={confirmPassword} 
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                      setConfirmPassword(val);
+                    }} 
+                    style={{ ...inputStyle, paddingRight: '44px', border: '1px solid #0284c7' }} 
+                    required={registrationMethod === 'password'} 
+                  />
                 </div>
               </div>
             </>

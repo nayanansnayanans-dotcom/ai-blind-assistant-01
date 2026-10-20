@@ -470,7 +470,6 @@ const readStudentProfile = () => {
       studentId: regNo,
       registerNumber: regNo,
       phone: userProfile.phone || session.phone || regUser.phone || '',
-      dob: userProfile.dob || session.dob || '',
       collegeName: userProfile.collegeName || session.collegeName || '',
       universityName: userProfile.universityName || session.universityName || '',
       fatherName: userProfile.fatherName || session.fatherName || '',
@@ -488,7 +487,6 @@ const readStudentProfile = () => {
       studentId: '2026011001',
       registerNumber: '2026011001',
       phone: '',
-      dob: '',
       collegeName: '',
       universityName: '',
       fatherName: '',
@@ -2093,7 +2091,6 @@ export default function StudentDashboard() {
       `Register Number: ${studentProfile.registerNumber}. ` +
       `Full Name: ${studentProfile.name}. ` +
       `Email Address: ${studentProfile.email}. ` +
-      (studentProfile.dob ? `Date of Birth: ${studentProfile.dob}. ` : '') +
       `Focused Main Subject: ${studentProfile.interestedSubject || activeSubject}.`;
 
     announce(`🔊 Narrating Profile for ${studentProfile.name}`);
@@ -2102,18 +2099,17 @@ export default function StudentDashboard() {
 
   // --- STEP-BY-STEP VOICE ASSISTANT PROFILE WIZARD ---
   const [isVoiceProfileWizardOpen, setIsVoiceProfileWizardOpen] = useState(false);
-  const [voiceProfileStep, setVoiceProfileStep] = useState(1); // 1: Name, 2: DOB, 3: Main Subject
+  const [voiceProfileStep, setVoiceProfileStep] = useState(1); // 1: Name, 2: Main Subject
   const [wizardTranscript, setWizardTranscript] = useState('');
   const [isWizardListening, setIsWizardListening] = useState(false);
   const [wizardFormData, setWizardFormData] = useState({
     name: '',
-    dob: '',
     subject: 'Computer Science'
   });
   const wizardRecognitionRef = useRef(null);
   const wizardSilenceTimeoutRef = useRef(null);
   const wizardStepRef = useRef(1);
-  const wizardFormRef = useRef({ name: '', dob: '', subject: 'Computer Science' });
+  const wizardFormRef = useRef({ name: '', subject: 'Computer Science' });
 
   const stopWizardListening = () => {
     if (wizardSilenceTimeoutRef.current) {
@@ -2208,11 +2204,9 @@ export default function StudentDashboard() {
     stopWizardListening();
     let prompt = "";
     if (step === 1) {
-      prompt = "Step 1 of 3: What is your full name? Please speak your full name now.";
+      prompt = "Step 1 of 2: What is your full name? Please speak your full name now.";
     } else if (step === 2) {
-      prompt = "Step 2 of 3: What is your date of birth? For example, 15 August 2004.";
-    } else if (step === 3) {
-      prompt = "Step 3 of 3: What is your focused main subject? You can say Computer Science, Mathematics, Physics, Chemistry, Biology, Commerce, Social Science, or Engineering.";
+      prompt = "Step 2 of 2: What is your focused main subject? You can say Computer Science, Mathematics, Physics, Chemistry, Biology, Commerce, Social Science, or Engineering.";
     }
     announce(prompt);
     speakText(prompt, () => {
@@ -2245,20 +2239,6 @@ export default function StudentDashboard() {
         speakWizardStepPrompt(2);
       });
     } else if (step === 2) {
-      let formattedDob = trimmed
-        .replace(/^(my date of birth is|date of birth is|born on|dob is)\s+/i, '');
-      if (!formattedDob) formattedDob = trimmed;
-      const updated = { ...wizardFormRef.current, dob: formattedDob };
-      wizardFormRef.current = updated;
-      setWizardFormData(updated);
-      setWizardTranscript('');
-
-      speakText(`Recorded date of birth as ${formattedDob}. Moving to Step 3.`, () => {
-        wizardStepRef.current = 3;
-        setVoiceProfileStep(3);
-        speakWizardStepPrompt(3);
-      });
-    } else if (step === 3) {
       const matchedMain = findMainSubject(trimmed);
       if (matchedMain) {
         const updated = { ...wizardFormRef.current, subject: matchedMain };
@@ -2266,12 +2246,12 @@ export default function StudentDashboard() {
         setWizardFormData(updated);
         setWizardTranscript('');
 
-        speakText(`Selected main subject as ${matchedMain}. All 3 steps are complete! Saving your profile now.`, () => {
+        speakText(`Selected main subject as ${matchedMain}. All steps are complete! Saving your profile now.`, () => {
           saveWizardProfile(updated);
         });
       } else {
         speakText(`I couldn't identify that as a main subject. Please choose from: Computer Science, Mathematics, Physics, Chemistry, Biology, Commerce, Social Science, or Engineering.`, () => {
-          startWizardListening(3);
+          startWizardListening(2);
         });
       }
     }
@@ -2282,18 +2262,17 @@ export default function StudentDashboard() {
     cancelSpeech();
     const data = formDataToSave || wizardFormRef.current;
     const finalName = data.name || studentProfile.name || 'Student';
-    const finalDob = data.dob || studentProfile.dob || '';
     const finalSubject = data.subject || activeSubject || 'Computer Science';
 
     const updatedProfile = {
       ...studentProfile,
       name: finalName,
-      dob: finalDob,
       subject: finalSubject,
       interestedSubject: finalSubject,
       studentId: studentProfile.registerNumber
     };
     delete updatedProfile.course;
+    delete updatedProfile.dob;
 
     setStudentProfile(updatedProfile);
     setProfileEditForm(updatedProfile);
@@ -2307,6 +2286,7 @@ export default function StudentDashboard() {
         const allProfiles = JSON.parse(localStorage.getItem('student_profiles_by_email') || '{}');
         allProfiles[cleanEmail] = { ...(allProfiles[cleanEmail] || {}), ...updatedProfile };
         delete allProfiles[cleanEmail].course;
+        delete allProfiles[cleanEmail].dob;
         localStorage.setItem('student_profiles_by_email', JSON.stringify(allProfiles));
       }
     } catch (err) {}
@@ -2324,7 +2304,6 @@ export default function StudentDashboard() {
     cancelSpeech();
     const initialForm = {
       name: studentProfile.name || '',
-      dob: studentProfile.dob || '',
       subject: activeSubject || 'Computer Science'
     };
     wizardFormRef.current = initialForm;
@@ -2353,10 +2332,6 @@ export default function StudentDashboard() {
       wizardStepRef.current = 2;
       setVoiceProfileStep(2);
       speakWizardStepPrompt(2);
-    } else if (voiceProfileStep === 2) {
-      wizardStepRef.current = 3;
-      setVoiceProfileStep(3);
-      speakWizardStepPrompt(3);
     } else {
       saveWizardProfile();
     }
@@ -2365,11 +2340,7 @@ export default function StudentDashboard() {
   const handleWizardPrevStep = () => {
     stopWizardListening();
     cancelSpeech();
-    if (voiceProfileStep === 3) {
-      wizardStepRef.current = 2;
-      setVoiceProfileStep(2);
-      speakWizardStepPrompt(2);
-    } else if (voiceProfileStep === 2) {
+    if (voiceProfileStep === 2) {
       wizardStepRef.current = 1;
       setVoiceProfileStep(1);
       speakWizardStepPrompt(1);
@@ -2426,7 +2397,7 @@ export default function StudentDashboard() {
       await updateStudentSubject(currentEmail, targetSub);
     }
 
-    const msg = `Dashboard focused on ${targetSub}. Showing only ${targetSub} exams, study materials, and oral vivas.`;
+    const msg = `Your interested subject has been changed to ${targetSub}. Dashboard is now focused on ${targetSub}.`;
     announce(`🎓 ${msg}`);
     speakText(msg);
   };
@@ -3269,12 +3240,16 @@ export default function StudentDashboard() {
     speakText(completionMsg);
   };
 
-  const speakDashboardFeatures = () => {
+  const speakDashboardWelcome = () => {
     const hr = new Date().getHours();
     const timeGreeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
-    const welcomeOverview = `${timeGreeting}, ${student?.name || 'Student'}. Welcome to VisionAssist AI Student Dashboard. 
-    This dashboard is fully accessible through both Voice Assistant and Typed Commands.
-    Here are all 11 features available in your dashboard:
+    const welcomeMsg = `${timeGreeting}, ${student?.name || 'Student'}. Welcome to your VisionAssist AI Student Dashboard. What help can I do for you? Tap anywhere on the screen, I will guide you.`;
+    announce(welcomeMsg);
+    speakText(welcomeMsg);
+  };
+
+  const speakDashboardFeatures = () => {
+    const featuresSpeech = `Here are all 11 features present in your VisionAssist AI Student Dashboard:
     Feature 1: Dashboard Overview, with your academic progress and quick action shortcuts.
     Feature 2: AI Exam Assistant, providing accessible step-by-step voice-guided online exams.
     Feature 3: AI Oral Viva Simulator, to practice voice interviews and oral test evaluations.
@@ -3285,24 +3260,22 @@ export default function StudentDashboard() {
     Feature 8: Voice Assistant, for complete hands-free voice navigation.
     Feature 9: Accessibility Settings, allowing high contrast mode and voice speed adjustments.
     Feature 10: Notifications and Teacher Broadcasts, for real-time announcements.
-    Feature 11: Student Profile, to view your details, registration number, and select your interested subjects or languages.
+    Feature 11: Student Profile, to view your details, registration number, and select your interested subjects.
     
-    To use Voice Assistant: press Spacebar or tap the microphone button to speak commands such as open exams, start viva, switch subject, read profile, or emergency SOS.
-    To use Typed Commands: type any command in the command bar at the top and press Enter.
-    Move your mouse or finger anywhere on the screen, and I will tell you what is there.`;
+    You can tap anywhere on the screen at any time to activate the voice assistant and speak any command, or change your interested subject.`;
 
     announce("📢 Reading all 11 Student Dashboard features aloud...");
-    speakText(welcomeOverview);
+    speakText(featuresSpeech);
   };
 
-  // On dashboard entry: speak ALL features once per session (survives React StrictMode double-mount)
+  // On dashboard entry: speak initial welcome once per session (survives React StrictMode double-mount)
   useEffect(() => {
     let active = true;
     const speechTimer = setTimeout(() => {
       if (!active) return;
       if (hasSpokenMountFeaturesRef.current) return;
       hasSpokenMountFeaturesRef.current = true;
-      speakDashboardFeatures();
+      speakDashboardWelcome();
     }, 700);
     return () => {
       active = false;
@@ -3992,110 +3965,56 @@ export default function StudentDashboard() {
 
         const now = Date.now();
 
-        // SCENARIO 1: MULTIPLE PEOPLE DETECTED IN CAMERA! (Requires 2 consecutive detections to debounce)
-        if (peopleCheck.isMultiple) {
-          consecutiveMultiplePeopleCountRef.current++;
-        } else {
-          consecutiveMultiplePeopleCountRef.current = 0;
-        }
+        // PROCTORING EVALUATION: Check for Face Absence ("scaned face is not there") or Others Present ("others are there")
+        let isViolation = false;
+        let violationType = null;
+        let violationTitle = '';
+        let violationHeading = '';
+        let violationMsg = '';
+        let violationSpeech1 = '';
+        let violationSpeech2 = '';
+        let violationExitDetail = '';
+        let violationTeacherStatus = '';
 
-        if (consecutiveMultiplePeopleCountRef.current >= 2) {
+        if (!peopleCheck.isPresent) {
+          // CONDITION 1: SCANNED FACE IS NOT THERE (Candidate absent / looking away / left camera)
+          isViolation = true;
+          violationType = 'face_absent';
+          violationTitle = 'SCANNED FACE NOT DETECTED';
+          violationHeading = 'Candidate Face Missing from Camera!';
+          violationMsg = `Your face is not visible to the exam camera. Please look directly into the camera. Only candidate ${student.name} is permitted to write this exam.`;
+          violationSpeech1 = `Alert 1 of 2: Scanned face is not detected in camera. Please face the camera immediately. You have 1 warning remaining before exam exit.`;
+          violationSpeech2 = `Final warning. Alert 2 of 2: Scanned face is not detected! If your face is not back in the camera immediately, your exam will be terminated and exited!`;
+          violationExitDetail = 'Scanned face was repeatedly not detected in the exam camera';
+          violationTeacherStatus = '⚠️ Candidate Face Absent / Missing';
+
+          setIsMultiplePeopleDetected(false);
+          isMultiplePeopleDetectedRef.current = false;
+          setIsFacePresentInExam(false);
+          setIsScannedStudentWriting(false);
+          setIsOtherPersonDetected(true);
+          isScannedStudentWritingRef.current = false;
+        } else if (peopleCheck.isMultiple) {
+          // CONDITION 2: OTHERS ARE THERE (Multiple people in camera)
+          isViolation = true;
+          violationType = 'multiple_people';
+          violationTitle = 'MULTIPLE PEOPLE DETECTED';
+          violationHeading = 'Multiple People in Camera View!';
+          violationMsg = `Facial recognition proctoring detected ${peopleCheck.count} people in front of your camera. Examination rules strictly require candidate ${student.name} alone.`;
+          violationSpeech1 = `Alert 1 of 2: Multiple people detected in camera! Only registered student ${student.name} is permitted to write this exam. Please ensure you are alone.`;
+          violationSpeech2 = `Final warning. Alert 2 of 2: Multiple people detected in camera! If other people remain, your exam will be terminated and exited immediately!`;
+          violationExitDetail = 'Other people were repeatedly detected in front of the camera';
+          violationTeacherStatus = `🚨 MULTIPLE PEOPLE DETECTED (${peopleCheck.count} People)`;
+
           setIsMultiplePeopleDetected(true);
           isMultiplePeopleDetectedRef.current = true;
           setDetectedPeopleCount(peopleCheck.count);
-          setIsScannedStudentWriting(false);
-          setIsOtherPersonDetected(true);
           setIsFacePresentInExam(true);
-          isScannedStudentWritingRef.current = false;
-          setShowMultiplePeopleWarningModal(true);
-
-          if (now - lastMultiplePeopleWarningTimeRef.current > 7000) {
-            lastMultiplePeopleWarningTimeRef.current = now;
-            setFaceAbsentWarningsCount(c => c + 1);
-
-            const warnMsg = `Proctoring Malpractice Alert: Multiple people detected in front of the exam camera! Only candidate ${student.name} is permitted to write this exam. Voice assistant and inputs are locked.`;
-            announce("🚨 " + warnMsg);
-            speakText(warnMsg);
-
-            // Update Teacher Dashboard Live Logs with MULTIPLE PEOPLE ALERT
-            try {
-              const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
-              const updatedLog = {
-                id: `log_${Date.now()}`,
-                student: student.name,
-                studentName: student.name,
-                teacherEmail: currentExam?.teacherEmail || '',
-                teacherName: currentExam?.teacherName || '',
-                examId: currentExam?.id || currentExam?._id || '',
-                examTitle: currentExam?.title || '',
-                status: `🚨 MULTIPLE PEOPLE DETECTED (${peopleCheck.count} People)`,
-                statusBadge: `🔴 MULTIPLE PEOPLE: ${student.name}`,
-                started: '10:00 AM',
-                remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
-                voice: '🔒 Locked (Multiple People in Camera)',
-                submitted: 'No',
-                faceVerified: true,
-                facePresent: true,
-                isOtherPerson: true,
-                isMultiplePeople: true,
-                peopleCount: peopleCheck.count
-              };
-              localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
-              window.dispatchEvent(new Event('storage'));
-            } catch (e) {}
-          }
-        } else if (!peopleCheck.isPresent) {
-          // SCENARIO 2: NO ONE IN CAMERA (Candidate absent / looking away)
-          setIsMultiplePeopleDetected(false);
-          isMultiplePeopleDetectedRef.current = false;
           setIsScannedStudentWriting(false);
           setIsOtherPersonDetected(true);
-          setIsFacePresentInExam(false);
           isScannedStudentWritingRef.current = false;
-
-          if (now - lastFaceWarningTimeRef.current > 7000) {
-            lastFaceWarningTimeRef.current = now;
-            setFaceAbsentWarningsCount(c => c + 1);
-            const warnMsg = "Warning: Candidate face not detected. Please look directly at the exam camera to resume.";
-            announce("⚠️ " + warnMsg);
-            speakText(warnMsg);
-
-            try {
-              const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
-              const updatedLog = {
-                id: `log_${Date.now()}`,
-                student: student.name,
-                studentName: student.name,
-                teacherEmail: currentExam?.teacherEmail || '',
-                teacherName: currentExam?.teacherName || '',
-                examId: currentExam?.id || currentExam?._id || '',
-                examTitle: currentExam?.title || '',
-                status: '⚠️ Face Absent / Looking Away',
-                statusBadge: '🔴 Face Absent',
-                started: '10:00 AM',
-                remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
-                voice: '🔒 Locked (Candidate Absent)',
-                submitted: 'No',
-                faceVerified: true,
-                facePresent: false,
-                isOtherPerson: true,
-                isMultiplePeople: false
-              };
-              localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
-              window.dispatchEvent(new Event('storage'));
-            } catch (e) {}
-          }
         } else {
-          // SCENARIO 3: EXACTLY 1 PERSON IN CAMERA
-          consecutiveMultiplePeopleCountRef.current = 0;
-          setIsMultiplePeopleDetected(false);
-          isMultiplePeopleDetectedRef.current = false;
-          setDetectedPeopleCount(1);
-
-          // STRICT CHECK: The single person MUST match candidate's enrolled profile photo (>= 65% similarity)
-          // AND match initial scanned webcam baseline if present (>= 80% similarity)
+          // Exactly 1 person in camera: verify if it's the registered scanned student
           let isScannedStudentMatch = false;
           if (enrolledVector && scannedVector) {
             isScannedStudentMatch = Boolean(enrolledSim >= 0.65 && scannedSim >= 0.80);
@@ -4103,213 +4022,245 @@ export default function StudentDashboard() {
             isScannedStudentMatch = Boolean(enrolledSim >= 0.65);
           } else if (scannedVector) {
             isScannedStudentMatch = Boolean(scannedSim >= 0.82);
+          } else {
+            isScannedStudentMatch = true;
           }
 
-          if (isScannedStudentMatch) {
-            // VERIFIED: Scanned student is writing! (GREEN COLOR)
+          if (!isScannedStudentMatch) {
+            // CONDITION 3: OTHERS ARE THERE (Unauthorized person / face mismatch)
+            isViolation = true;
+            violationType = 'face_mismatch';
+            violationTitle = 'UNRECOGNIZED PERSON DETECTED';
+            violationHeading = 'Unrecognized Person Detected!';
+            violationMsg = `The person in front of the camera does not match scanned candidate ${student.name}. Only candidate ${student.name} is permitted to write this exam.`;
+            violationSpeech1 = `Alert 1 of 2: Unrecognized person detected in camera. Only registered candidate ${student.name} is permitted to write this exam. Please face the camera.`;
+            violationSpeech2 = `Final warning. Alert 2 of 2: Unrecognized person detected! If candidate ${student.name} does not immediately resume alone, your exam will be terminated and exited!`;
+            violationExitDetail = 'An unauthorized face repeatedly attempted to write the exam instead of candidate ' + student.name;
+            violationTeacherStatus = '🚨 FACE MISMATCH: Unauthorized Person Writing';
+
+            setIsMultiplePeopleDetected(false);
+            isMultiplePeopleDetectedRef.current = false;
+            setIsFacePresentInExam(true);
+            setIsScannedStudentWriting(false);
+            setIsOtherPersonDetected(true);
+            isScannedStudentWritingRef.current = false;
+          } else {
+            // VERIFIED: Scanned student is writing alone!
+            isViolation = false;
+            consecutiveMultiplePeopleCountRef.current = 0;
+            consecutiveMismatchTicksRef.current = 0;
+            setIsMultiplePeopleDetected(false);
+            isMultiplePeopleDetectedRef.current = false;
+            setDetectedPeopleCount(1);
             setIsScannedStudentWriting(true);
             setIsOtherPersonDetected(false);
             setIsFacePresentInExam(true);
             isScannedStudentWritingRef.current = true;
-            consecutiveMismatchTicksRef.current = 0;
 
-            if (faceMismatchActiveAlert) {
+            if (faceMismatchActiveAlert || showMultiplePeopleWarningModal) {
               setFaceMismatchActiveAlert(null);
+              setShowMultiplePeopleWarningModal(false);
               const resumeMsg = `Identity confirmed. Welcome back ${student.name}. Exam inputs and voice assistant unlocked.`;
               announce("🟢 " + resumeMsg);
               speakText(resumeMsg);
             }
-          } else {
-            // UNAUTHORIZED / WRONG PERSON: Face does not match registered student! (RED COLOR)
-            setIsScannedStudentWriting(false);
-            setIsOtherPersonDetected(true);
-            setIsFacePresentInExam(true);
-            isScannedStudentWritingRef.current = false;
+          }
+        }
 
-            consecutiveMismatchTicksRef.current++;
+        // UNIFIED PROCTOR STRIKE CONTROLLER (Alerts 2 times, Exits from exam on 3rd time)
+        if (isViolation) {
+          consecutiveMismatchTicksRef.current++;
 
-            // Debounce: require at least 2 consecutive mismatch scans (~2.4s) before issuing alert
-            if (consecutiveMismatchTicksRef.current >= 2) {
-              const timeSinceLastAlert = now - lastMismatchAlertTimeRef.current;
+          // Debounce: require at least 2 consecutive scan ticks (~2.4s) before issuing strikes
+          if (consecutiveMismatchTicksRef.current >= 2) {
+            const timeSinceLastAlert = now - lastMismatchAlertTimeRef.current;
 
-              // Cooldown between warnings: at least 5.5s so voice warning has time to play
-              if (timeSinceLastAlert > 5500) {
-                lastMismatchAlertTimeRef.current = now;
+            // Cooldown between alerts: at least 5.5s so student has time to hear and correct
+            if (timeSinceLastAlert > 5500) {
+              lastMismatchAlertTimeRef.current = now;
 
-                if (faceMismatchStrikeCountRef.current === 0) {
-                  // === ALERT 1 OF 2 ===
-                  faceMismatchStrikeCountRef.current = 1;
-                  setFaceMismatchStrikeCount(1);
+              if (faceMismatchStrikeCountRef.current === 0) {
+                // === ALERT 1 OF 2 ===
+                faceMismatchStrikeCountRef.current = 1;
+                setFaceMismatchStrikeCount(1);
+                setFaceAbsentWarningsCount(1);
 
-                  const alertMsg = `Alert 1 of 2: Unrecognized person detected. Only registered candidate ${student.name} is permitted to write this exam. Please face the camera.`;
-                  announce("⚠️ " + alertMsg);
-                  speakText(alertMsg);
+                announce("⚠️ " + violationSpeech1);
+                speakText(violationSpeech1);
 
-                  setFaceMismatchActiveAlert({
-                    strike: 1,
-                    maxStrikes: 2,
-                    title: "⚠️ WARNING 1 OF 2: UNRECOGNIZED PERSON DETECTED",
-                    message: `The person in front of the camera does NOT match registered student ${student.name}.`,
-                    submessage: `Please ensure candidate ${student.name} faces the camera. You have 1 warning remaining before automatic exam termination.`
-                  });
+                setFaceMismatchActiveAlert({
+                  strike: 1,
+                  maxStrikes: 2,
+                  type: violationType,
+                  title: `⚠️ WARNING 1 OF 2: ${violationTitle}`,
+                  heading: violationHeading,
+                  message: violationMsg,
+                  submessage: `Proctoring warning 1 of 2. You have 1 warning remaining. On the 3rd violation, your exam will automatically exit!`
+                });
 
-                  try {
-                    const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
-                    const updatedLog = {
-                      id: `log_${Date.now()}`,
-                      student: student.name,
-                      studentName: student.name,
-                      teacherEmail: currentExam?.teacherEmail || '',
-                      teacherName: currentExam?.teacherName || '',
-                      examId: currentExam?.id || currentExam?._id || '',
-                      examTitle: currentExam?.title || '',
-                      status: '⚠️ FACE MISMATCH: Warning 1 of 2 Issued',
-                      statusBadge: '🔴 WRONG PERSON (Alert 1/2)',
-                      started: '10:00 AM',
-                      remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                      answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
-                      voice: '🔒 Locked (Unauthorized Person)',
-                      submitted: 'No',
-                      faceVerified: true,
-                      facePresent: false,
-                      isOtherPerson: true,
-                      isMultiplePeople: false,
-                      strikeCount: 1
-                    };
-                    localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
-                    window.dispatchEvent(new Event('storage'));
-                  } catch (e) {}
-
-                } else if (faceMismatchStrikeCountRef.current === 1) {
-                  // === ALERT 2 OF 2 (FINAL WARNING) ===
-                  faceMismatchStrikeCountRef.current = 2;
-                  setFaceMismatchStrikeCount(2);
-
-                  const alertMsg = `Final warning. Alert 2 of 2: Unrecognized person detected. If the unauthorized face remains, your exam will be terminated immediately.`;
-                  announce("🚨 " + alertMsg);
-                  speakText(alertMsg);
-
-                  setFaceMismatchActiveAlert({
-                    strike: 2,
-                    maxStrikes: 2,
-                    title: "🚨 FINAL WARNING (ALERT 2 OF 2): UNRECOGNIZED PERSON DETECTED",
-                    message: `CRITICAL MALPRACTICE WARNING: The face in front of the camera does NOT match registered student ${student.name}.`,
-                    submessage: `This is your FINAL warning. If candidate ${student.name} does not immediately resume, this exam will terminate automatically and exit to the dashboard!`
-                  });
-
-                  try {
-                    const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
-                    const updatedLog = {
-                      id: `log_${Date.now()}`,
-                      student: student.name,
-                      studentName: student.name,
-                      teacherEmail: currentExam?.teacherEmail || '',
-                      teacherName: currentExam?.teacherName || '',
-                      examId: currentExam?.id || currentExam?._id || '',
-                      examTitle: currentExam?.title || '',
-                      status: '🚨 FACE MISMATCH: Final Warning 2 of 2 Issued',
-                      statusBadge: '🔴 FINAL WARNING (Alert 2/2)',
-                      started: '10:00 AM',
-                      remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                      answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
-                      voice: '🔒 Locked (Final Warning)',
-                      submitted: 'No',
-                      faceVerified: true,
-                      facePresent: false,
-                      isOtherPerson: true,
-                      isMultiplePeople: false,
-                      strikeCount: 2
-                    };
-                    localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
-                    window.dispatchEvent(new Event('storage'));
-                  } catch (e) {}
-
-                } else if (faceMismatchStrikeCountRef.current >= 2) {
-                  // === AFTER 2 ALERTS: AUTO-TERMINATE & EXIT FROM EXAM ===
-                  faceMismatchStrikeCountRef.current = 3;
-                  setFaceMismatchStrikeCount(3);
-
-                  if (proctorScanIntervalRef.current) {
-                    clearInterval(proctorScanIntervalRef.current);
-                    proctorScanIntervalRef.current = null;
-                  }
-
-                  const exitMsg = `Exam terminated due to repeated biometric face mismatch violations. You were alerted 2 times. Exiting exam now.`;
-                  announce("⛔ " + exitMsg);
-                  speakText(exitMsg);
-
-                  stopCameraForFaceAuth();
-
-                  const termExamTitle = currentExam?.title || 'Examination';
-                  try {
-                    const terminatedResult = {
-                      id: Date.now(),
-                      student: student.name,
-                      studentId: student.studentId || student.registerNumber || '2024001',
-                      studentEmail: student.email || 'student@school.edu',
-                      examId: currentExam?.id || 'exam',
-                      examName: termExamTitle,
-                      examTitle: termExamTitle,
-                      examLanguage: 'en',
-                      languageName: 'English',
-                      subject: currentExam?.subject || 'General',
-                      score: 0,
-                      total: 100,
-                      totalMarks: 100,
-                      percentage: 0,
-                      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                      submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                      timeSpent: `${Math.max(1, Math.floor((5400 - examTimeRemaining) / 60))} mins`,
-                      feedback: 'EXAM TERMINATED BY AI PROCTOR: Disqualified due to repeated biometric face mismatch (wrong person writing). Exceeded 2 warnings.',
-                      status: 'Terminated (Face Mismatch Malpractice)',
-                      evaluatedBy: 'Automated AI Proctor Security',
-                      teacherName: currentExam?.teacherName || 'Course Invigilator',
-                      teacherEmail: currentExam?.teacherEmail || '',
-                      questions: [],
-                      answers: studentAnswers
-                    };
-
-                    const existingCompleted = JSON.parse(localStorage.getItem('student_completed_results') || '[]');
-                    localStorage.setItem('student_completed_results', JSON.stringify([terminatedResult, ...existingCompleted]));
-
-                    const existingShared = JSON.parse(localStorage.getItem('shared_student_results') || '[]');
-                    localStorage.setItem('shared_student_results', JSON.stringify([terminatedResult, ...existingShared]));
-
-                    const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
-                    const termLog = {
-                      id: `log_${Date.now()}`,
-                      student: student.name,
-                      studentName: student.name,
-                      teacherEmail: currentExam?.teacherEmail || '',
-                      teacherName: currentExam?.teacherName || '',
-                      examId: currentExam?.id || currentExam?._id || '',
-                      examTitle: termExamTitle,
-                      status: '⛔ TERMINATED: Repeated Face Mismatch Malpractice (2 Alerts Exceeded)',
-                      statusBadge: '🔴 TERMINATED: ' + student.name,
-                      started: '10:00 AM',
-                      remaining: '00:00:00',
-                      answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions?.length || 3}`,
-                      voice: '⛔ Terminated (Disqualified)',
-                      submitted: 'Terminated',
-                      isTerminated: true
-                    };
-                    localStorage.setItem('shared_live_logs', JSON.stringify([termLog, ...existingLogs.filter(l => l.student !== student.name)]));
-                    window.dispatchEvent(new Event('storage'));
-                  } catch (e) {}
-
-                  setFaceMismatchActiveAlert(null);
-
-                  setExamTerminationModal({
+                try {
+                  const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+                  const updatedLog = {
+                    id: `log_${Date.now()}`,
+                    student: student.name,
                     studentName: student.name,
-                    examTitle: termExamTitle,
-                    reason: 'Repeated Unrecognized Person Detected',
-                    details: `An unauthorized face was detected in front of the camera instead of registered candidate ${student.name}. You were given 2 alerts, and the violation was not resolved. As per examination proctoring policy, the session has been terminated.`
-                  });
+                    teacherEmail: currentExam?.teacherEmail || '',
+                    teacherName: currentExam?.teacherName || '',
+                    examId: currentExam?.id || currentExam?._id || '',
+                    examTitle: currentExam?.title || '',
+                    status: `⚠️ ${violationTitle}: Warning 1 of 2 Issued`,
+                    statusBadge: `🔴 ALERT 1/2: ${student.name}`,
+                    started: '10:00 AM',
+                    remaining: `${Math.floor(examTimeRemaining / 60)}m`,
+                    answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
+                    voice: '🔒 Locked (Proctor Warning 1)',
+                    submitted: 'No',
+                    faceVerified: true,
+                    facePresent: !peopleCheck.isPresent ? false : true,
+                    isOtherPerson: true,
+                    isMultiplePeople: peopleCheck.isMultiple,
+                    strikeCount: 1
+                  };
+                  localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
+                  window.dispatchEvent(new Event('storage'));
+                } catch (e) {}
 
-                  setCurrentExam(null);
-                  setExamSubmitted(false);
-                  setActiveTab('Dashboard');
+              } else if (faceMismatchStrikeCountRef.current === 1) {
+                // === ALERT 2 OF 2 (FINAL WARNING) ===
+                faceMismatchStrikeCountRef.current = 2;
+                setFaceMismatchStrikeCount(2);
+                setFaceAbsentWarningsCount(2);
+
+                announce("🚨 " + violationSpeech2);
+                speakText(violationSpeech2);
+
+                setFaceMismatchActiveAlert({
+                  strike: 2,
+                  maxStrikes: 2,
+                  type: violationType,
+                  title: `🚨 FINAL WARNING (ALERT 2 OF 2): ${violationTitle}`,
+                  heading: violationHeading,
+                  message: `CRITICAL MALPRACTICE WARNING: ${violationMsg}`,
+                  submessage: `This is your FINAL warning. One more violation will immediately terminate and exit your exam to the dashboard!`
+                });
+
+                try {
+                  const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+                  const updatedLog = {
+                    id: `log_${Date.now()}`,
+                    student: student.name,
+                    studentName: student.name,
+                    teacherEmail: currentExam?.teacherEmail || '',
+                    teacherName: currentExam?.teacherName || '',
+                    examId: currentExam?.id || currentExam?._id || '',
+                    examTitle: currentExam?.title || '',
+                    status: `🚨 ${violationTitle}: Final Warning 2 of 2 Issued`,
+                    statusBadge: `🔴 FINAL WARNING 2/2: ${student.name}`,
+                    started: '10:00 AM',
+                    remaining: `${Math.floor(examTimeRemaining / 60)}m`,
+                    answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
+                    voice: '🔒 Locked (Final Warning 2)',
+                    submitted: 'No',
+                    faceVerified: true,
+                    facePresent: !peopleCheck.isPresent ? false : true,
+                    isOtherPerson: true,
+                    isMultiplePeople: peopleCheck.isMultiple,
+                    strikeCount: 2
+                  };
+                  localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
+                  window.dispatchEvent(new Event('storage'));
+                } catch (e) {}
+
+              } else if (faceMismatchStrikeCountRef.current >= 2) {
+                // === 3RD TIME: AUTO-TERMINATE & EXIT FROM EXAM ===
+                faceMismatchStrikeCountRef.current = 3;
+                setFaceMismatchStrikeCount(3);
+                setFaceAbsentWarningsCount(3);
+
+                if (proctorScanIntervalRef.current) {
+                  clearInterval(proctorScanIntervalRef.current);
+                  proctorScanIntervalRef.current = null;
                 }
+
+                stopCameraForFaceAuth();
+
+                const exitMsg = `Exam terminated and exited. You were alerted 2 times. 3 proctoring violations recorded: ${violationExitDetail}. Submitting zero score and returning to dashboard now.`;
+                announce("⛔ " + exitMsg);
+                speakText(exitMsg);
+
+                const termExamTitle = currentExam?.title || 'Examination';
+                try {
+                  const terminatedResult = {
+                    id: Date.now(),
+                    student: student.name,
+                    studentId: student.studentId || student.registerNumber || '2024001',
+                    studentEmail: student.email || 'student@school.edu',
+                    examId: currentExam?.id || 'exam',
+                    examName: termExamTitle,
+                    examTitle: termExamTitle,
+                    examLanguage: 'en',
+                    languageName: 'English',
+                    subject: currentExam?.subject || 'General',
+                    score: 0,
+                    total: 100,
+                    totalMarks: 100,
+                    percentage: 0,
+                    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                    submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    timeSpent: `${Math.max(1, Math.floor((5400 - examTimeRemaining) / 60))} mins`,
+                    feedback: `EXAM TERMINATED BY AI PROCTOR: Disqualified after 2 alerts. 3 proctoring violations recorded: ${violationExitDetail}.`,
+                    status: 'Terminated (AI Proctor Violation: 3 Strikes - Face Missing or Others Present)',
+                    evaluatedBy: 'Automated AI Proctor Security',
+                    teacherName: currentExam?.teacherName || 'Course Invigilator',
+                    teacherEmail: currentExam?.teacherEmail || '',
+                    questions: [],
+                    answers: studentAnswers
+                  };
+
+                  const existingCompleted = JSON.parse(localStorage.getItem('student_completed_results') || '[]');
+                  localStorage.setItem('student_completed_results', JSON.stringify([terminatedResult, ...existingCompleted]));
+
+                  const existingShared = JSON.parse(localStorage.getItem('shared_student_results') || '[]');
+                  localStorage.setItem('shared_student_results', JSON.stringify([terminatedResult, ...existingShared]));
+
+                  const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+                  const termLog = {
+                    id: `log_${Date.now()}`,
+                    student: student.name,
+                    studentName: student.name,
+                    teacherEmail: currentExam?.teacherEmail || '',
+                    teacherName: currentExam?.teacherName || '',
+                    examId: currentExam?.id || currentExam?._id || '',
+                    examTitle: termExamTitle,
+                    status: `⛔ TERMINATED: 3 Proctoring Violations (${violationExitDetail})`,
+                    statusBadge: '🔴 TERMINATED: ' + student.name,
+                    started: '10:00 AM',
+                    remaining: '00:00:00',
+                    answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions?.length || 3}`,
+                    voice: '⛔ Terminated (Disqualified)',
+                    submitted: 'Terminated',
+                    isTerminated: true
+                  };
+                  localStorage.setItem('shared_live_logs', JSON.stringify([termLog, ...existingLogs.filter(l => l.student !== student.name)]));
+                  window.dispatchEvent(new Event('storage'));
+                } catch (e) {}
+
+                setFaceMismatchActiveAlert(null);
+                setShowMultiplePeopleWarningModal(false);
+
+                setExamTerminationModal({
+                  studentName: student.name,
+                  examTitle: termExamTitle,
+                  reason: `3 Proctoring Violations: ${violationExitDetail}`,
+                  alert1Reason: violationTitle,
+                  alert2Reason: violationTitle,
+                  details: `During this exam session, you received 2 warnings for proctoring violations (${violationExitDetail}). On the 3rd violation, as per strict automated proctoring rules, your exam was automatically terminated and submitted with a zero score. You have been returned to the dashboard.`
+                });
+
+                setCurrentExam(null);
+                setExamSubmitted(false);
+                setIsExamActive(false);
+                setActiveTab('Dashboard');
               }
             }
           }
@@ -5279,18 +5230,60 @@ export default function StudentDashboard() {
       return;
     }
 
-    // Main Subjects Voice Matching & Switching
+    // 1. Command: Speak all features that are present
+    if (
+      transcript.includes('speak all the features that are present') ||
+      transcript.includes('speak all the features') ||
+      transcript.includes('speak all features that are present') ||
+      transcript.includes('speak all features') ||
+      transcript.includes('all the features that are present') ||
+      transcript.includes('all features that are present') ||
+      transcript.includes('features that are present') ||
+      transcript.includes('what are the features') ||
+      transcript.includes('speak features') ||
+      transcript.includes('tell me features') ||
+      transcript.includes('tell me all features') ||
+      transcript.includes('list all features') ||
+      transcript.includes('list features') ||
+      transcript === 'features' ||
+      transcript === 'all features'
+    ) {
+      closeVoiceAssistant(false);
+      speakDashboardFeatures();
+      return;
+    }
+
+    // 2. Command: User sets / changes interested subject ("my interested subject is xyz...")
+    const subjectPrefixRegex = /(?:my\s+(?:interested|intrested)\s+subject\s+(?:is|to|as)|(?:interested|intrested)\s+subject\s+(?:is|to|as)|(?:change|switch|set)\s+(?:my\s+)?(?:interested\s+|intrested\s+)?subject\s+(?:to|is|as)|my\s+subject\s+is|interested\s+in|intrested\s+in)\s+(.*)/i;
+    const prefixMatch = transcript.match(subjectPrefixRegex);
+    if (prefixMatch && prefixMatch[1]) {
+      const rawCandidate = prefixMatch[1].trim();
+      const matchedSubject = findMainSubject(rawCandidate) || findMainSubject(transcript);
+      if (matchedSubject) {
+        closeVoiceAssistant(false);
+        handleSwitchStudentSubject(matchedSubject);
+        return;
+      } else {
+        closeVoiceAssistant(false);
+        speakText(`I heard your interested subject as ${rawCandidate}. Please choose from our main academic subjects: Computer Science, Mathematics, Physics, Chemistry, Biology, Commerce, Social Science, or Engineering.`);
+        return;
+      }
+    }
+
+    // 3. Main Subjects Voice Matching & Switching
     const matchedMain = findMainSubject(transcript);
     if (matchedMain) {
       const lowerMain = matchedMain.toLowerCase();
       if (
         transcript === lowerMain ||
+        transcript.includes(lowerMain) ||
         transcript.includes(`switch to ${lowerMain}`) || 
         transcript.includes(`change subject to ${lowerMain}`) || 
         transcript.includes(`choose ${lowerMain}`) || 
         transcript.includes(`select ${lowerMain}`) ||
         transcript.includes(`like ${lowerMain}`) ||
         transcript.includes(`interested in ${lowerMain}`) ||
+        transcript.includes(`intrested in ${lowerMain}`) ||
         transcript.includes(`focus on ${lowerMain}`) ||
         transcript.startsWith('subject ') ||
         transcript.endsWith(' subject') ||
@@ -5303,6 +5296,7 @@ export default function StudentDashboard() {
         transcript === 'social science' ||
         transcript === 'engineering'
       ) {
+        closeVoiceAssistant(false);
         handleSwitchStudentSubject(matchedMain);
         return;
       }
@@ -5748,20 +5742,13 @@ export default function StudentDashboard() {
       }
     };
 
-    const handleDashboardGlobalClick = (e) => {
-      if (e.target.closest('input') || e.target.closest('button') || e.target.closest('a') || e.target.closest('textarea') || e.target.closest('select') || isVoiceListening) {
-        return;
-      }
-      triggerVoiceCommand();
-    };
-
     window.addEventListener('keydown', handleDashboardKeys);
     window.addEventListener('click', handleDashboardGlobalClick);
     return () => {
       window.removeEventListener('keydown', handleDashboardKeys);
       window.removeEventListener('click', handleDashboardGlobalClick);
     };
-  }, [isVoiceListening, isVoiceAssistantEnabled]);
+  }, [isVoiceListening, isVoiceAssistantEnabled, isVoiceProfileWizardOpen]);
 
   // Voice Assistant command trigger: speaks prompt, streams live speech transcript
   const triggerVoiceCommand = async () => {
@@ -5957,7 +5944,7 @@ export default function StudentDashboard() {
 
     const promptText = (currentExam && activeTab === 'AI Exam Assistant')
       ? "Listening for your answer. Speak freely or say DONE when finished, or say CLOSE to exit."
-      : "Listening. Say your command.";
+      : "Listening. What help can I do for you? Say your command, or say speak all features, or tell me your interested subject.";
 
     const promptSpeechLang = 'en-US';
 
@@ -5968,6 +5955,23 @@ export default function StudentDashboard() {
     if (voiceFallbackTimeoutRef.current) clearTimeout(voiceFallbackTimeoutRef.current);
     const fallbackTimeout = Math.max(2500, promptText.length * 75);
     voiceFallbackTimeoutRef.current = setTimeout(safeStartMic, fallbackTimeout);
+  };
+
+  const handleDashboardGlobalClick = (e) => {
+    if (
+      !isVoiceAssistantEnabled ||
+      e.target.closest('input') || 
+      e.target.closest('button') || 
+      e.target.closest('a') || 
+      e.target.closest('textarea') || 
+      e.target.closest('select') || 
+      e.target.closest('[role="button"]') ||
+      isVoiceListeningRef.current || 
+      isVoiceProfileWizardOpen
+    ) {
+      return;
+    }
+    triggerVoiceCommand();
   };
 
   // Initial Voice Welcome Greeting on Dashboard mount
@@ -6134,6 +6138,7 @@ export default function StudentDashboard() {
 
   return (
     <div 
+      onClick={handleDashboardGlobalClick}
       style={{ display: 'flex', minHeight: '100vh', background: accessibility.highContrast ? '#000000' : '#f8fafc', color: accessibility.highContrast ? '#ffff00' : '#0f172a', fontFamily: "'Inter', system-ui, sans-serif" }}
     >
       
@@ -6555,11 +6560,11 @@ export default function StudentDashboard() {
             </div>
 
             <h2 style={{ fontSize: '23px', fontWeight: '900', color: '#991b1b', margin: '0 0 10px 0' }}>
-              {faceMismatchActiveAlert.strike === 2 ? 'Final Warning: Unrecognized Person!' : 'Unrecognized Person Detected!'}
+              {faceMismatchActiveAlert.heading || (faceMismatchActiveAlert.strike === 2 ? 'Final Warning: Proctoring Violation!' : 'Proctoring Violation Detected!')}
             </h2>
 
             <p style={{ fontSize: '15px', color: '#334155', lineHeight: 1.5, margin: '0 0 18px 0', fontWeight: '600' }}>
-              The person in front of the camera <strong>does NOT match registered candidate {student.name}</strong>.
+              {faceMismatchActiveAlert.message || `The person in front of the camera does NOT match registered candidate ${student.name}.`}
             </p>
 
             {/* Strike Progress Tracker */}
@@ -6614,9 +6619,9 @@ export default function StudentDashboard() {
                   : '🔒 Proctoring Enforcement:'}
               </b>
               <p style={{ margin: 0, color: '#7f1d1d', fontSize: '13px', lineHeight: 1.5 }}>
-                {faceMismatchActiveAlert.strike === 2
-                  ? `If an unrecognized person continues to be detected, your exam will immediately terminate, your score will be disqualified, and you will be returned to the dashboard!`
-                  : `Only registered student ${student.name} is permitted to write this exam. Voice assistant and answer inputs remain locked until ${student.name} returns to the camera.`}
+                {faceMismatchActiveAlert.submessage || (faceMismatchActiveAlert.strike === 2
+                  ? `If the proctoring violation continues, your exam will immediately terminate, your score will be disqualified, and you will be returned to the dashboard!`
+                  : `Only registered student ${student.name} is permitted to write this exam alone. Voice assistant and answer inputs remain locked until candidate ${student.name} returns to the camera.`)}
               </p>
             </div>
 
@@ -6625,7 +6630,7 @@ export default function StudentDashboard() {
                 type="button"
                 onClick={() => {
                   setFaceMismatchActiveAlert(null);
-                  speakText("Checking camera view. Ensure registered candidate " + student.name + " is facing the camera.");
+                  speakText("Checking camera view. Ensure registered candidate " + student.name + " is alone and facing the camera.");
                 }}
                 style={{
                   background: '#dc2626',
@@ -6639,7 +6644,11 @@ export default function StudentDashboard() {
                   boxShadow: '0 4px 14px rgba(220, 38, 38, 0.4)'
                 }}
               >
-                ✓ Position Candidate {student.name} & Continue
+                {faceMismatchActiveAlert.type === 'face_absent'
+                  ? '✓ Look at Camera & Continue'
+                  : faceMismatchActiveAlert.type === 'multiple_people'
+                    ? '✓ Ensure You Are Alone & Continue'
+                    : `✓ Position Candidate ${student.name} & Continue`}
               </button>
             </div>
           </div>
@@ -6713,7 +6722,7 @@ export default function StudentDashboard() {
             </h2>
 
             <p style={{ fontSize: '15px', color: '#334155', lineHeight: 1.5, margin: '0 0 20px 0', fontWeight: '600' }}>
-              Your examination for <strong>{examTerminationModal.examTitle}</strong> was terminated because an <strong>unrecognized person</strong> was detected in front of the camera instead of registered candidate <strong>{examTerminationModal.studentName}</strong>.
+              {examTerminationModal.details || `Your examination for <strong>${examTerminationModal.examTitle}</strong> was terminated because of repeated proctoring violations.`}
             </p>
 
             <div style={{ background: '#fef2f2', border: '2px solid #fca5a5', borderRadius: '16px', padding: '18px', marginBottom: '24px', textAlign: 'left' }}>
@@ -6722,10 +6731,10 @@ export default function StudentDashboard() {
                 <b style={{ color: '#991b1b', fontSize: '14px' }}>Violation Summary:</b>
               </div>
               <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '13px', lineHeight: 1.6 }}>
-                <li><strong>Alert 1 of 2:</strong> Unrecognized face detected & warned.</li>
-                <li><strong>Alert 2 of 2:</strong> Final warning issued for unauthorized face.</li>
-                <li><strong>Action:</strong> 2 warning limits exceeded. Automatic exam termination executed.</li>
-                <li>Teacher and invigilator dashboards have been notified of this malpractice event.</li>
+                <li><strong>Alert 1 of 2:</strong> {examTerminationModal.alert1Reason || 'First warning issued for proctoring violation.'}</li>
+                <li><strong>Alert 2 of 2:</strong> {examTerminationModal.alert2Reason || 'Second / final warning issued for proctoring violation.'}</li>
+                <li><strong>Violation 3 (Action):</strong> Limit of 2 alerts exceeded. Automatic exam termination and exit executed.</li>
+                <li>Teacher and invigilator dashboards have been notified of this proctoring event.</li>
               </ul>
             </div>
 
@@ -6934,11 +6943,10 @@ export default function StudentDashboard() {
             </p>
 
             {/* Step Progress Pills */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '28px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '28px' }}>
               {[
                 { num: 1, label: 'Full Name', value: wizardFormData.name },
-                { num: 2, label: 'Date of Birth', value: wizardFormData.dob },
-                { num: 3, label: 'Main Subject', value: wizardFormData.subject }
+                { num: 2, label: 'Main Subject', value: wizardFormData.subject }
               ].map(st => {
                 const isActive = voiceProfileStep === st.num;
                 const isPassed = voiceProfileStep > st.num || (st.value && !isActive);
@@ -7055,15 +7063,13 @@ export default function StudentDashboard() {
 
               {/* Step Question Heading */}
               <h3 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: '900', color: '#0369a1' }}>
-                {voiceProfileStep === 1 && "Step 1: What is your full name?"}
-                {voiceProfileStep === 2 && "Step 2: What is your date of birth?"}
-                {voiceProfileStep === 3 && "Step 3: What is your focused main subject?"}
+                {voiceProfileStep === 1 && "Step 1 of 2: What is your full name?"}
+                {voiceProfileStep === 2 && "Step 2 of 2: What is your focused main subject?"}
               </h3>
 
               <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b', fontWeight: '600' }}>
                 {voiceProfileStep === 1 && 'Example: "Alex Smith", "Nayana N S", "Priya Sharma"'}
-                {voiceProfileStep === 2 && 'Example: "15 August 2004", "10 May 2002", "March 24 2003"'}
-                {voiceProfileStep === 3 && 'Choose one: Computer Science, Mathematics, Physics, Chemistry, Biology, Commerce, Social Science, or Engineering'}
+                {voiceProfileStep === 2 && 'Choose one: Computer Science, Mathematics, Physics, Chemistry, Biology, Commerce, Social Science, or Engineering'}
               </p>
 
               {/* Live Transcript / Current Spoken Value Box */}
@@ -7116,32 +7122,6 @@ export default function StudentDashboard() {
               )}
 
               {voiceProfileStep === 2 && (
-                <div style={{ maxWidth: '420px', margin: '0 auto' }}>
-                  <input 
-                    type="text"
-                    value={wizardFormData.dob}
-                    placeholder="Enter or confirm date of birth (e.g. 15 August 2004)"
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setWizardFormData(prev => ({ ...prev, dob: val }));
-                      wizardFormRef.current = { ...wizardFormRef.current, dob: val };
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '12px 16px',
-                      borderRadius: '12px',
-                      border: '2px solid #0284c7',
-                      fontSize: '15px',
-                      fontWeight: '800',
-                      color: '#0f172a',
-                      boxSizing: 'border-box',
-                      textAlign: 'center'
-                    }}
-                  />
-                </div>
-              )}
-
-              {voiceProfileStep === 3 && (
                 <div>
                   <small style={{ fontSize: '11px', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '10px' }}>
                     Click or speak any Main Subject:
@@ -7247,7 +7227,7 @@ export default function StudentDashboard() {
                 </button>
               )}
 
-              {voiceProfileStep < 3 ? (
+              {voiceProfileStep < 2 ? (
                 <button
                   type="button"
                   onClick={handleWizardNextStep}
@@ -7280,7 +7260,7 @@ export default function StudentDashboard() {
                     boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)'
                   }}
                 >
-                  💾 Save & Finish Profile
+                  ✓ Complete & Save Profile
                 </button>
               )}
 
@@ -7959,8 +7939,8 @@ export default function StudentDashboard() {
             }}>
               {currentExam ? (
                 <div>
-                  {/* RED ALERT BANNER: Displayed in RED when others or unauthorized persons are writing */}
-                  {(isOtherPersonDetected || !isScannedStudentWriting) && (
+                  {/* RED ALERT BANNER: Displayed in RED when face is missing or others are present */}
+                  {(isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected) && (
                     <div style={{
                       background: '#fee2e2',
                       border: '3px solid #dc2626',
@@ -7990,12 +7970,24 @@ export default function StudentDashboard() {
                         </div>
                         <div>
                           <b style={{ fontSize: '16px', color: '#991b1b', display: 'block' }}>
-                            {faceMismatchStrikeCount > 0 
-                              ? `SECURITY ALERT (WARNING ${faceMismatchStrikeCount}/2): UNRECOGNIZED PERSON DETECTED!` 
-                              : 'SECURITY ALERT: UNRECOGNIZED PERSON DETECTED (OTHERS WRITING)!'}
+                            {!isFacePresentInExam
+                              ? (faceMismatchStrikeCount > 0 
+                                  ? `PROCTOR ALERT (WARNING ${faceMismatchStrikeCount}/2): SCANNED FACE NOT DETECTED!` 
+                                  : 'PROCTOR ALERT: SCANNED FACE NOT DETECTED IN CAMERA!')
+                              : isMultiplePeopleDetected
+                                ? (faceMismatchStrikeCount > 0
+                                    ? `PROCTOR ALERT (WARNING ${faceMismatchStrikeCount}/2): MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People)!`
+                                    : `PROCTOR ALERT: MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People in View)!`)
+                                : (faceMismatchStrikeCount > 0 
+                                    ? `SECURITY ALERT (WARNING ${faceMismatchStrikeCount}/2): UNRECOGNIZED PERSON DETECTED!` 
+                                    : 'SECURITY ALERT: UNRECOGNIZED PERSON DETECTED (OTHERS WRITING)!')}
                           </b>
                           <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#b91c1c' }}>
-                            The person in front of the camera does NOT match scanned student <strong>{student.name}</strong>. {faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. After 2 alerts, the exam will automatically terminate and exit.`}
+                            {!isFacePresentInExam
+                              ? `Your face is not detected in front of the exam camera. Please look directly into the camera. ${faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate and exit your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. On the 3rd violation, the exam will automatically exit!`}`
+                              : isMultiplePeopleDetected
+                                ? `Multiple people (${detectedPeopleCount} people) detected in front of the camera. Only candidate ${student.name} is permitted to write this exam. ${faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate and exit your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. On the 3rd violation, the exam will automatically exit!`}`
+                                : `The person in front of the camera does NOT match scanned student ${student.name}. ${faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. On the 3rd violation, the exam will automatically exit!`}`}
                           </p>
                         </div>
                       </div>
@@ -8010,7 +8002,9 @@ export default function StudentDashboard() {
                           letterSpacing: '0.5px',
                           textTransform: 'uppercase'
                         }}>
-                          {faceMismatchStrikeCount > 0 ? `🔴 WARNING ${faceMismatchStrikeCount} OF 2` : '🔴 OTHERS WRITING'}
+                          {faceMismatchStrikeCount > 0 
+                            ? (faceMismatchStrikeCount >= 2 ? '🚨 FINAL ALERT (2 OF 2)' : `⚠️ ALERT ${faceMismatchStrikeCount} OF 2`) 
+                            : '🔴 PROCTOR ALERT'}
                         </span>
                       </div>
                     </div>
@@ -8025,12 +8019,12 @@ export default function StudentDashboard() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <div style={{
-                        background: (isOtherPersonDetected || !isScannedStudentWriting) ? '#fee2e2' : '#f0fdf4',
-                        border: (isOtherPersonDetected || !isScannedStudentWriting) ? '1px solid #f87171' : '1px solid #86efac',
+                        background: (isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected) ? '#fee2e2' : '#f0fdf4',
+                        border: (isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected) ? '1px solid #f87171' : '1px solid #86efac',
                         padding: '8px 14px',
                         borderRadius: '10px',
                         fontWeight: '800',
-                        color: (isOtherPersonDetected || !isScannedStudentWriting) ? '#dc2626' : '#166534',
+                        color: (isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected) ? '#dc2626' : '#166534',
                         fontSize: '13px',
                         display: 'flex',
                         alignItems: 'center',
@@ -8040,10 +8034,16 @@ export default function StudentDashboard() {
                           width: '8px',
                           height: '8px',
                           borderRadius: '50%',
-                          background: (isOtherPersonDetected || !isScannedStudentWriting) ? '#dc2626' : '#22c55e',
+                          background: (isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected) ? '#dc2626' : '#22c55e',
                           display: 'inline-block'
                         }}></span>
-                        {(isOtherPersonDetected || !isScannedStudentWriting) ? (faceMismatchStrikeCount > 0 ? `🔴 WRONG PERSON (Alert ${faceMismatchStrikeCount}/2)` : '🔴 OTHERS DETECTED (PROCTOR ALERT)') : '🛡️ Scanned Student Verified'}
+                        {(isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected) 
+                          ? (!isFacePresentInExam 
+                              ? (faceMismatchStrikeCount > 0 ? `🔴 FACE MISSING (Alert ${faceMismatchStrikeCount}/2)` : '🔴 FACE MISSING') 
+                              : isMultiplePeopleDetected 
+                                ? (faceMismatchStrikeCount > 0 ? `🚨 MULTIPLE PEOPLE (Alert ${faceMismatchStrikeCount}/2)` : '🚨 MULTIPLE PEOPLE') 
+                                : (faceMismatchStrikeCount > 0 ? `🔴 WRONG PERSON (Alert ${faceMismatchStrikeCount}/2)` : '🔴 UNAUTHORIZED PERSON')) 
+                          : '🛡️ Scanned Student Verified'}
                       </div>
                       <div style={{ background: '#f0f9ff', padding: '8px 16px', borderRadius: '10px', border: '1px solid #bae6fd', fontWeight: 'bold', color: '#0284c7' }}>
                         ⏱ Time Remaining: {Math.floor(examTimeRemaining / 60)}m {examTimeRemaining % 60}s
@@ -8062,39 +8062,61 @@ export default function StudentDashboard() {
                     </div>
                   ) : (
                     <div>
-                      {/* Continuous AI Facial Proctoring Card (Monitors whether Scanned Student is Writing or Others) */}
+                      {/* Continuous AI Facial Proctoring Card with High-Visibility Live Webcam Feed */}
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: '16px',
-                        background: (isOtherPersonDetected || !isScannedStudentWriting)
+                        background: (isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected)
                           ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)'
                           : 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
-                        border: (isOtherPersonDetected || !isScannedStudentWriting)
+                        border: (isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected)
                           ? '2px solid #ef4444'
                           : '2px solid #86efac',
                         borderRadius: '16px',
-                        padding: '12px 18px',
+                        padding: '14px 18px',
                         marginBottom: '20px',
-                        boxShadow: (isOtherPersonDetected || !isScannedStudentWriting)
+                        boxShadow: (isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam || isMultiplePeopleDetected)
                           ? '0 0 20px rgba(239, 68, 68, 0.4)'
                           : '0 4px 14px rgba(34, 197, 94, 0.12)',
                         transition: 'all 0.3s ease'
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          {/* Live Webcam Mini Stream */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                          {/* Live Webcam Stream Box (High-Visibility for Proctoring & Face Recognition) */}
                           <div style={{
-                            width: '100px',
-                            height: '75px',
-                            borderRadius: '10px',
+                            width: '140px',
+                            height: '105px',
+                            borderRadius: '12px',
                             overflow: 'hidden',
                             background: '#0f172a',
                             position: 'relative',
-                            border: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '3px solid #dc2626' : '2px solid #22c55e',
-                            boxShadow: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '0 0 18px rgba(239, 68, 68, 0.85)' : '0 0 10px rgba(34, 197, 94, 0.4)',
+                            border: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '3px solid #dc2626' : '3px solid #22c55e',
+                            boxShadow: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '0 0 18px rgba(239, 68, 68, 0.85)' : '0 0 10px rgba(34, 197, 94, 0.4)',
                             flexShrink: 0
                           }}>
+                            {/* Webcam Label Header */}
+                            <div style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              zIndex: 10,
+                              background: 'rgba(15, 23, 42, 0.85)',
+                              color: '#f8fafc',
+                              fontSize: '8px',
+                              fontWeight: '900',
+                              padding: '2px 6px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              letterSpacing: '0.4px',
+                              textTransform: 'uppercase'
+                            }}>
+                              <span>📷 EXAM WEBCAM</span>
+                              <span style={{ color: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#ef4444' : '#22c55e' }}>● LIVE</span>
+                            </div>
+
                             <video
                               ref={proctorVideoRef}
                               autoPlay
@@ -8107,108 +8129,175 @@ export default function StudentDashboard() {
                             {/* Live Face Bounding Box Overlay Drawn Over Camera Feed */}
                             <div style={{
                               position: 'absolute',
-                              inset: '4px',
-                              border: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting)
+                              inset: '16px 6px 6px 6px',
+                              border: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam)
                                 ? '2px dashed #ef4444'
                                 : '2px dashed #22c55e',
-                              background: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting)
+                              background: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam)
                                 ? 'rgba(239, 68, 68, 0.22)'
                                 : 'rgba(34, 197, 94, 0.10)',
                               borderRadius: '6px',
                               pointerEvents: 'none',
-                              boxShadow: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting)
+                              boxShadow: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam)
                                 ? 'inset 0 0 10px rgba(239, 68, 68, 0.6)'
                                 : 'inset 0 0 6px rgba(34, 197, 94, 0.3)',
                               transition: 'all 0.3s ease'
                             }}>
                               <span style={{
                                 position: 'absolute',
-                                top: '2px',
+                                bottom: '2px',
                                 left: '2px',
                                 fontSize: '8px',
                                 fontWeight: '900',
-                                background: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '#dc2626' : '#16a34a',
+                                background: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#dc2626' : '#16a34a',
                                 color: '#ffffff',
-                                padding: '1px 4px',
+                                padding: '1px 5px',
                                 borderRadius: '3px',
-                                letterSpacing: '0.2px',
+                                letterSpacing: '0.3px',
                                 lineHeight: '1.1'
                               }}>
-                                {(isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? (faceMismatchStrikeCount > 0 ? `🚨 WRONG PERSON (${faceMismatchStrikeCount}/2)` : '🚨 UNAUTHORIZED') : '✓ CANDIDATE'}
+                                {!isFacePresentInExam 
+                                  ? '🔴 NO FACE' 
+                                  : isMultiplePeopleDetected 
+                                    ? `🚨 MULTIPLE (${detectedPeopleCount})` 
+                                    : (isOtherPersonDetected || !isScannedStudentWriting) 
+                                      ? (faceMismatchStrikeCount > 0 ? `🚨 WRONG PERSON (${faceMismatchStrikeCount}/2)` : '🚨 UNAUTHORIZED') 
+                                      : '✓ CANDIDATE'}
                               </span>
                             </div>
 
                             <div style={{
                               position: 'absolute',
-                              top: '4px',
+                              top: '18px',
                               right: '4px',
                               width: '10px',
                               height: '10px',
                               borderRadius: '50%',
-                              background: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '#ef4444' : '#22c55e',
-                              boxShadow: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '0 0 8px #ef4444' : '0 0 6px #22c55e'
+                              background: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#ef4444' : '#22c55e',
+                              boxShadow: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '0 0 8px #ef4444' : '0 0 6px #22c55e'
                             }} />
                           </div>
 
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                              <b style={{ fontSize: '13px', color: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '#991b1b' : '#166534' }}>
-                                {isMultiplePeopleDetected
-                                  ? `🔴 PROCTOR ALERT: MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People in View)!`
-                                  : (isOtherPersonDetected || !isScannedStudentWriting)
-                                    ? `🔴 WARNING ${faceMismatchStrikeCount > 0 ? `(Alert ${faceMismatchStrikeCount}/2)` : ''}: OTHER FACE DETECTED (NOT ${student.name})!`
-                                    : '🟢 Scanned Student Writing: Verified'}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                              <b style={{ fontSize: '13px', color: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#991b1b' : '#166534' }}>
+                                {!isFacePresentInExam
+                                  ? '🔴 PROCTOR ALERT: SCANNED FACE NOT DETECTED IN CAMERA!'
+                                  : isMultiplePeopleDetected
+                                    ? `🔴 PROCTOR ALERT: MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People in View)!`
+                                    : (isOtherPersonDetected || !isScannedStudentWriting)
+                                      ? `🔴 WARNING ${faceMismatchStrikeCount > 0 ? `(Alert ${faceMismatchStrikeCount}/2)` : ''}: OTHER FACE DETECTED (NOT ${student.name})!`
+                                      : '🟢 Scanned Student Writing: Verified'}
                               </b>
                               {isMultiplePeopleDetected ? (
                                 <span style={{ fontSize: '11px', background: '#dc2626', color: '#ffffff', padding: '2px 8px', borderRadius: '10px', fontWeight: '900', letterSpacing: '0.5px' }}>
                                   MALPRACTICE ALERT
                                 </span>
+                              ) : !isFacePresentInExam ? (
+                                <span style={{ fontSize: '11px', background: '#dc2626', color: '#ffffff', padding: '2px 8px', borderRadius: '10px', fontWeight: '900', letterSpacing: '0.5px' }}>
+                                  FACE ABSENT
+                                </span>
                               ) : (isOtherPersonDetected || !isScannedStudentWriting) ? (
                                 <span style={{ fontSize: '11px', background: '#dc2626', color: '#ffffff', padding: '2px 8px', borderRadius: '10px', fontWeight: '900', letterSpacing: '0.5px' }}>
                                   {faceMismatchStrikeCount > 0 ? `ALERT ${faceMismatchStrikeCount}/2` : 'PROCTOR LOCK'}
                                 </span>
-                              ) : faceAbsentWarningsCount > 0 ? (
-                                <span style={{ fontSize: '11px', background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: '10px', fontWeight: '800' }}>
-                                  ⚠️ {faceAbsentWarningsCount} Warning{faceAbsentWarningsCount > 1 ? 's' : ''}
-                                </span>
                               ) : null}
                             </div>
-                            <p style={{ margin: 0, fontSize: '12px', color: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '#b91c1c' : '#15803d' }}>
-                              Candidate: <strong>{student.name}</strong> • Status: {isMultiplePeopleDetected
-                                ? `Malpractice Warning: ${detectedPeopleCount} people detected in front of camera! Only candidate ${student.name} is permitted. Voice & input locked.`
-                                : (isOtherPersonDetected || !isScannedStudentWriting)
-                                  ? `Face mismatch: Unrecognized person in camera! Except verified candidate ${student.name}, no other face is permitted. ${faceMismatchStrikeCount > 0 ? `Warning ${faceMismatchStrikeCount} of 2 issued.` : ''} Inputs and voice assistant are locked.`
-                                  : 'Verified scanned student writing alone. Voice assistant listening.'}
+                            <p style={{ margin: '0 0 6px 0', fontSize: '12px', color: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#b91c1c' : '#15803d' }}>
+                              Candidate: <strong>{student.name}</strong> • Status: {!isFacePresentInExam
+                                ? `Candidate face missing from webcam. You must look directly at the camera. (Alerts: ${faceMismatchStrikeCount} of 2, auto-exit on 3).`
+                                : isMultiplePeopleDetected
+                                  ? `Multiple people (${detectedPeopleCount} people) detected in camera view! Only candidate ${student.name} is permitted. (Alerts: ${faceMismatchStrikeCount} of 2, auto-exit on 3).`
+                                  : (isOtherPersonDetected || !isScannedStudentWriting)
+                                    ? `Face mismatch: Unrecognized person in camera! Except verified candidate ${student.name}, no other face is permitted. (Alerts: ${faceMismatchStrikeCount} of 2, auto-exit on 3).`
+                                    : 'Verified scanned student writing alone. Voice assistant listening.'}
                             </p>
+
+                            {/* 3-Strike Warning Meter: Alerts 2 times, Exits on 3rd time */}
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.7)', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '4px 8px' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '800', color: '#475569' }}>PROCTOR ENFORCEMENT:</span>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '900',
+                                background: faceMismatchStrikeCount >= 1 ? '#dc2626' : '#e2e8f0',
+                                color: faceMismatchStrikeCount >= 1 ? '#ffffff' : '#64748b'
+                              }}>
+                                Alert 1 {faceMismatchStrikeCount >= 1 ? '⚠️' : '○'}
+                              </span>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '900',
+                                background: faceMismatchStrikeCount >= 2 ? '#dc2626' : '#e2e8f0',
+                                color: faceMismatchStrikeCount >= 2 ? '#ffffff' : '#64748b'
+                              }}>
+                                Alert 2 {faceMismatchStrikeCount >= 2 ? '🚨' : '○'}
+                              </span>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '900',
+                                background: '#991b1b',
+                                color: '#ffffff'
+                              }}>
+                                Exit on 3 ⛔
+                              </span>
+                            </div>
                           </div>
                         </div>
 
                         <button
                           type="button"
                           onClick={() => {
-                            if (isMultiplePeopleDetected) {
-                              setShowMultiplePeopleWarningModal(true);
+                            if (!isFacePresentInExam) {
+                              setFaceMismatchActiveAlert({
+                                strike: faceMismatchStrikeCount || 1,
+                                maxStrikes: 2,
+                                type: 'face_absent',
+                                title: `⚠️ PROCTOR ALERT: SCANNED FACE NOT DETECTED`,
+                                heading: `Candidate Face Missing from Camera!`,
+                                message: `Your face is not visible to the exam camera. Please look directly into the camera.`,
+                                submessage: `Proctoring warning ${faceMismatchStrikeCount || 1} of 2. After 2 alerts, the exam will automatically exit!`
+                              });
+                            } else if (isMultiplePeopleDetected) {
+                              setFaceMismatchActiveAlert({
+                                strike: faceMismatchStrikeCount || 1,
+                                maxStrikes: 2,
+                                type: 'multiple_people',
+                                title: `⚠️ PROCTOR ALERT: MULTIPLE PEOPLE DETECTED`,
+                                heading: `Multiple People in Camera View!`,
+                                message: `Facial recognition proctoring detected ${detectedPeopleCount} people in front of your camera.`,
+                                submessage: `Proctoring warning ${faceMismatchStrikeCount || 1} of 2. After 2 alerts, the exam will automatically exit!`
+                              });
                             } else if (isOtherPersonDetected || !isScannedStudentWriting) {
                               setFaceMismatchActiveAlert({
                                 strike: faceMismatchStrikeCount || 1,
                                 maxStrikes: 2,
+                                type: 'face_mismatch',
                                 title: `⚠️ SECURITY ALERT: UNRECOGNIZED PERSON DETECTED`,
+                                heading: `Unrecognized Person Detected!`,
                                 message: `The person in front of the camera does NOT match registered student ${student.name}.`,
                                 submessage: `Proctoring warning ${faceMismatchStrikeCount || 1} of 2. After 2 alerts, the exam will automatically exit!`
                               });
                             }
-                            const proctorStatus = isMultiplePeopleDetected
-                              ? `Malpractice Security Alert: Multiple people detected in exam camera (${detectedPeopleCount} people). Only candidate ${student.name} is permitted to write. Exam inputs and voice assistant are locked.`
-                              : (isOtherPersonDetected || !isScannedStudentWriting)
-                                ? `Security Warning: Unrecognized person detected in exam camera. ${faceMismatchStrikeCount > 0 ? `Warning ${faceMismatchStrikeCount} of 2 has been issued.` : ''} The person writing does not match registered candidate ${student.name}. Voice assistant is locked.`
-                                : `Facial proctoring is verified. Candidate ${student.name} is writing the exam alone. Voice assistant is active.`;
+                            const proctorStatus = !isFacePresentInExam
+                              ? `Proctor alert: Candidate face is not detected in camera. Please face the webcam. You have had ${faceMismatchStrikeCount} of 2 alerts. On the 3rd time, the exam exits.`
+                              : isMultiplePeopleDetected
+                                ? `Malpractice Security Alert: Multiple people detected in exam camera (${detectedPeopleCount} people). Only candidate ${student.name} is permitted to write. You have had ${faceMismatchStrikeCount} of 2 alerts. On the 3rd time, the exam exits.`
+                                : (isOtherPersonDetected || !isScannedStudentWriting)
+                                  ? `Security Warning: Unrecognized person detected in exam camera. ${faceMismatchStrikeCount > 0 ? `Warning ${faceMismatchStrikeCount} of 2 has been issued.` : ''} The person writing does not match registered candidate ${student.name}. On the 3rd time, the exam exits.`
+                                  : `Facial proctoring is verified. Candidate ${student.name} is writing the exam alone in front of the webcam. Voice assistant is active.`;
                             announce(proctorStatus);
                             speakText(proctorStatus);
                           }}
                           style={{
                             background: '#ffffff',
-                            color: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '#991b1b' : '#166534',
-                            border: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting) ? '1px solid #fca5a5' : '1px solid #86efac',
+                            color: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#991b1b' : '#166534',
+                            border: (isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '1px solid #fca5a5' : '1px solid #86efac',
                             padding: '8px 14px',
                             borderRadius: '8px',
                             fontWeight: '800',
@@ -10176,7 +10265,7 @@ export default function StudentDashboard() {
                     </div>
                     <div>
                       <b style={{ color: '#0369a1', fontSize: '15px', display: 'block' }}>Step-by-Step Voice Assistant Profile Setup</b>
-                      <span style={{ color: '#0c4a6e', fontSize: '13px' }}>Our voice assistant will guide you step by step to speak and fill your name, date of birth, and main subject.</span>
+                      <span style={{ color: '#0c4a6e', fontSize: '13px' }}>Our voice assistant will guide you step by step to speak and fill your name and main subject.</span>
                     </div>
                   </div>
                   <button
@@ -10218,16 +10307,7 @@ export default function StudentDashboard() {
                     field="email" 
                     formState={profileEditForm} 
                     setFormState={setProfileEditForm} 
-                  />
-
-                  {/* 4. Date of Birth */}
-                  <ProfileDetailCard 
-                    label="DATE OF BIRTH" 
-                    value={studentProfile.dob} 
-                    isEditing={isEditingProfile} 
-                    field="dob" 
-                    formState={profileEditForm} 
-                    setFormState={setProfileEditForm} 
+                    style={{ gridColumn: 'span 2' }}
                   />
 
                   {/* 5. Focused Main Academic Subject */}

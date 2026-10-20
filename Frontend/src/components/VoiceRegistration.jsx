@@ -305,10 +305,20 @@ export default function VoiceRegistrationPage() {
           speak(strings.invalidPassword, () => startGuidedFlow('password'));
           return;
         }
+        if (roleRef.current === 'student' && !/^[a-zA-Z0-9]+$/.test(formattedPwd)) {
+          setErrorMessage('Student password must contain only alphabets and numbers.');
+          speak("Student password must contain only alphabets and numbers, with no special characters. Please speak your password again.", () => startGuidedFlow('password'));
+          return;
+        }
         confirmFieldValue('password', 'your password', 'confirmPassword');
       } else if (targetField === 'confirmPassword') {
         const formattedConf = formatSpeech(rawTranscript, 'confirmPassword');
         updateField('confirmPassword', formattedConf);
+        if (roleRef.current === 'student' && !/^[a-zA-Z0-9]+$/.test(formattedConf)) {
+          setErrorMessage('Student password must contain only alphabets and numbers.');
+          speak("Confirm Password must contain only alphabets and numbers. Please speak your confirmation password again.", () => startGuidedFlow('confirmPassword'));
+          return;
+        }
         setActiveField(null);
         confirmFieldValue('confirmPassword', 'your confirmation password', 'submit');
       }
@@ -377,6 +387,11 @@ export default function VoiceRegistrationPage() {
     if (!pwdVal || pwdVal.length < 8) {
       setErrorMessage('Password must be at least 8 characters long.');
       speak(strings.invalidPassword, () => startGuidedFlow('password'));
+      return;
+    }
+    if (roleRef.current === 'student' && !/^[a-zA-Z0-9]+$/.test(pwdVal)) {
+      setErrorMessage('Student password must contain only alphabets and numbers (no special characters).');
+      speak("Student password must contain only alphabets and numbers.", () => startGuidedFlow('password'));
       return;
     }
     if (pwdVal !== confVal) {
@@ -588,6 +603,13 @@ export default function VoiceRegistrationPage() {
             />
           </div>
 
+          {/* Student Password Rule Badge */}
+          {role === 'student' && (
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '8px 12px', fontSize: '11px', color: '#1e40af', fontWeight: '600' }}>
+              ℹ️ <strong>Student Password Rule:</strong> Must contain <strong>only alphabets (A-Z, a-z) and numbers (0-9)</strong>. No special characters allowed.
+            </div>
+          )}
+
           {/* Set Password */}
           <div style={{ position: 'relative' }}>
             <Lock size={16} color={activeField === 'password' ? '#0284c7' : '#64748b'} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
@@ -596,9 +618,12 @@ export default function VoiceRegistrationPage() {
               type={showPassword ? 'text' : 'password'}
               name="voice_reg_password"
               autoComplete="new-password"
-              placeholder="Set Password (min 8 characters)"
+              placeholder={role === 'student' ? "Set Password (alphabets & numbers only, min 8 chars)" : "Set Password (min 8 characters)"}
               value={password}
-              onChange={(e) => updateField('password', e.target.value)}
+              onChange={(e) => {
+                const val = role === 'student' ? e.target.value.replace(/[^a-zA-Z0-9]/g, '') : e.target.value;
+                updateField('password', val);
+              }}
               style={{
                 ...inputStyle,
                 paddingRight: '40px',
@@ -625,9 +650,12 @@ export default function VoiceRegistrationPage() {
               type={showConfirmPassword ? 'text' : 'password'}
               name="voice_reg_confirm_password"
               autoComplete="new-password"
-              placeholder="Confirm Password"
+              placeholder={role === 'student' ? "Confirm Password (alphabets & numbers only)" : "Confirm Password"}
               value={confirmPassword}
-              onChange={(e) => updateField('confirmPassword', e.target.value)}
+              onChange={(e) => {
+                const val = role === 'student' ? e.target.value.replace(/[^a-zA-Z0-9]/g, '') : e.target.value;
+                updateField('confirmPassword', val);
+              }}
               style={{
                 ...inputStyle,
                 paddingRight: '40px',

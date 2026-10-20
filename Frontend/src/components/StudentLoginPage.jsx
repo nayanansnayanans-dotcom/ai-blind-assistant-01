@@ -247,7 +247,7 @@ export default function StudentLoginPage() {
     } else if (targetField === 'otp') {
       promptMsg = "Step 3: Verify OTP. A 6-digit login OTP code has been sent to your email. Please speak your 6-digit OTP code to verify OTP and log in.";
     } else if (targetField === 'password') {
-      promptMsg = "Step 3: Please enter your password, or say FORGOT PASSWORD if you have forgotten your password.";
+      promptMsg = "Step 3: Please enter your password using only alphabets and numbers, or say FORGOT PASSWORD if you have forgotten your password.";
     } else if (targetField === 'confirm_password') {
       promptMsg = `You entered password ${pendingPasswordRef.current || password}. Is this correct? Say CONFIRM to login, say NO to re-enter, or say FORGOT PASSWORD to reset your password.`;
     } else if (targetField === 'redirect_register') {
@@ -1309,10 +1309,11 @@ export default function StudentLoginPage() {
                     type={showPassword ? 'text' : 'password'}
                     name="student_user_password"
                     autoComplete="new-password"
-                    placeholder="••••••••"
+                    placeholder="Enter Password (alphabets & numbers only)"
                     value={password}
                     onChange={(e) => {
-                      setPassword(e.target.value);
+                      const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                      setPassword(val);
                       setErrorMessage('');
                     }}
                     style={{ ...inputStyle, paddingRight: '44px' }}
@@ -1326,6 +1327,7 @@ export default function StudentLoginPage() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+                <small style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>Student passwords contain only letters (a-z, A-Z) and numbers (0-9).</small>
               </div>
 
               <div style={{ textAlign: 'right', marginTop: '-4px' }}>
