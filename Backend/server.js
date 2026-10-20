@@ -20,19 +20,6 @@ app.use(express.json({ limit: '10mb' }));
 
 // 1. API routes
 app.get('/api/health', (_req, res) => res.json({ success: true, message: 'Backend is running' }));
-app.get('/api/debug-paths', (_req, res) => {
-  const fs = require('fs');
-  res.json({
-    __dirname,
-    cwd: process.cwd(),
-    publicDir,
-    publicExists: fs.existsSync(publicDir),
-    dirContents: fs.readdirSync(__dirname),
-    cwdContents: fs.readdirSync(process.cwd()),
-    publicContents: fs.existsSync(publicDir) ? fs.readdirSync(publicDir) : null,
-    assetsExists: fs.existsSync(path.join(publicDir, 'assets')) ? fs.readdirSync(path.join(publicDir, 'assets')) : null
-  });
-});
 app.use('/api/auth', authRoutes);
 app.use('/api/tts', ttsRoutes);
 app.use('/api', teacherRoutes);
