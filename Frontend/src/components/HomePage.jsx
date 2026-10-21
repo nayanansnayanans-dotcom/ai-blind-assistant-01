@@ -78,8 +78,7 @@ export default function HomePage() {
       "Hello and welcome, student! Here are the complete audio instructions for blind users. " +
       "First: Voice Control. You can tap anywhere on the screen at any time to activate the microphone and speak your voice command. " +
       "Second: Navigation Commands. Say 'Student Login' to go to login. Say 'Register' to create your account. Say 'Student Dashboard' to view your portal. " +
-      "Third: AI Assistant Tools. Say 'Camera' for object detection. Say 'OCR Reader' to read printed books and question papers aloud. Say 'Currency' to identify money notes. " +
-      "Fourth: Exam Portal. In your Student Dashboard, you can listen to audio question paper narration and dictate your exam answers using speech to text. " +
+      "Third: Exam Portal. In your Student Dashboard, you can listen to audio question paper narration and dictate your exam answers using speech to text. " +
       "Whenever you are ready, tap anywhere on the screen and speak your command now!";
 
     speak(fullInstructions);
@@ -518,14 +517,6 @@ export default function HomePage() {
               <h3 style={stepTitleStyle}>Student Portal Dashboard</h3>
               <p style={stepBodyStyle}>
                 Say <strong>"Student Dashboard"</strong> to access your profile, exam paper audio narration, voice answer dictation, and results.
-              </p>
-            </div>
-
-            <div style={instructionStepCardStyle}>
-              <div style={stepBadgeStyle}>Step 4</div>
-              <h3 style={stepTitleStyle}>Assistive Tools</h3>
-              <p style={stepBodyStyle}>
-                Say <strong>"Camera"</strong> for hazard detection, <strong>"OCR Reader"</strong> for book reading, or <strong>"Currency"</strong> for money identification.
               </p>
             </div>
 
