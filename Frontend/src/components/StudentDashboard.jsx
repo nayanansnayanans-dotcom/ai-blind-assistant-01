@@ -49,6 +49,126 @@ export const formatDateForVoice = (rawDate) => {
   return str;
 };
 
+// High-Precision Face Crop Extraction & Biometric Feature Representation
+export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) => {
+  if (!canvas) return null;
+  try {
+    const W = canvas.width || 320;
+    const H = canvas.height || 240;
+
+    // Isolate Face Region (bounding box) to prevent room background / walls from corrupting face signature
+    let bx = 0, by = 0, bw = W, bh = H;
+    if (explicitBox && explicitBox.width > 20 && explicitBox.height > 20) {
+      bx = Math.max(0, Math.floor(explicitBox.x || 0));
+      by = Math.max(0, Math.floor(explicitBox.y || 0));
+      bw = Math.min(W - bx, Math.floor(explicitBox.width));
+      bh = Math.min(H - by, Math.floor(explicitBox.height));
+    } else {
+      // Focus on central face oval
+      bx = Math.floor(W * 0.20);
+      by = Math.floor(H * 0.12);
+      bw = Math.floor(W * 0.60);
+      bh = Math.floor(H * 0.76);
+    }
+
+    const faceAspect = bh / Math.max(1, bw);
+
+    // Standardize face crop to normalized 48x48 pixel matrix
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = 48;
+    offCanvas.height = 48;
+    const offCtx = offCanvas.getContext('2d');
+    if (!offCtx) return null;
+
+    offCtx.drawImage(canvas, bx, by, bw, bh, 0, 0, 48, 48);
+    const imgData = offCtx.getImageData(0, 0, 48, 48).data;
+
+    // 1. Compute 6x6 Spatial Luminance Grid (36 spatial face zones)
+    const grid = [];
+    const lumMatrix = new Float32Array(48 * 48);
+    let totalCb = 0;
+    let totalCr = 0;
+    let pixelCount = 0;
+
+    for (let y = 0; y < 48; y++) {
+      for (let x = 0; x < 48; x++) {
+        const idx = (y * 48 + x) * 4;
+        const r = imgData[idx];
+        const g = imgData[idx + 1];
+        const b = imgData[idx + 2];
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        lumMatrix[y * 48 + x] = lum;
+
+        const cb = -0.168736 * r - 0.331264 * g + 0.5 * b + 128;
+        const cr = 0.5 * r - 0.418688 * g - 0.081312 * b + 128;
+        totalCb += cb;
+        totalCr += cr;
+        pixelCount++;
+      }
+    }
+
+    const meanCb = pixelCount > 0 ? (totalCb / pixelCount) : 128;
+    const meanCr = pixelCount > 0 ? (totalCr / pixelCount) : 128;
+
+    // 6x6 Zones (8x8 pixels per zone)
+    for (let zy = 0; zy < 6; zy++) {
+      for (let zx = 0; zx < 6; zx++) {
+        let zoneSum = 0;
+        for (let y = zy * 8; y < (zy + 1) * 8; y++) {
+          for (let x = zx * 8; x < (zx + 1) * 8; x++) {
+            zoneSum += lumMatrix[y * 48 + x];
+          }
+        }
+        grid.push(zoneSum / 64);
+      }
+    }
+
+    // 2. High-Precision Eye Band Edge Gradient (detects glasses frames vs no-glasses, eyebrows, eye spacing)
+    // Eye band is located in normalized rows 12 through 24
+    let eyeEdgeSum = 0;
+    let eyePixelCount = 0;
+    for (let y = 12; y < 24; y++) {
+      for (let x = 4; x < 44; x++) {
+        const gx = Math.abs(lumMatrix[y * 48 + (x + 1)] - lumMatrix[y * 48 + (x - 1)]);
+        const gy = Math.abs(lumMatrix[(y + 1) * 48 + x] - lumMatrix[(y - 1) * 48 + x]);
+        const grad = Math.sqrt(gx * gx + gy * gy);
+        if (grad > 0.15) {
+          eyeEdgeSum += 1;
+        }
+        eyePixelCount++;
+      }
+    }
+    const eyeEdgeEnergy = eyePixelCount > 0 ? (eyeEdgeSum / eyePixelCount) : 0;
+
+    // 3. Mouth & Jaw Band Edge Gradient
+    let mouthEdgeSum = 0;
+    let mouthPixelCount = 0;
+    for (let y = 30; y < 42; y++) {
+      for (let x = 8; x < 40; x++) {
+        const gx = Math.abs(lumMatrix[y * 48 + (x + 1)] - lumMatrix[y * 48 + (x - 1)]);
+        const gy = Math.abs(lumMatrix[(y + 1) * 48 + x] - lumMatrix[(y - 1) * 48 + x]);
+        if (Math.sqrt(gx * gx + gy * gy) > 0.15) {
+          mouthEdgeSum += 1;
+        }
+        mouthPixelCount++;
+      }
+    }
+    const mouthEdgeEnergy = mouthPixelCount > 0 ? (mouthEdgeSum / mouthPixelCount) : 0;
+
+    return {
+      grid,
+      eyeEdgeEnergy,
+      mouthEdgeEnergy,
+      faceAspect,
+      meanCb,
+      meanCr,
+      isFaceCrop: true
+    };
+  } catch (e) {
+    return null;
+  }
+};
+
 // Biometric Feature Extraction from Registered Profile Picture
 export const extractBiometricFeaturesFromImage = (imgSrc) => {
   return new Promise((resolve) => {
@@ -60,48 +180,15 @@ export const extractBiometricFeaturesFromImage = (imgSrc) => {
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       try {
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = 64;
-        offCanvas.height = 64;
-        const offCtx = offCanvas.getContext('2d');
-        if (!offCtx) { resolve(null); return; }
-        offCtx.drawImage(img, 0, 0, 64, 64);
-        const imgData = offCtx.getImageData(0, 0, 64, 64).data;
-        
-        const featureVector = [];
-        let totalR = 0, totalG = 0, totalB = 0;
-        
-        for (let zoneY = 0; zoneY < 4; zoneY++) {
-          for (let zoneX = 0; zoneX < 4; zoneX++) {
-            let zoneLum = 0;
-            let zoneSkin = 0;
-            let count = 0;
-            for (let y = zoneY * 16; y < (zoneY + 1) * 16; y++) {
-              for (let x = zoneX * 16; x < (zoneX + 1) * 16; x++) {
-                const idx = (y * 64 + x) * 4;
-                const r = imgData[idx];
-                const g = imgData[idx + 1];
-                const b = imgData[idx + 2];
-                totalR += r; totalG += g; totalB += b;
-                const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-                zoneLum += lum;
-                if (r > 50 && g > 30 && b > 15 && r > b && (r - g) > 8) {
-                  zoneSkin += 1;
-                }
-                count++;
-              }
-            }
-            featureVector.push(zoneLum / count);
-            featureVector.push(zoneSkin / count);
-          }
-        }
-        
-        const totalPixels = 64 * 64;
-        featureVector.push(totalR / (totalPixels * 255));
-        featureVector.push(totalG / (totalPixels * 255));
-        featureVector.push(totalB / (totalPixels * 255));
-        
-        resolve(featureVector);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.naturalWidth || img.width || 320;
+        tempCanvas.height = img.naturalHeight || img.height || 240;
+        const ctx = tempCanvas.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+
+        const feat = extractBiometricFeaturesFromCanvas(tempCanvas, null);
+        resolve(feat);
       } catch (err) {
         resolve(null);
       }
@@ -111,70 +198,45 @@ export const extractBiometricFeaturesFromImage = (imgSrc) => {
   });
 };
 
-// Biometric Feature Extraction from Live Camera Canvas
-export const extractBiometricFeaturesFromCanvas = (canvas) => {
-  if (!canvas) return null;
-  try {
-    const offCanvas = document.createElement('canvas');
-    offCanvas.width = 64;
-    offCanvas.height = 64;
-    const offCtx = offCanvas.getContext('2d');
-    if (!offCtx) return null;
-    offCtx.drawImage(canvas, 0, 0, 64, 64);
-    const imgData = offCtx.getImageData(0, 0, 64, 64).data;
-    
-    const featureVector = [];
-    let totalR = 0, totalG = 0, totalB = 0;
-    
-    for (let zoneY = 0; zoneY < 4; zoneY++) {
-      for (let zoneX = 0; zoneX < 4; zoneX++) {
-        let zoneLum = 0;
-        let zoneSkin = 0;
-        let count = 0;
-        for (let y = zoneY * 16; y < (zoneY + 1) * 16; y++) {
-          for (let x = zoneX * 16; x < (zoneX + 1) * 16; x++) {
-            const idx = (y * 64 + x) * 4;
-            const r = imgData[idx];
-            const g = imgData[idx + 1];
-            const b = imgData[idx + 2];
-            totalR += r; totalG += g; totalB += b;
-            const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-            zoneLum += lum;
-            if (r > 50 && g > 30 && b > 15 && r > b && (r - g) > 8) {
-              zoneSkin += 1;
-            }
-            count++;
-          }
-        }
-        featureVector.push(zoneLum / count);
-        featureVector.push(zoneSkin / count);
-      }
-    }
-    
-    const totalPixels = 64 * 64;
-    featureVector.push(totalR / (totalPixels * 255));
-    featureVector.push(totalG / (totalPixels * 255));
-    featureVector.push(totalB / (totalPixels * 255));
-    
-    return featureVector;
-  } catch (e) {
-    return null;
-  }
-};
+// High-Discriminative Mean-Centered Pearson Biometric Correlation & Pattern Matching
+export const computeBiometricSimilarity = (biomA, biomB) => {
+  if (!biomA || !biomB) return 0;
+  const gA = Array.isArray(biomA) ? biomA : biomA.grid;
+  const gB = Array.isArray(biomB) ? biomB : biomB.grid;
+  if (!gA || !gB || gA.length !== gB.length) return 0;
 
-// Compute Cosine Biometric Similarity (0.0 to 1.0)
-export const computeBiometricSimilarity = (vecA, vecB) => {
-  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
+  // Mean-Centered Pearson Correlation Coefficient (r)
+  const mA = gA.reduce((s, v) => s + v, 0) / gA.length;
+  const mB = gB.reduce((s, v) => s + v, 0) / gB.length;
+  let num = 0, dA = 0, dB = 0;
+  for (let i = 0; i < gA.length; i++) {
+    const diffA = gA[i] - mA;
+    const diffB = gB[i] - mB;
+    num += diffA * diffB;
+    dA += diffA * diffA;
+    dB += diffB * diffB;
   }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  let pearson = (dA > 0 && dB > 0) ? (num / Math.sqrt(dA * dB)) : 0;
+  if (pearson <= 0) return 0;
+
+  // If rich biometric objects are provided, evaluate structural facial distinctions
+  if (!Array.isArray(biomA) && !Array.isArray(biomB)) {
+    // Eyewear / Glasses / Eye Band Difference Penalty
+    const eyeDiff = Math.abs((biomA.eyeEdgeEnergy || 0) - (biomB.eyeEdgeEnergy || 0));
+    const eyePenalty = eyeDiff > 0.10 ? Math.min(0.45, (eyeDiff - 0.10) * 2.2) : 0;
+
+    // Face Aspect Ratio Difference Penalty
+    const aspectDiff = Math.abs((biomA.faceAspect || 1.25) - (biomB.faceAspect || 1.25));
+    const aspectPenalty = aspectDiff > 0.15 ? Math.min(0.30, (aspectDiff - 0.15) * 1.5) : 0;
+
+    // Skin Chrominance Distance Penalty (YCbCr space)
+    const chromaDist = Math.hypot((biomA.meanCb || 120) - (biomB.meanCb || 120), (biomA.meanCr || 145) - (biomB.meanCr || 145));
+    const chromaPenalty = chromaDist > 14 ? Math.min(0.30, (chromaDist - 14) / 40) : 0;
+
+    pearson = Math.max(0, pearson - eyePenalty - aspectPenalty - chromaPenalty);
+  }
+
+  return Math.min(1.0, Math.max(0, pearson));
 };
 
 // High-Precision Multi-Person & Face Detection from Camera Canvas (Single vs Multiple People)
@@ -222,7 +284,8 @@ export const detectPeopleInCanvas = async (canvas) => {
                 isMultiple: true,
                 isPresent: true,
                 method: 'native-face-detector',
-                faces: validFaces
+                faces: validFaces,
+                primaryFaceBox: sorted[0]?.boundingBox
               };
             }
           }
@@ -232,7 +295,8 @@ export const detectPeopleInCanvas = async (canvas) => {
             isMultiple: false,
             isPresent: true,
             method: 'native-face-detector',
-            faces: [validFaces[0]]
+            faces: [validFaces[0]],
+            primaryFaceBox: validFaces[0]?.boundingBox
           };
         }
       }
@@ -242,7 +306,7 @@ export const detectPeopleInCanvas = async (canvas) => {
   // 2. High-Precision Computer Vision (YCbCr Skin Segmentation + Head Geometry Analysis)
   try {
     const ctx = canvas.getContext('2d');
-    if (!ctx) return { count: 1, isMultiple: false, isPresent: true };
+    if (!ctx) return { count: 1, isMultiple: false, isPresent: true, primaryFaceBox: null };
 
     const imgData = ctx.getImageData(0, 0, W, H).data;
     const cols = 32;
@@ -296,7 +360,7 @@ export const detectPeopleInCanvas = async (canvas) => {
 
     const overallSkinRatio = totalSampled > 0 ? (totalSkinPixels / totalSampled) : 0;
     if (overallSkinRatio < 0.035) {
-      return { count: 0, isMultiple: false, isPresent: false };
+      return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
     }
 
     // Connected Component Analysis on Upper & Middle Screen (Face Search Region)
@@ -361,7 +425,7 @@ export const detectPeopleInCanvas = async (canvas) => {
     headCandidates.sort((a, b) => b.count - a.count);
 
     if (headCandidates.length === 0) {
-      return { count: overallSkinRatio >= 0.05 ? 1 : 0, isMultiple: false, isPresent: overallSkinRatio >= 0.05 };
+      return { count: overallSkinRatio >= 0.05 ? 1 : 0, isMultiple: false, isPresent: overallSkinRatio >= 0.05, primaryFaceBox: null };
     }
 
     // The primary candidate head is the largest head candidate in frame
@@ -387,10 +451,16 @@ export const detectPeopleInCanvas = async (canvas) => {
     return {
       count: multiplePeople ? Math.max(2, peopleCount) : 1,
       isMultiple: multiplePeople,
-      isPresent: true
+      isPresent: true,
+      primaryFaceBox: primaryHead ? {
+        x: Math.max(0, primaryHead.minC * cellW),
+        y: Math.max(0, primaryHead.minR * cellH),
+        width: Math.min(W, (primaryHead.maxC - primaryHead.minC + 1) * cellW),
+        height: Math.min(H, (primaryHead.maxR - primaryHead.minR + 1) * cellH)
+      } : null
     };
   } catch (err) {
-    return { count: 1, isMultiple: false, isPresent: true };
+    return { count: 1, isMultiple: false, isPresent: true, primaryFaceBox: null };
   }
 };
 
@@ -3638,7 +3708,7 @@ export default function StudentDashboard() {
 
       try {
         const peopleCheck = await detectPeopleInCanvas(canvas);
-        const liveVector = extractBiometricFeaturesFromCanvas(canvas);
+        const liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
         const refVector = enrolledFaceVectorRef.current;
 
         // MULTIPLE PEOPLE IN CAMERA DETECTION (temporal debounce: requires 2 consecutive positives)
@@ -3701,8 +3771,8 @@ export default function StudentDashboard() {
         setFaceConfidence(matchPercent);
         setFaceMatchScore(matchPercent);
 
-        // Biometric Match check (strictly requires similarity >= 65%)
-        const isFaceMatch = Boolean(similarity >= 0.65);
+        // Biometric Match check (Pearson correlation threshold >= 50%)
+        const isFaceMatch = Boolean(similarity >= 0.50);
 
         if (isFaceMatch) {
           setFaceErrorMessage('');
@@ -3796,10 +3866,11 @@ export default function StudentDashboard() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        liveVector = extractBiometricFeaturesFromCanvas(canvas);
 
         // Multi-person check
         const peopleCheck = await detectPeopleInCanvas(canvas);
+        liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
+
         if (peopleCheck.isMultiple) {
           setIsMultiplePeopleDetected(true);
           isMultiplePeopleDetectedRef.current = true;
@@ -3826,7 +3897,7 @@ export default function StudentDashboard() {
 
         const sim = computeBiometricSimilarity(refVector, liveVector);
         const matchScore = Math.round(sim * 100);
-        if (sim < 0.65) {
+        if (sim < 0.50) {
           setFaceErrorMessage(`Face Mismatch (${matchScore}% match)! Live face does not match registered profile photo of ${student.name}. You cannot write this exam.`);
           speakText(`Identity verification failed. Your face does not match the registered profile photo of ${student.name}. You cannot write this exam.`);
           return;
@@ -3949,7 +4020,7 @@ export default function StudentDashboard() {
 
       try {
         const peopleCheck = await detectPeopleInCanvas(canvas);
-        const liveVector = extractBiometricFeaturesFromCanvas(canvas);
+        const liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
         const enrolledVector = enrolledFaceVectorRef.current;
         const scannedVector = scannedExamFaceVectorRef.current;
 
@@ -4016,12 +4087,12 @@ export default function StudentDashboard() {
         } else {
           // Exactly 1 person in camera: verify if it's the registered scanned student
           let isScannedStudentMatch = false;
-          if (enrolledVector && scannedVector) {
-            isScannedStudentMatch = Boolean(enrolledSim >= 0.65 && scannedSim >= 0.80);
-          } else if (enrolledVector) {
-            isScannedStudentMatch = Boolean(enrolledSim >= 0.65);
+          if (scannedVector && enrolledVector) {
+            isScannedStudentMatch = Boolean(scannedSim >= 0.50 && (enrolledSim >= 0.35 || scannedSim >= 0.65));
           } else if (scannedVector) {
-            isScannedStudentMatch = Boolean(scannedSim >= 0.82);
+            isScannedStudentMatch = Boolean(scannedSim >= 0.50);
+          } else if (enrolledVector) {
+            isScannedStudentMatch = Boolean(enrolledSim >= 0.45);
           } else {
             isScannedStudentMatch = true;
           }
@@ -4071,13 +4142,22 @@ export default function StudentDashboard() {
         if (isViolation) {
           consecutiveMismatchTicksRef.current++;
 
-          // Debounce: require at least 2 consecutive scan ticks (~2.4s) before issuing strikes
-          if (consecutiveMismatchTicksRef.current >= 2) {
-            const timeSinceLastAlert = now - lastMismatchAlertTimeRef.current;
+          // Immediately update visual UI indicators on the very first violation tick (600ms)
+          setIsScannedStudentWriting(false);
+          setIsOtherPersonDetected(true);
+          isScannedStudentWritingRef.current = false;
 
-            // Cooldown between alerts: at least 5.5s so student has time to hear and correct
-            if (timeSinceLastAlert > 5500) {
-              lastMismatchAlertTimeRef.current = now;
+          // Fast Strike Dispatcher:
+          // Alert 1 fires on tick 2 (~1.2s)!
+          // Alert 2 fires after 3.5s cooldown
+          // Strike 3 (Exit) fires after 3.0s cooldown
+          const timeSinceLastAlert = now - lastMismatchAlertTimeRef.current;
+          const strikeCooldown = faceMismatchStrikeCountRef.current === 0 
+            ? 0 
+            : (faceMismatchStrikeCountRef.current === 1 ? 3500 : 3000);
+
+          if (consecutiveMismatchTicksRef.current >= 2 && timeSinceLastAlert >= strikeCooldown) {
+            lastMismatchAlertTimeRef.current = now;
 
               if (faceMismatchStrikeCountRef.current === 0) {
                 // === ALERT 1 OF 2 ===
@@ -4264,9 +4344,8 @@ export default function StudentDashboard() {
               }
             }
           }
-        }
       } catch (e) {}
-    }, 1200);
+    }, 600);
 
     return () => {
       if (proctorScanIntervalRef.current) {
