@@ -69,4 +69,19 @@ const Exam = mongoose.models.Exam || mongoose.model('Exam', examSchema);
 const Result = mongoose.models.Result || mongoose.model('Result', resultSchema);
 const AssistanceRequest = mongoose.models.AssistanceRequest || mongoose.model('AssistanceRequest', assistanceRequestSchema);
 
-module.exports = { Exam, Result, AssistanceRequest };
+// Contact Us & Support Inquiries Schema
+const contactMessageSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true },
+  role: { type: String, default: 'Student' },
+  subject: { type: String, default: 'General Inquiry' },
+  message: { type: String, required: true },
+  status: { type: String, enum: ['Unread', 'In Review', 'Resolved'], default: 'Unread' },
+  date: { type: String, default: () => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
+  time: { type: String, default: () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+  createdAt: { type: Date, default: Date.now }
+}, { bufferCommands: false });
+
+const ContactMessage = mongoose.models.ContactMessage || mongoose.model('ContactMessage', contactMessageSchema);
+
+module.exports = { Exam, Result, AssistanceRequest, ContactMessage };

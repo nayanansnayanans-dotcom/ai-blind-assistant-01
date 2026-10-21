@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Mic, Eye, BookOpen, UserCheck, Shield, DollarSign, Volume2, ArrowRight, CheckCircle2, Navigation, Radio, Info, HelpCircle } from 'lucide-react';
 import { speakIn, cancelSpeech } from './speech';
 import ProjectLogo from './ProjectLogo.jsx';
+import { sendContactMessageApi } from '../services/api';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -28,17 +29,30 @@ export default function HomePage() {
     return () => window.removeEventListener('hashchange', handleHash);
   }, []);
 
-  const handleContactSubmit = (e) => {
+  const handleContactSubmit = async (e) => {
     e.preventDefault();
     if (!contactForm.name.trim() || !contactForm.email.trim() || !contactForm.message.trim()) {
       return alert('Please fill in your name, email, and message.');
     }
+
+    try {
+      await sendContactMessageApi({
+        name: contactForm.name.trim(),
+        email: contactForm.email.trim(),
+        role: contactForm.role || 'Student',
+        subject: contactForm.subject || 'General Inquiry',
+        message: contactForm.message.trim()
+      });
+    } catch (err) {
+      console.warn('Contact message submission fallback error:', err);
+    }
+
     setContactSubmitted(true);
-    speak('Thank you for contacting VisionAssist AI support. Your message has been received.');
+    speak('Thank you for contacting VisionAssist AI support. Your message has been delivered to the administrator dashboard.');
     setTimeout(() => {
       setContactForm({ name: '', email: '', role: 'Student', subject: 'General Inquiry', message: '' });
       setContactSubmitted(false);
-    }, 4000);
+    }, 4500);
   };
 
   const stopRecognition = () => {
@@ -825,8 +839,8 @@ export default function HomePage() {
               {/* Contact Form */}
               <form onSubmit={handleContactSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {contactSubmitted && (
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '12px 16px', borderRadius: '10px', fontSize: '14px', fontWeight: '700' }}>
-                    ✓ Message received! Thank you for reaching out. Our accessibility team will respond shortly.
+                  <div style={{ background: '#f0fdf4', border: '2px solid #22c55e', color: '#15803d', padding: '12px 16px', borderRadius: '10px', fontSize: '14px', fontWeight: '800' }}>
+                    ✓ Message received! Delivered to the Administrator Dashboard. Our team will review and respond shortly.
                   </div>
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

@@ -8,7 +8,11 @@ import {
   Mail, Key, Upload, Play, HelpCircle, LogOut, Phone, Shield, Filter, RotateCcw,
   Sliders, Cpu, Camera, Globe, Save
 } from 'lucide-react';
-import { fetchAssistanceRequests, updateAssistanceRequest, fetchRegisteredStudents, fetchRegisteredTeachers } from '../services/api';
+import { 
+  fetchAssistanceRequests, updateAssistanceRequest, fetchRegisteredStudents, 
+  fetchRegisteredTeachers, fetchContactMessagesApi, updateContactMessageStatusApi, 
+  deleteContactMessageApi 
+} from '../services/api';
 const speakIn = () => {};
 const cancelSpeech = () => { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); };
 import ProjectLogo from './ProjectLogo.jsx';
@@ -300,6 +304,97 @@ export default function AdminDashboard() {
     speakIn('Emergency SOS request marked as resolved.');
   };
 
+  // 9. CONTACT US / SUPPORT INQUIRIES STORE
+  const [contactMessages, setContactMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem('shared_contact_messages');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      {
+        id: 'msg_sample_1',
+        name: 'Nayana N S',
+        email: 'nayana@gmail.com',
+        role: 'Student',
+        subject: 'Accessibility Feature Request',
+        message: 'Hello Support, the voice assistant and high-contrast features are working great. Can we also have an option to customize narration rate during mock tests?',
+        status: 'Unread',
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        time: '08:30 AM'
+      }
+    ];
+  });
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactFilter, setContactFilter] = useState('all'); // 'all' | 'unread' | 'in_review' | 'resolved'
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+
+  const loadContactMessages = async () => {
+    setIsLoadingMessages(true);
+    try {
+      const list = await fetchContactMessagesApi();
+      if (Array.isArray(list) && list.length > 0) {
+        setContactMessages(list);
+      }
+    } catch (e) {
+      console.warn('Error loading contact messages in admin:', e);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  useEffect(() => {
+    loadContactMessages();
+    const handleStorageChange = () => {
+      try {
+        const saved = localStorage.getItem('shared_contact_messages');
+        if (saved) setContactMessages(JSON.parse(saved));
+      } catch (e) {}
+    };
+    window.addEventListener('storage', handleStorageChange);
+    const interval = setInterval(loadContactMessages, 8000);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleUpdateMessageStatus = async (id, newStatus) => {
+    setContactMessages(prev => prev.map(m => (String(m.id) === String(id) || String(m._id) === String(id)) ? { ...m, status: newStatus } : m));
+    await updateContactMessageStatusApi(id, newStatus);
+    speakIn(`Message marked as ${newStatus}`);
+  };
+
+  const handleDeleteMessage = async (id, name) => {
+    if (window.confirm(`Delete support inquiry from ${name}?`)) {
+      setContactMessages(prev => prev.filter(m => String(m.id) !== String(id) && String(m._id) !== String(id)));
+      await deleteContactMessageApi(id);
+      speakIn(`Inquiry from ${name} deleted.`);
+    }
+  };
+
+  const unreadMessagesCount = contactMessages.filter(m => (m.status || 'Unread').toLowerCase() === 'unread').length;
+
+  const filteredMessages = contactMessages.filter(msg => {
+    const status = (msg.status || 'Unread').toLowerCase();
+    const matchesFilter =
+      contactFilter === 'all' ? true :
+      contactFilter === 'unread' ? status === 'unread' :
+      contactFilter === 'in_review' ? (status === 'in review' || status === 'in_review') :
+      status === 'resolved';
+
+    const query = contactSearch.toLowerCase().trim();
+    if (!query) return matchesFilter;
+
+    const matchesSearch =
+      (msg.name || '').toLowerCase().includes(query) ||
+      (msg.email || '').toLowerCase().includes(query) ||
+      (msg.role || '').toLowerCase().includes(query) ||
+      (msg.subject || '').toLowerCase().includes(query) ||
+      (msg.message || '').toLowerCase().includes(query);
+
+    return matchesFilter && matchesSearch;
+  });
+
   // Global Logout
   const handleLogout = () => {
     cancelSpeech();
@@ -514,12 +609,13 @@ export default function AdminDashboard() {
     return matchesFilter && matchesSearch;
   });
 
-  // 8 Sidebar Items (AI Exam Assistant, Study Materials, and Reports removed per user specifications)
+  // Sidebar Navigation Items
   const sidebarItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboardIcon },
     { id: 'students', label: 'Students Directory', icon: GraduationCap },
     { id: 'teachers', label: 'Teachers Directory', icon: UserCheck },
     { id: 'exams', label: 'Exam Management', icon: FileText },
+    { id: 'messages', label: 'Support & Inquiries', icon: Mail, badge: unreadMessagesCount },
     { id: 'accessibility', label: 'Accessibility Management', icon: Accessibility },
     { id: 'announcements', label: 'Notifications & Announcements', icon: Bell },
     { id: 'security', label: 'Security & User Roles', icon: ShieldCheck },
@@ -576,6 +672,19 @@ export default function AdminDashboard() {
                 >
                   <IconComp size={18} color={isActive ? '#ffffff' : '#94a3b8'} />
                   <span style={{ flex: 1 }}>{item.label}</span>
+                  {Boolean(item.badge) && (
+                    <span style={{
+                      background: '#ef4444',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: '900',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      lineHeight: '1.2'
+                    }}>
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -761,6 +870,21 @@ export default function AdminDashboard() {
                   <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: '700' }}>↑ 5% <span style={{ color: '#94a3b8', fontWeight: '500' }}>vs last month</span></span>
                 </div>
 
+                {/* 7. Support & Contact Us Inquiries */}
+                <div 
+                  onClick={() => { setActiveTab('messages'); speakIn('Opening Support and Inquiries'); }}
+                  style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: unreadMessagesCount > 0 ? '2px solid #ef4444' : '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', cursor: 'pointer' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ background: '#fef2f2', padding: '10px', borderRadius: '12px' }}><Mail size={22} color="#dc2626" /></div>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Contact Us Inquiries</span>
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', margin: '0 0 4px 0' }}>{contactMessages.length}</div>
+                  <span style={{ fontSize: '12px', color: unreadMessagesCount > 0 ? '#dc2626' : '#16a34a', fontWeight: '800' }}>
+                    {unreadMessagesCount > 0 ? `🔴 ${unreadMessagesCount} Unread / New` : '✓ All Handled'}
+                  </span>
+                </div>
+
               </div>
 
               {/* MIDDLE ROW: SYSTEM OVERVIEW CHART, AI USAGE DONUT CHART, QUICK ACTIONS */}
@@ -839,6 +963,10 @@ export default function AdminDashboard() {
 
                   <button onClick={() => { setActiveTab('exams'); setShowExamModal(true); }} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: 'none', background: '#16a34a', color: '#ffffff', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>📄 Create Exam</span><span>›</span>
+                  </button>
+
+                  <button onClick={() => { setActiveTab('messages'); speakIn('Opening Support and Contact Inquiries'); }} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: 'none', background: unreadMessagesCount > 0 ? '#dc2626' : '#0284c7', color: '#ffffff', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>📩 Contact Inquiries ({unreadMessagesCount} Unread • {contactMessages.length} Total)</span><span>›</span>
                   </button>
 
                   <button onClick={() => setActiveTab('settings')} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: 'none', background: '#0284c7', color: '#ffffff', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1301,7 +1429,300 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* TAB 5: ACCESSIBILITY MANAGEMENT */}
+          {/* TAB 5: SUPPORT & CONTACT US INQUIRIES */}
+          {activeTab === 'messages' && (
+            <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Header Box */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <h2 style={{ fontSize: '22px', fontWeight: '900', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    📩 Support & Contact Us Inquiries
+                    <span style={{ fontSize: '13px', background: unreadMessagesCount > 0 ? '#fef2f2' : '#f0fdf4', color: unreadMessagesCount > 0 ? '#dc2626' : '#15803d', padding: '3px 12px', borderRadius: '14px', fontWeight: '800', border: unreadMessagesCount > 0 ? '1px solid #fecaca' : '1px solid #bbf7d0' }}>
+                      {unreadMessagesCount} Unread • {contactMessages.length} Total
+                    </span>
+                  </h2>
+                  <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
+                    Review, manage, and respond to inquiries, questions, and accessibility support requests submitted via the Contact Us modal.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button 
+                    onClick={loadContactMessages}
+                    disabled={isLoadingMessages}
+                    style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <RefreshCw size={15} className={isLoadingMessages ? 'animate-spin' : ''} /> 
+                    {isLoadingMessages ? 'Refreshing...' : 'Refresh Inquiries'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Filter Toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', background: '#f8fafc', padding: '14px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                {/* Search Bar */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '8px 14px', flex: '1', minWidth: '260px' }}>
+                  <Search size={16} color="#64748b" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, role, subject, or message text..."
+                    value={contactSearch}
+                    onChange={(e) => setContactSearch(e.target.value)}
+                    style={{ border: 'none', outline: 'none', width: '100%', fontSize: '13px', fontWeight: '600' }}
+                  />
+                  {contactSearch && (
+                    <button onClick={() => setContactSearch('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>✕</button>
+                  )}
+                </div>
+
+                {/* Filter Pills */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'all', label: `All (${contactMessages.length})` },
+                    { id: 'unread', label: `🔴 Unread (${unreadMessagesCount})` },
+                    { id: 'in_review', label: `⏳ In Review (${contactMessages.filter(m => (m.status || '').toLowerCase().includes('review')).length})` },
+                    { id: 'resolved', label: `✓ Resolved (${contactMessages.filter(m => (m.status || '').toLowerCase() === 'resolved').length})` }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setContactFilter(f.id)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        border: contactFilter === f.id ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                        background: contactFilter === f.id ? '#e0f2fe' : '#ffffff',
+                        color: contactFilter === f.id ? '#0369a1' : '#475569'
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Messages Cards List */}
+              {filteredMessages.length === 0 ? (
+                <div style={{ padding: '60px 20px', textAlign: 'center', background: '#f8fafc', borderRadius: '16px', border: '1px dashed #cbd5e1' }}>
+                  <Mail size={44} color="#94a3b8" style={{ margin: '0 auto 12px auto' }} />
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '0 0 6px 0' }}>No Inquiries Found</h3>
+                  <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                    {contactSearch ? 'No messages match your search filter.' : 'All incoming messages have been addressed.'}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {filteredMessages.map(msg => {
+                    const status = msg.status || 'Unread';
+                    const isUnread = status.toLowerCase() === 'unread';
+                    const isResolved = status.toLowerCase() === 'resolved';
+
+                    return (
+                      <div 
+                        key={msg.id || msg._id}
+                        style={{
+                          background: isUnread ? '#fffbfb' : '#ffffff',
+                          border: isUnread ? '2px solid #fca5a5' : '1px solid #e2e8f0',
+                          borderRadius: '16px',
+                          padding: '22px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '14px',
+                          boxShadow: isUnread ? '0 4px 14px rgba(239, 68, 68, 0.08)' : '0 2px 8px rgba(0,0,0,0.02)'
+                        }}
+                      >
+                        {/* Header: Sender details and Status Selector */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ 
+                              width: '42px', 
+                              height: '42px', 
+                              borderRadius: '50%', 
+                              background: isUnread ? '#fee2e2' : '#f1f5f9', 
+                              color: isUnread ? '#dc2626' : '#475569',
+                              display: 'flex', 
+                              justifyContent: 'center', 
+                              alignItems: 'center', 
+                              fontWeight: '900',
+                              fontSize: '16px'
+                            }}>
+                              {(msg.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, color: '#0f172a' }}>{msg.name}</h3>
+                                <span style={{
+                                  fontSize: '11px',
+                                  padding: '2px 8px',
+                                  borderRadius: '8px',
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  fontWeight: '800',
+                                  border: '1px solid #bfdbfe'
+                                }}>
+                                  {msg.role || 'Student'}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                <span>📧 <a href={`mailto:${msg.email}`} style={{ color: '#0284c7', textDecoration: 'none', fontWeight: '700' }}>{msg.email}</a></span>
+                                <span>🕒 {msg.date} at {msg.time}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Status Badge & Selector */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: '900',
+                              padding: '5px 12px',
+                              borderRadius: '12px',
+                              background: isUnread ? '#fef2f2' : isResolved ? '#f0fdf4' : '#eff6ff',
+                              color: isUnread ? '#dc2626' : isResolved ? '#16a34a' : '#2563eb',
+                              border: isUnread ? '1px solid #fecaca' : isResolved ? '1px solid #bbf7d0' : '1px solid #bfdbfe'
+                            }}>
+                              {isUnread ? '● UNREAD' : isResolved ? '✓ RESOLVED' : '⏳ IN REVIEW'}
+                            </span>
+
+                            <select
+                              value={status}
+                              onChange={(e) => handleUpdateMessageStatus(msg.id || msg._id, e.target.value)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                background: '#f8fafc',
+                                color: '#0f172a',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="Unread">Mark as Unread</option>
+                              <option value="In Review">Mark In Review</option>
+                              <option value="Resolved">Mark as Resolved</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Subject Tag */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#0369a1', background: '#e0f2fe', padding: '4px 10px', borderRadius: '8px' }}>
+                            📌 Topic: {msg.subject || 'General Inquiry'}
+                          </span>
+                        </div>
+
+                        {/* Message Content Box */}
+                        <div style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '12px',
+                          padding: '14px 18px',
+                          color: '#1e293b',
+                          fontSize: '14px',
+                          lineHeight: '1.6',
+                          fontWeight: '500',
+                          whiteSpace: 'pre-wrap'
+                        }}>
+                          {msg.message}
+                        </div>
+
+                        {/* Card Action Buttons */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingTop: '6px', borderTop: '1px solid #f1f5f9' }}>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <a
+                              href={`mailto:${msg.email}?subject=${encodeURIComponent(`Re: [VisionAssist AI Support] ${msg.subject || 'Inquiry'}`)}&body=${encodeURIComponent(`Hello ${msg.name},\n\nThank you for reaching out to VisionAssist AI Support regarding your inquiry:\n"${msg.message}"\n\n[Type your response here]\n\nBest regards,\nAdministrator Support Team\nVisionAssist AI Academy`)}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: '#0284c7',
+                                color: '#ffffff',
+                                textDecoration: 'none',
+                                padding: '8px 14px',
+                                borderRadius: '8px',
+                                fontSize: '12px',
+                                fontWeight: '800',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Mail size={14} /> Reply via Email
+                            </a>
+
+                            {!isResolved ? (
+                              <button
+                                onClick={() => handleUpdateMessageStatus(msg.id || msg._id, 'Resolved')}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  background: '#16a34a',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  padding: '8px 14px',
+                                  borderRadius: '8px',
+                                  fontSize: '12px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <CheckCircle2 size={14} /> Mark as Resolved
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleUpdateMessageStatus(msg.id || msg._id, 'Unread')}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  background: '#f8fafc',
+                                  color: '#475569',
+                                  border: '1px solid #cbd5e1',
+                                  padding: '8px 14px',
+                                  borderRadius: '8px',
+                                  fontSize: '12px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Re-open Inquiry
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => handleDeleteMessage(msg.id || msg._id, msg.name)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              background: '#ffffff',
+                              color: '#ef4444',
+                              border: '1px solid #fecaca',
+                              padding: '8px 14px',
+                              borderRadius: '8px',
+                              fontSize: '12px',
+                              fontWeight: '800',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Trash2 size={14} /> Delete
+                          </button>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* TAB 6: ACCESSIBILITY MANAGEMENT */}
           {activeTab === 'accessibility' && (
             <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
               <h2 style={{ fontSize: '22px', fontWeight: '900', margin: '0 0 8px 0' }}>♿ Accessibility Management</h2>

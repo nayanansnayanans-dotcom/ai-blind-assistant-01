@@ -468,4 +468,99 @@ export const saveQuestion = async (questionData) => {
   }
 };
 
+// CONTACT US & SUPPORT INQUIRIES API
+export const sendContactMessageApi = async (messageData) => {
+  const localList = JSON.parse(localStorage.getItem('shared_contact_messages') || '[]');
+  const newMsg = {
+    id: `msg_${Date.now()}`,
+    name: messageData.name,
+    email: messageData.email,
+    role: messageData.role || 'Student',
+    subject: messageData.subject || 'General Inquiry',
+    message: messageData.message,
+    status: 'Unread',
+    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    createdAt: new Date().toISOString(),
+    ...messageData
+  };
+
+  // Immediate local save for resilience
+  localList.unshift(newMsg);
+  localStorage.setItem('shared_contact_messages', JSON.stringify(localList));
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/contact-messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(messageData),
+    });
+    const body = await response.json();
+    if (body?.data) {
+      newMsg._id = body.data._id || body.data.id;
+    }
+    return body;
+  } catch (err) {
+    console.warn('Backend unavailable, saved contact message locally:', err);
+    return { success: true, message: 'Message received and saved.', data: newMsg };
+  }
+};
+
+export const fetchContactMessagesApi = async () => {
+  const localList = JSON.parse(localStorage.getItem('shared_contact_messages') || '[]');
+  try {
+    const response = await fetch(`${API_BASE_URL}/contact-messages`);
+    const res = await response.json();
+    const serverList = res?.data || (Array.isArray(res) ? res : []);
+
+    const idMap = new Map();
+    serverList.forEach(m => idMap.set(String(m._id || m.id), m));
+    localList.forEach(m => {
+      const key = String(m._id || m.id);
+      if (!idMap.has(key)) {
+        idMap.set(key, m);
+      }
+    });
+
+    const merged = Array.from(idMap.values());
+    merged.sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
+    return merged;
+  } catch (err) {
+    console.warn('Error fetching contact messages from backend:', err);
+    return localList;
+  }
+};
+
+export const updateContactMessageStatusApi = async (id, status) => {
+  const localList = JSON.parse(localStorage.getItem('shared_contact_messages') || '[]');
+  const updated = localList.map(m => (String(m.id) === String(id) || String(m._id) === String(id)) ? { ...m, status } : m);
+  localStorage.setItem('shared_contact_messages', JSON.stringify(updated));
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/contact-messages/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    return await response.json();
+  } catch (err) {
+    return { success: true, message: 'Status updated locally' };
+  }
+};
+
+export const deleteContactMessageApi = async (id) => {
+  const localList = JSON.parse(localStorage.getItem('shared_contact_messages') || '[]');
+  const filtered = localList.filter(m => String(m.id) !== String(id) && String(m._id) !== String(id));
+  localStorage.setItem('shared_contact_messages', JSON.stringify(filtered));
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/contact-messages/${id}`, {
+      method: 'DELETE'
+    });
+    return await response.json();
+  } catch (err) {
+    return { success: true, message: 'Message removed locally' };
+  }
+};
+
 

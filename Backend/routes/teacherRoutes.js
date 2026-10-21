@@ -1,12 +1,27 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
-const { Exam, Result, AssistanceRequest } = require('../models/TeacherModels');
+const { Exam, Result, AssistanceRequest, ContactMessage } = require('../models/TeacherModels');
 
 // In-Memory Fallback Stores for Offline / Disconnected MongoDB mode
 const inMemoryAssistanceRequests = [];
 const inMemoryExams = [];
 const inMemoryResults = [];
+const inMemoryContactMessages = [
+  {
+    id: 'msg_welcome',
+    _id: 'msg_welcome',
+    name: 'Nayana N S',
+    email: 'nayana@gmail.com',
+    role: 'Student',
+    subject: 'Accessibility Feature Request',
+    message: 'Welcome to VisionAssist AI! High-contrast screen reader and voice navigation features are functioning smoothly.',
+    status: 'Unread',
+    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    time: '10:00 AM',
+    createdAt: new Date()
+  }
+];
 
 const isDbConnected = () => mongoose.connection.readyState === 1 && mongoose.connection.db;
 
@@ -309,6 +324,98 @@ router.put('/assistance-requests/:id', async (req, res) => {
   }
 
   return res.json({ success: true, message: "Assistance Request status updated" });
+});
+
+// 10. Get All Contact Us / Support Messages
+router.get('/contact-messages', async (req, res) => {
+  if (!isDbConnected()) {
+    return res.status(200).json({ success: true, data: inMemoryContactMessages });
+  }
+  try {
+    const list = await ContactMessage.find().setOptions({ bufferCommands: false }).sort({ createdAt: -1 });
+    return res.status(200).json({ success: true, data: list.length > 0 ? list : inMemoryContactMessages });
+  } catch (e) {
+    return res.status(200).json({ success: true, data: inMemoryContactMessages });
+  }
+});
+
+// 11. Submit a New Contact Us Message
+const handleSaveContactMessage = async (req, res) => {
+  const { name, email, role, subject, message } = req.body;
+  if (!name || !email || !message) {
+    return res.status(400).json({ success: false, message: 'Name, email, and message are required.' });
+  }
+
+  const msgData = {
+    id: `msg_${Date.now()}`,
+    name: String(name).trim(),
+    email: String(email).trim().toLowerCase(),
+    role: role || 'Student',
+    subject: subject || 'General Inquiry',
+    message: String(message).trim(),
+    status: 'Unread',
+    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    createdAt: new Date()
+  };
+
+  inMemoryContactMessages.unshift(msgData);
+
+  if (isDbConnected()) {
+    try {
+      const newDoc = new ContactMessage(msgData);
+      await newDoc.save({ bufferCommands: false });
+      msgData._id = newDoc._id;
+    } catch (e) {
+      console.warn('MongoDB contact save fallback to memory:', e.message);
+    }
+  }
+
+  return res.status(201).json({
+    success: true,
+    message: 'Your message has been received by the administrator support team.',
+    data: msgData
+  });
+};
+
+router.post('/contact-messages', handleSaveContactMessage);
+router.post('/contact', handleSaveContactMessage);
+
+// 12. Update Contact Message Status
+router.put('/contact-messages/:id', async (req, res) => {
+  const { status } = req.body;
+  const targetId = req.params.id;
+
+  const idx = inMemoryContactMessages.findIndex(x => String(x.id) === String(targetId) || String(x._id) === String(targetId));
+  if (idx !== -1) {
+    inMemoryContactMessages[idx].status = status || 'Resolved';
+  }
+
+  if (isDbConnected()) {
+    try {
+      await ContactMessage.findByIdAndUpdate(targetId, { status }, { bufferCommands: false });
+    } catch (e) {}
+  }
+
+  return res.json({ success: true, message: 'Contact message status updated.' });
+});
+
+// 13. Delete Contact Message
+router.delete('/contact-messages/:id', async (req, res) => {
+  const targetId = req.params.id;
+
+  const idx = inMemoryContactMessages.findIndex(x => String(x.id) === String(targetId) || String(x._id) === String(targetId));
+  if (idx !== -1) {
+    inMemoryContactMessages.splice(idx, 1);
+  }
+
+  if (isDbConnected()) {
+    try {
+      await ContactMessage.findByIdAndDelete(targetId, { bufferCommands: false });
+    } catch (e) {}
+  }
+
+  return res.json({ success: true, message: 'Contact message deleted.' });
 });
 
 module.exports = router;
