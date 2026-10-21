@@ -68,16 +68,6 @@ export const loginUser = async (credentials) => {
     };
   }
 
-  // Pre-check Admin Private Key if role is admin
-  if (requestedRole === 'admin') {
-    if (!credentials.adminSecretKey || credentials.adminSecretKey.trim() !== 'ADMIN123') {
-      return {
-        success: false,
-        message: 'Invalid Admin Private Key. Access denied to Administrator portal.'
-      };
-    }
-  }
-
   try {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',

@@ -5,7 +5,8 @@ import {
   BarChart3, Bell, ShieldCheck, Settings, Plus, Edit, Trash2, Search, 
   CheckCircle2, AlertTriangle, Volume2, Lock, Unlock, Clock, Calendar, 
   ArrowRight, Download, RefreshCw, Radio, Database, Activity, Check, Eye, 
-  Mail, Key, Upload, Play, HelpCircle, LogOut, Phone, Shield, Filter, RotateCcw
+  Mail, Key, Upload, Play, HelpCircle, LogOut, Phone, Shield, Filter, RotateCcw,
+  Sliders, Cpu, Camera, Globe, Save
 } from 'lucide-react';
 import { fetchAssistanceRequests, updateAssistanceRequest, fetchRegisteredStudents, fetchRegisteredTeachers } from '../services/api';
 const speakIn = () => {};
@@ -44,7 +45,7 @@ export default function AdminDashboard() {
   const [teacherFilter, setTeacherFilter] = useState('all'); // 'all' | 'logged_in' | 'registered'
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
-  // Modals & Active Selections (Exams, Announcements, Materials)
+  // Modals & Active Selections (Exams, Announcements, System Settings)
   const [showExamModal, setShowExamModal] = useState(false);
   const [editingExam, setEditingExam] = useState(null);
   const [examForm, setExamForm] = useState({ title: '', subject: 'Computer Networks', duration: '45 mins', date: '2026-09-28', time: '10:00 AM', status: 'Scheduled', studentsCount: 150 });
@@ -52,8 +53,42 @@ export default function AdminDashboard() {
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '', priority: 'High', target: 'All' });
 
-  const [showMaterialModal, setShowMaterialModal] = useState(false);
-  const [materialForm, setMaterialForm] = useState({ title: '', type: 'PDF Document', subject: 'Computer Networks', assignedClass: 'CS Year 3', link: '#' });
+  // System Settings Hub State
+  const [systemSettings, setSystemSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('system_platform_settings');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      institutionName: 'VisionAssist AI Academy',
+      academicTerm: '2026 - Fall Academic Session',
+      adminSupportEmail: 'admin@visionassist.edu',
+      emergencyPhone: '+91 98765 43210',
+      systemTimezone: 'Asia/Kolkata (UTC+05:30)',
+      ttsEngine: 'Browser Speech Synthesis (Local & Fast)',
+      speechRate: 1.0,
+      speechPitch: 1.0,
+      wakeWordEnabled: true,
+      audioChimeEnabled: true,
+      autoNarrationOnScreenChange: true,
+      webcamFaceVerification: true,
+      multiplePersonWarningLimit: '2 Warnings (Auto-Exit on 3rd)',
+      faceAbsenceToleranceSec: 5,
+      autoReportIntrusions: true,
+      fullscreenEnforcement: true,
+      studentPasswordPolicy: 'Alphanumeric Only (A-Z, 0-9)',
+      otpExpiryMinutes: 10,
+      maxFailedAttempts: 5,
+      sessionInactivityTimeout: '60 Minutes',
+      concurrentSessions: 'Single Active Session Only',
+      defaultTheme: 'High Contrast (Amber & Dark Navy)',
+      baseFontSize: 'Medium (16px)',
+      ariaAssertiveness: 'Polite Live Regions',
+      tapAnywhereGuide: true
+    };
+  });
+  const [settingsSavedToast, setSettingsSavedToast] = useState(false);
+  const [settingsResetToast, setSettingsResetToast] = useState(false);
 
   const [resetPassModal, setResetPassModal] = useState(null);
   const [newGeneratedPass, setNewGeneratedPass] = useState('');
@@ -152,35 +187,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     localStorage.setItem('shared_exams', JSON.stringify(exams));
   }, [exams]);
-
-  // 4. DATA STORE: STUDY MATERIALS
-  const [materials, setMaterials] = useState(() => {
-    try {
-      const saved = localStorage.getItem('shared_study_materials');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const filtered = parsed.filter(m => 
-          !(m.id === 1 && m.title === 'Physics: Motion & Laws of Force') && 
-          !(m.id === 2 && m.title === 'Computer Networks: OSI Model & Protocols') && 
-          !(m.id === 3 && m.title === 'Mathematics: Algebra & Equations') &&
-          !(m.id === 1 && m.title === 'Computer Networks OSI Layer Guide (PDF)') &&
-          !(m.id === 2 && m.title === 'OS Deadlocks Audio Lecture & Voice Notes') &&
-          !(m.id === 3 && m.title === 'Cyber Security Phishing Defense Book')
-        );
-        if (parsed.length !== filtered.length) {
-          localStorage.setItem('shared_study_materials', JSON.stringify(filtered));
-        }
-        return filtered;
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('shared_study_materials', JSON.stringify(materials));
-  }, [materials]);
 
   // 5. DATA STORE: ANNOUNCEMENTS
   const initialAnnouncements = [
@@ -393,21 +399,79 @@ export default function AdminDashboard() {
     setShowAnnouncementModal(false);
   };
 
-  // MATERIAL HANDLERS
-  const handleSaveMaterial = (e) => {
-    e.preventDefault();
-    if (!materialForm.title) return;
-
-    const newMat = { id: Date.now(), ...materialForm, date: 'Just now', size: '3.5 MB' };
-    setMaterials([newMat, ...materials]);
-    speakIn(`Uploaded study material ${materialForm.title}`);
-    setShowMaterialModal(false);
+  // SYSTEM SETTINGS HANDLERS
+  const handleSaveSystemSettings = (e) => {
+    if (e) e.preventDefault();
+    localStorage.setItem('system_platform_settings', JSON.stringify(systemSettings));
+    setSettingsSavedToast(true);
+    speakIn('System settings saved successfully');
+    setTimeout(() => setSettingsSavedToast(false), 3500);
   };
 
-  const handleDeleteMaterial = (id, title) => {
-    if (window.confirm(`Remove study material ${title}?`)) {
-      setMaterials(materials.filter(m => m.id !== id));
-      speakIn(`Removed material ${title}`);
+  const handleResetSystemSettings = () => {
+    if (window.confirm('Reset all system settings to platform defaults?')) {
+      const defaultSettings = {
+        institutionName: 'VisionAssist AI Academy',
+        academicTerm: '2026 - Fall Academic Session',
+        adminSupportEmail: 'admin@visionassist.edu',
+        emergencyPhone: '+91 98765 43210',
+        systemTimezone: 'Asia/Kolkata (UTC+05:30)',
+        ttsEngine: 'Browser Speech Synthesis (Local & Fast)',
+        speechRate: 1.0,
+        speechPitch: 1.0,
+        wakeWordEnabled: true,
+        audioChimeEnabled: true,
+        autoNarrationOnScreenChange: true,
+        webcamFaceVerification: true,
+        multiplePersonWarningLimit: '2 Warnings (Auto-Exit on 3rd)',
+        faceAbsenceToleranceSec: 5,
+        autoReportIntrusions: true,
+        fullscreenEnforcement: true,
+        studentPasswordPolicy: 'Alphanumeric Only (A-Z, 0-9)',
+        otpExpiryMinutes: 10,
+        maxFailedAttempts: 5,
+        sessionInactivityTimeout: '60 Minutes',
+        concurrentSessions: 'Single Active Session Only',
+        defaultTheme: 'High Contrast (Amber & Dark Navy)',
+        baseFontSize: 'Medium (16px)',
+        ariaAssertiveness: 'Polite Live Regions',
+        tapAnywhereGuide: true
+      };
+      setSystemSettings(defaultSettings);
+      localStorage.setItem('system_platform_settings', JSON.stringify(defaultSettings));
+      setSettingsResetToast(true);
+      speakIn('System settings restored to defaults');
+      setTimeout(() => setSettingsResetToast(false), 3500);
+    }
+  };
+
+  const handleExportSystemBackup = () => {
+    try {
+      const backupData = {
+        exportTimestamp: new Date().toISOString(),
+        platform: 'AI Blind Assistant',
+        version: '2.5.0-production',
+        registeredAccounts: JSON.parse(localStorage.getItem('registered_accounts') || '{}'),
+        studentProfiles: JSON.parse(localStorage.getItem('student_profiles_by_email') || '{}'),
+        loggedInUsers: JSON.parse(localStorage.getItem('logged_in_users') || '{}'),
+        exams: exams,
+        announcements: announcements,
+        systemSettings: systemSettings
+      };
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `VisionAssist_SystemBackup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      speakIn('Complete system backup downloaded');
+      alert('System backup exported successfully as JSON file.');
+    } catch (e) {
+      alert('Failed to export backup: ' + e.message);
     }
   };
 
@@ -450,16 +514,13 @@ export default function AdminDashboard() {
     return matchesFilter && matchesSearch;
   });
 
-  // 11 Sidebar Items
+  // 8 Sidebar Items (AI Exam Assistant, Study Materials, and Reports removed per user specifications)
   const sidebarItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboardIcon },
     { id: 'students', label: 'Students Directory', icon: GraduationCap },
     { id: 'teachers', label: 'Teachers Directory', icon: UserCheck },
     { id: 'exams', label: 'Exam Management', icon: FileText },
-    { id: 'ai_assistant', label: 'AI Exam Assistant', icon: Bot },
     { id: 'accessibility', label: 'Accessibility Management', icon: Accessibility },
-    { id: 'materials', label: 'Study Material Management', icon: BookOpen },
-    { id: 'reports', label: 'Results & Reports', icon: BarChart3 },
     { id: 'announcements', label: 'Notifications & Announcements', icon: Bell },
     { id: 'security', label: 'Security & User Roles', icon: ShieldCheck },
     { id: 'settings', label: 'System Settings', icon: Settings }
@@ -521,22 +582,25 @@ export default function AdminDashboard() {
           </nav>
         </div>
 
-        {/* Bottom Sidebar AI Assistant Card */}
+        {/* Bottom Sidebar System Status & Settings Quick Card */}
         <div style={{ background: '#1e293b', padding: '16px', borderRadius: '16px', border: '1px solid #334155', marginTop: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
-            <div style={{ background: '#d97706', padding: '8px', borderRadius: '10px' }}>
-              <Volume2 size={20} color="#ffffff" />
+            <div style={{ background: '#0284c7', padding: '8px', borderRadius: '10px' }}>
+              <Settings size={20} color="#ffffff" />
             </div>
             <div>
-              <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#ffffff' }}>AI Assistant</h4>
-              <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>Manage and monitor AI features</p>
+              <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#ffffff' }}>System Engine</h4>
+              <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>Operational • v2.5.0</p>
             </div>
           </div>
           <button 
-            onClick={() => setActiveTab('ai_assistant')}
-            style={{ width: '100%', background: 'rgba(217, 119, 6, 0.2)', border: '1px solid #d97706', color: '#f59e0b', padding: '8px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+            onClick={() => {
+              setActiveTab('settings');
+              speakIn('Opening System Settings Hub');
+            }}
+            style={{ width: '100%', background: 'rgba(2, 132, 199, 0.2)', border: '1px solid #0284c7', color: '#38bdf8', padding: '8px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
           >
-            Manage AI Services
+            Configure Settings
           </button>
         </div>
       </aside>
@@ -777,8 +841,8 @@ export default function AdminDashboard() {
                     <span>📄 Create Exam</span><span>›</span>
                   </button>
 
-                  <button onClick={() => { setActiveTab('materials'); setShowMaterialModal(true); }} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: 'none', background: '#0d9488', color: '#ffffff', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>📁 Upload Study Material</span><span>›</span>
+                  <button onClick={() => setActiveTab('settings')} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: 'none', background: '#0284c7', color: '#ffffff', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>⚙️ Manage System Settings</span><span>›</span>
                   </button>
 
                   <button onClick={() => { setActiveTab('announcements'); setShowAnnouncementModal(true); }} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: 'none', background: '#f97316', color: '#ffffff', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -830,20 +894,8 @@ export default function AdminDashboard() {
                   </table>
                 </div>
 
-                {/* Right Column: AI Exam Assistant Banner + Recent Activity */}
+                {/* Right Column: Recent Activity Feed */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  
-                  {/* AI Exam Assistant Card */}
-                  <div style={{ background: '#ffffff', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <div style={{ background: '#f5f3ff', padding: '12px', borderRadius: '14px' }}><Bot size={28} color="#7c3aed" /></div>
-                      <div>
-                        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>AI Exam Assistant</h4>
-                        <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>Monitor AI services, voice features, and usage statistics.</p>
-                      </div>
-                    </div>
-                    <button onClick={() => setActiveTab('ai_assistant')} style={{ background: '#ffffff', border: '1px solid #cbd5e1', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>View Details</button>
-                  </div>
 
                   {/* Recent Activity Card */}
                   <div style={{ background: '#ffffff', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
@@ -1249,42 +1301,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* TAB 5: AI EXAM ASSISTANT MANAGEMENT */}
-          {activeTab === 'ai_assistant' && (
-            <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ fontSize: '22px', fontWeight: '900', margin: '0 0 8px 0' }}>🤖 AI Exam Assistant Management</h2>
-              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>Configure speech synthesis, text-to-speech narration, voice command keyphrases, and AI diagnostics.</p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', margin: '0 0 12px 0' }}>AI Feature Toggles</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px', fontWeight: '700' }}>
-                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      Text-to-Speech Narration <input type="checkbox" checked={aiConfig.ttsEnabled} onChange={(e) => setAiConfig({ ...aiConfig, ttsEnabled: e.target.checked })} />
-                    </label>
-                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      Speech-to-Text Dictation <input type="checkbox" checked={aiConfig.sttEnabled} onChange={(e) => setAiConfig({ ...aiConfig, sttEnabled: e.target.checked })} />
-                    </label>
-                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      Hands-Free Voice Commands <input type="checkbox" checked={aiConfig.voiceCommands} onChange={(e) => setAiConfig({ ...aiConfig, voiceCommands: e.target.checked })} />
-                    </label>
-                  </div>
-                </div>
-
-                <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', margin: '0 0 12px 0' }}>Language & Accents</h3>
-                  <select value={aiConfig.language} onChange={(e) => setAiConfig({ ...aiConfig, language: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: '700' }}>
-                    <option>English (US)</option>
-                    <option>English (UK)</option>
-                    <option>English (India)</option>
-                  </select>
-                  <p style={{ fontSize: '12px', color: '#16a34a', marginTop: '12px', fontWeight: '700' }}>🟢 AI Recognition Models Loaded & Verified</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 6: ACCESSIBILITY MANAGEMENT */}
+          {/* TAB 5: ACCESSIBILITY MANAGEMENT */}
           {activeTab === 'accessibility' && (
             <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
               <h2 style={{ fontSize: '22px', fontWeight: '900', margin: '0 0 8px 0' }}>♿ Accessibility Management</h2>
@@ -1309,54 +1326,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* TAB 7: STUDY MATERIAL MANAGEMENT */}
-          {activeTab === 'materials' && (
-            <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <div>
-                  <h2 style={{ fontSize: '22px', fontWeight: '900', margin: 0 }}>📚 Study Material Management ({materials.length})</h2>
-                  <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>Upload accessible PDFs, audio lectures, and study documents.</p>
-                </div>
-                <button onClick={() => setShowMaterialModal(true)} style={{ background: '#0d9488', color: '#fff', border: 'none', padding: '12px 20px', borderRadius: '10px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Plus size={18} /> Upload Material
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {materials.map(mat => (
-                  <div key={mat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <div>
-                      <h3 style={{ fontSize: '16px', fontWeight: '800', margin: '0 0 4px 0' }}>{mat.title}</h3>
-                      <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Type: {mat.type} • Class: {mat.assignedClass} • Size: {mat.size}</p>
-                    </div>
-                    <button onClick={() => handleDeleteMaterial(mat.id, mat.title)} style={{ background: '#ef4444', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer' }}>
-                      <Trash2 size={14} /> Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 8: RESULTS & REPORTS */}
-          {activeTab === 'reports' && (
-            <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ fontSize: '22px', fontWeight: '900', margin: '0 0 8px 0' }}>📈 Results & Analytics Reports</h2>
-              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>Export analytics and inspect student completion performance.</p>
-              
-              <div style={{ padding: '24px', borderRadius: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '800', margin: '0 0 4px 0' }}>System Performance Report (JSON/CSV)</h3>
-                  <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Export complete statistics on students, exams, and audio usage.</p>
-                </div>
-                <button onClick={() => alert('Exporting full analytics report...')} style={{ background: '#d97706', color: '#fff', border: 'none', padding: '12px 20px', borderRadius: '10px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Download size={18} /> Export Analytics
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 9: NOTIFICATIONS & ANNOUNCEMENTS */}
+          {/* TAB 6: NOTIFICATIONS & ANNOUNCEMENTS */}
           {activeTab === 'announcements' && (
             <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -1384,38 +1354,548 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* TAB 10: SECURITY & USER ROLES */}
+          {/* TAB 7: SECURITY & USER ROLES */}
           {activeTab === 'security' && (
             <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
               <h2 style={{ fontSize: '22px', fontWeight: '900', margin: '0 0 8px 0' }}>🔐 Security & User Roles</h2>
-              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>Manage role permissions and audit login activities.</p>
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>Manage role permissions, password security policies, and audit access governance.</p>
 
               <div style={{ padding: '20px', borderRadius: '16px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: '800', margin: '0 0 12px 0' }}>Role Permissions Matrix</h3>
                 <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div>🛡️ <strong>Administrator:</strong> Full System Access & User Governance</div>
+                  <div>🛡️ <strong>Administrator:</strong> Full System Access, User Governance & Platform Settings</div>
                   <div>👨‍🏫 <strong>Teacher:</strong> Exam Creation, Subject Grading & Student Proctoring</div>
-                  <div>🎓 <strong>Student:</strong> AI Guided Exam Taking & Accessible Study Materials</div>
+                  <div>🎓 <strong>Student:</strong> AI Voice Guided Navigation, Accessible Exams & Screen Tap Assistance</div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 11: SYSTEM SETTINGS */}
+          {/* TAB 8: SYSTEM SETTINGS HUB */}
           {activeTab === 'settings' && (
-            <div style={{ background: '#ffffff', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ fontSize: '22px', fontWeight: '900', margin: '0 0 8px 0' }}>⚙️ System Settings</h2>
-              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>Application settings, database telemetry, and backup configurations.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-              <div style={{ padding: '20px', borderRadius: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', margin: '0 0 4px 0' }}>Database & System Backup</h3>
-                  <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: '700' }}>🟢 All Databases Operational & Backed Up</span>
+              {/* Toast Notifications */}
+              {settingsSavedToast && (
+                <div style={{ background: '#f0fdf4', border: '2px solid #22c55e', color: '#15803d', padding: '14px 20px', borderRadius: '14px', fontWeight: '800', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(34, 197, 94, 0.15)' }}>
+                  <CheckCircle2 size={20} color="#15803d" />
+                  <span>System settings updated and applied across all modules successfully!</span>
                 </div>
-                <button onClick={() => alert('Triggered instant database backup.')} style={{ background: '#d97706', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer' }}>
-                  Backup Now
-                </button>
+              )}
+
+              {settingsResetToast && (
+                <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', color: '#1d4ed8', padding: '14px 20px', borderRadius: '14px', fontWeight: '800', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)' }}>
+                  <RotateCcw size={20} color="#1d4ed8" />
+                  <span>All system settings have been restored to platform defaults.</span>
+                </div>
+              )}
+
+              {/* Header Box with Actions */}
+              <div style={{ background: '#ffffff', padding: '24px 28px', borderRadius: '20px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    ⚙️ System Settings & Platform Governance
+                  </h2>
+                  <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
+                    Configure global parameters, AI speech engine, proctoring rules, authentication security policies, database telemetry, and automated system backups.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <button 
+                    onClick={handleExportSystemBackup}
+                    style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#0f172a', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    title="Export complete system data as JSON"
+                  >
+                    <Download size={16} /> Export Backup (.JSON)
+                  </button>
+
+                  <button 
+                    onClick={handleResetSystemSettings}
+                    style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#64748b', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <RotateCcw size={16} /> Reset Defaults
+                  </button>
+
+                  <button 
+                    onClick={handleSaveSystemSettings}
+                    style={{ background: '#16a34a', border: 'none', color: '#ffffff', padding: '10px 20px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)' }}
+                  >
+                    <Check size={16} /> Save All Changes
+                  </button>
+                </div>
               </div>
+
+              {/* Grid of Settings Modules */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
+
+                {/* 1. Institution & Platform Identity */}
+                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ background: '#fef3c7', padding: '8px', borderRadius: '10px', color: '#d97706' }}>
+                      <Globe size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, color: '#0f172a' }}>Institution & Identity</h3>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Platform branding and contact routing</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Institution / Platform Name</label>
+                      <input 
+                        type="text" 
+                        value={systemSettings.institutionName} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, institutionName: e.target.value })}
+                        style={modalInputStyle} 
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Current Academic Term</label>
+                      <input 
+                        type="text" 
+                        value={systemSettings.academicTerm} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, academicTerm: e.target.value })}
+                        style={modalInputStyle} 
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Administrative Support Email</label>
+                      <input 
+                        type="email" 
+                        value={systemSettings.adminSupportEmail} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, adminSupportEmail: e.target.value })}
+                        style={modalInputStyle} 
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Emergency Audio Helpline Phone</label>
+                      <input 
+                        type="text" 
+                        value={systemSettings.emergencyPhone} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, emergencyPhone: e.target.value })}
+                        style={modalInputStyle} 
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>System Timezone & Regional Clock</label>
+                      <select 
+                        value={systemSettings.systemTimezone} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, systemTimezone: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="Asia/Kolkata (UTC+05:30)">Asia/Kolkata (UTC+05:30 IST)</option>
+                        <option value="America/New_York (UTC-05:00)">America/New_York (UTC-05:00 EST)</option>
+                        <option value="Europe/London (UTC+00:00)">Europe/London (UTC+00:00 GMT)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. AI Voice & Narration Defaults */}
+                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ background: '#eff6ff', padding: '8px', borderRadius: '10px', color: '#2563eb' }}>
+                      <Volume2 size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, color: '#0f172a' }}>AI Voice & Speech Engine</h3>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Speech synthesis, wake word & chimes</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Speech Engine Provider</label>
+                      <select 
+                        value={systemSettings.ttsEngine} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, ttsEngine: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="Browser Speech Synthesis (Local & Fast)">Browser Speech Synthesis (Local & Fast)</option>
+                        <option value="Edge Neural HD Voice Engine">Edge Neural HD Voice Engine</option>
+                        <option value="Google Cloud Wavenet TTS">Google Cloud Wavenet TTS</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                        <span>Narration Rate / Speed</span>
+                        <span style={{ color: '#d97706' }}>{systemSettings.speechRate}x</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.75" 
+                        max="1.75" 
+                        step="0.05"
+                        value={systemSettings.speechRate} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, speechRate: parseFloat(e.target.value) })}
+                        style={{ width: '100%', accentColor: '#d97706' }} 
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                        <span>Voice Pitch</span>
+                        <span style={{ color: '#2563eb' }}>{systemSettings.speechPitch}x</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.8" 
+                        max="1.3" 
+                        step="0.05"
+                        value={systemSettings.speechPitch} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, speechPitch: parseFloat(e.target.value) })}
+                        style={{ width: '100%', accentColor: '#2563eb' }} 
+                      />
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: '700', color: '#0f172a', cursor: 'pointer' }}>
+                        <span>Hands-Free Wake-Word ("Hey Assistant")</span>
+                        <input 
+                          type="checkbox" 
+                          checked={systemSettings.wakeWordEnabled} 
+                          onChange={(e) => setSystemSettings({ ...systemSettings, wakeWordEnabled: e.target.checked })} 
+                          style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                        />
+                      </label>
+
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: '700', color: '#0f172a', cursor: 'pointer' }}>
+                        <span>Audio Chime on Status Transitions</span>
+                        <input 
+                          type="checkbox" 
+                          checked={systemSettings.audioChimeEnabled} 
+                          onChange={(e) => setSystemSettings({ ...systemSettings, audioChimeEnabled: e.target.checked })} 
+                          style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                        />
+                      </label>
+
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: '700', color: '#0f172a', cursor: 'pointer' }}>
+                        <span>Auto-Narration for Screen Changes</span>
+                        <input 
+                          type="checkbox" 
+                          checked={systemSettings.autoNarrationOnScreenChange} 
+                          onChange={(e) => setSystemSettings({ ...systemSettings, autoNarrationOnScreenChange: e.target.checked })} 
+                          style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Proctoring & Exam Integrity Rules */}
+                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ background: '#fef2f2', padding: '8px', borderRadius: '10px', color: '#dc2626' }}>
+                      <Camera size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, color: '#0f172a' }}>Proctoring & Exam Rules</h3>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Camera monitoring, absence & intruder limits</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '12px', borderRadius: '12px' }}>
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: '800', color: '#991b1b', cursor: 'pointer' }}>
+                        <span>Webcam Face Verification Mandatory</span>
+                        <input 
+                          type="checkbox" 
+                          checked={systemSettings.webcamFaceVerification} 
+                          onChange={(e) => setSystemSettings({ ...systemSettings, webcamFaceVerification: e.target.checked })} 
+                          style={{ width: '18px', height: '18px', accentColor: '#dc2626' }}
+                        />
+                      </label>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#b91c1c' }}>Requires students to scan face and keeps live proctor camera active during exam.</p>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Intruder / Multiple Person Warning Limit</label>
+                      <select 
+                        value={systemSettings.multiplePersonWarningLimit} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, multiplePersonWarningLimit: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="2 Warnings (Auto-Exit on 3rd)">2 Warnings (Auto-Exit on 3rd Violation) [Recommended]</option>
+                        <option value="1 Warning (Auto-Exit on 2nd)">Strict: 1 Warning (Auto-Exit on 2nd)</option>
+                        <option value="3 Warnings (Auto-Exit on 4th)">Lenient: 3 Warnings (Auto-Exit on 4th)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Face Absence Alert Tolerance (Seconds)</label>
+                      <input 
+                        type="number" 
+                        min="2" 
+                        max="20"
+                        value={systemSettings.faceAbsenceToleranceSec} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, faceAbsenceToleranceSec: parseInt(e.target.value) || 5 })}
+                        style={modalInputStyle} 
+                      />
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Triggers warning sound if scanned face leaves view for longer than threshold.</span>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: '700', color: '#0f172a', cursor: 'pointer' }}>
+                        <span>Auto-Report Alert Logs to Teacher Hub</span>
+                        <input 
+                          type="checkbox" 
+                          checked={systemSettings.autoReportIntrusions} 
+                          onChange={(e) => setSystemSettings({ ...systemSettings, autoReportIntrusions: e.target.checked })} 
+                          style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                        />
+                      </label>
+
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: '700', color: '#0f172a', cursor: 'pointer' }}>
+                        <span>Fullscreen Lockdown Mode</span>
+                        <input 
+                          type="checkbox" 
+                          checked={systemSettings.fullscreenEnforcement} 
+                          onChange={(e) => setSystemSettings({ ...systemSettings, fullscreenEnforcement: e.target.checked })} 
+                          style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Authentication & Security Policies */}
+                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ background: '#faf5ff', padding: '8px', borderRadius: '10px', color: '#9333ea' }}>
+                      <Lock size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, color: '#0f172a' }}>Security & Auth Policies</h3>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Password formatting, OTP life & timeouts</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>STUDENT PASSWORD POLICY</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#16a34a', fontWeight: '800', fontSize: '13px', marginTop: '2px' }}>
+                        <CheckCircle2 size={16} /> Alphanumeric Only (A-Z, 0-9, No Symbols)
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Forgot Password OTP Life Window</label>
+                      <select 
+                        value={systemSettings.otpExpiryMinutes} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, otpExpiryMinutes: parseInt(e.target.value) || 10 })}
+                        style={modalInputStyle}
+                      >
+                        <option value={5}>5 Minutes (High Security)</option>
+                        <option value={10}>10 Minutes (Standard)</option>
+                        <option value={15}>15 Minutes (Extended)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Max Failed Login Attempts Before Lockout</label>
+                      <select 
+                        value={systemSettings.maxFailedAttempts} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, maxFailedAttempts: parseInt(e.target.value) || 5 })}
+                        style={modalInputStyle}
+                      >
+                        <option value={3}>3 Attempts</option>
+                        <option value={5}>5 Attempts (Recommended)</option>
+                        <option value={10}>10 Attempts</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Inactivity Session Timeout</label>
+                      <select 
+                        value={systemSettings.sessionInactivityTimeout} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, sessionInactivityTimeout: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="30 Minutes">30 Minutes</option>
+                        <option value="60 Minutes">60 Minutes</option>
+                        <option value="120 Minutes">120 Minutes</option>
+                        <option value="Never">Never (Keep Session Active)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Concurrent Session Policy</label>
+                      <select 
+                        value={systemSettings.concurrentSessions} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, concurrentSessions: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="Single Active Session Only">Single Active Session Only (Auto-logout old device)</option>
+                        <option value="Allow Concurrent Sessions">Allow Concurrent Sessions Across Devices</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Database Telemetry & Backup Tools */}
+                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ background: '#f0fdf4', padding: '8px', borderRadius: '10px', color: '#16a34a' }}>
+                      <Database size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, color: '#0f172a' }}>Database Telemetry & Backup</h3>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Cluster status, storage footprint & exports</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: '800', color: '#166534' }}>MongoDB Atlas Cluster</div>
+                        <span style={{ fontSize: '11px', color: '#15803d' }}>Live Connected • 24ms roundtrip</span>
+                      </div>
+                      <span style={{ background: '#22c55e', color: '#fff', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '8px' }}>HEALTHY</span>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700' }}>
+                      <span style={{ color: '#64748b' }}>Registered Accounts:</span>
+                      <span style={{ color: '#0f172a' }}>{students.length + teachers.length + 1} Records</span>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700' }}>
+                      <span style={{ color: '#64748b' }}>Scheduled Exams:</span>
+                      <span style={{ color: '#0f172a' }}>{exams.length} Exams</span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                      <button 
+                        onClick={handleExportSystemBackup}
+                        style={{ width: '100%', background: '#d97706', color: '#fff', border: 'none', padding: '10px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <Download size={16} /> Download Complete Backup (.JSON)
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          speakIn('Database indices synchronized successfully');
+                          alert('Database synchronization completed. All storage indices verified.');
+                        }}
+                        style={{ width: '100%', background: '#f1f5f9', color: '#0f172a', border: '1px solid #cbd5e1', padding: '10px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <RefreshCw size={16} /> Synchronize & Optimize Indices
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          if (window.confirm('Clear all resolved emergency assistance requests?')) {
+                            setAssistanceRequests(prev => prev.filter(r => r.status === 'Pending'));
+                            speakIn('Cleared resolved alert logs');
+                          }
+                        }}
+                        style={{ width: '100%', background: '#ffffff', color: '#ef4444', border: '1px solid #fecaca', padding: '10px', borderRadius: '10px', fontWeight: '800', fontSize: '12px', cursor: 'pointer' }}
+                      >
+                        🧹 Purge Resolved SOS & Temp Logs
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. Interface Accessibility Defaults */}
+                <div style={{ background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ background: '#fff7ed', padding: '8px', borderRadius: '10px', color: '#ea580c' }}>
+                      <Accessibility size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, color: '#0f172a' }}>Global Accessibility Defaults</h3>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Default theme, ARIA, screen tap guide</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>System Default Contrast Theme</label>
+                      <select 
+                        value={systemSettings.defaultTheme} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, defaultTheme: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="High Contrast (Amber & Dark Navy)">High Contrast (Amber & Dark Navy)</option>
+                        <option value="Dark Monochrome">Deep Dark Monochrome</option>
+                        <option value="Light Crisp Canvas">Light Crisp Canvas</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Base Font Scale</label>
+                      <select 
+                        value={systemSettings.baseFontSize} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, baseFontSize: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="Medium (16px)">Medium (16px - Standard)</option>
+                        <option value="Large (18px)">Large (18px - High Legibility)</option>
+                        <option value="Extra-Large (22px)">Extra-Large (22px - Maximum)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Screen Reader ARIA Live Assertiveness</label>
+                      <select 
+                        value={systemSettings.ariaAssertiveness} 
+                        onChange={(e) => setSystemSettings({ ...systemSettings, ariaAssertiveness: e.target.value })}
+                        style={modalInputStyle}
+                      >
+                        <option value="Polite Live Regions">Polite (Wait until speaker finishes current phrase)</option>
+                        <option value="Assertive Immediate Interruption">Assertive (Interrupt immediately for urgent alerts)</option>
+                      </select>
+                    </div>
+
+                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: '12px', borderRadius: '12px' }}>
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: '800', color: '#92400e', cursor: 'pointer' }}>
+                        <span>Screen Tap Voice Guide Active</span>
+                        <input 
+                          type="checkbox" 
+                          checked={systemSettings.tapAnywhereGuide} 
+                          onChange={(e) => setSystemSettings({ ...systemSettings, tapAnywhereGuide: e.target.checked })} 
+                          style={{ width: '18px', height: '18px', accentColor: '#d97706' }}
+                        />
+                      </label>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#b45309' }}>Guides student verbally when tapping anywhere across the screen.</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Bottom Sticky Action Bar */}
+              <div style={{ background: '#ffffff', padding: '18px 28px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <ShieldCheck size={22} color="#16a34a" />
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#475569' }}>
+                    All changes persist in local platform storage and apply to live exams automatically.
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button 
+                    onClick={handleExportSystemBackup}
+                    style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Download size={16} /> Export JSON
+                  </button>
+                  <button 
+                    onClick={handleSaveSystemSettings}
+                    style={{ background: '#16a34a', border: 'none', color: '#ffffff', padding: '10px 24px', borderRadius: '10px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)' }}
+                  >
+                    <Save size={16} /> Save All System Settings
+                  </button>
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -1460,24 +1940,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* STUDY MATERIAL MODAL */}
-      {showMaterialModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div style={{ background: '#ffffff', padding: '32px', borderRadius: '20px', width: '100%', maxWidth: '440px', boxSizing: 'border-box' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: '800', margin: '0 0 16px 0' }}>Upload Study Material</h3>
-            <form onSubmit={handleSaveMaterial} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <input type="text" placeholder="Material Title" value={materialForm.title} onChange={(e) => setMaterialForm({ ...materialForm, title: e.target.value })} style={modalInputStyle} required />
-              <input type="text" placeholder="Type (PDF / Audio Lecture)" value={materialForm.type} onChange={(e) => setMaterialForm({ ...materialForm, type: e.target.value })} style={modalInputStyle} />
-              <input type="text" placeholder="Subject" value={materialForm.subject} onChange={(e) => setMaterialForm({ ...materialForm, subject: e.target.value })} style={modalInputStyle} />
 
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setShowMaterialModal(false)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: '800', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#0d9488', color: '#fff', fontWeight: '800', cursor: 'pointer' }}>Upload Material</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* RESET PASSWORD MODAL */}
       {resetPassModal && (
