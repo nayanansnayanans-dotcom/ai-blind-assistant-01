@@ -18,7 +18,8 @@ import {
   Phone, 
   Mail, 
   Sparkles, 
-  X 
+  X,
+  MousePointer
 } from 'lucide-react';
 import { speakIn, cancelSpeech } from './speech';
 import ProjectLogo from './ProjectLogo.jsx';
@@ -31,6 +32,8 @@ export default function HomePage() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPlayingWelcome, setIsPlayingWelcome] = useState(false);
+  const [hoverSpeechEnabled, setHoverSpeechEnabled] = useState(true);
+  const [hoveredElementLabel, setHoveredElementLabel] = useState('');
   const [voiceStatus, setVoiceStatus] = useState('Tap anywhere on the screen or press Spacebar to activate Voice Assistant!');
   const [voiceQuery, setVoiceQuery] = useState('');
   const [contactForm, setContactForm] = useState({ name: '', email: '', role: 'Student', subject: 'General Inquiry', message: '' });
@@ -40,6 +43,13 @@ export default function HomePage() {
   const recognitionRef = useRef(null);
   const hasSpokenWelcomeRef = useRef(false);
   const isPlayingWelcomeRef = useRef(false);
+  const hoverTimeoutRef = useRef(null);
+  const lastHoverTextRef = useRef('');
+  const hoverSpeechEnabledRef = useRef(true);
+
+  useEffect(() => {
+    hoverSpeechEnabledRef.current = hoverSpeechEnabled;
+  }, [hoverSpeechEnabled]);
 
   useEffect(() => {
     const handleHash = () => {
@@ -105,6 +115,68 @@ export default function HomePage() {
     setVoiceStatus('Voice Assistant paused. Tap anywhere or press Spacebar to resume.');
   };
 
+  // =========================================================================
+  // CURSOR HOVER SPEECH NARRATOR
+  // Says aloud what any button, link, card, or input is when hovered or focused
+  // =========================================================================
+  const handleHoverSpeak = (text) => {
+    if (!hoverSpeechEnabledRef.current) return;
+    if (isListening) return; // Do not interrupt microphone when student is speaking
+    if (!text || text === lastHoverTextRef.current) return;
+
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+
+    setHoveredElementLabel(text);
+
+    hoverTimeoutRef.current = setTimeout(() => {
+      lastHoverTextRef.current = text;
+      // Slightly snappier rate (1.05) so hover voice feedback is immediate & responsive
+      speakIn(text, 'en-US', { rate: 1.05 });
+    }, 110);
+  };
+
+  const handleHoverLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    lastHoverTextRef.current = '';
+    setHoveredElementLabel('');
+  };
+
+  // Delegated Global Mouseover Listener for elements with data-narrate
+  useEffect(() => {
+    const handleGlobalMouseOver = (e) => {
+      if (!hoverSpeechEnabledRef.current || isListening) return;
+      const target = e.target.closest('[data-narrate]');
+      if (target) {
+        const text = target.getAttribute('data-narrate');
+        if (text) {
+          handleHoverSpeak(text);
+        }
+      }
+    };
+
+    const handleGlobalFocusIn = (e) => {
+      if (!hoverSpeechEnabledRef.current || isListening) return;
+      const target = e.target.closest('[data-narrate]');
+      if (target) {
+        const text = target.getAttribute('data-narrate');
+        if (text) {
+          handleHoverSpeak(text);
+        }
+      }
+    };
+
+    window.addEventListener('mouseover', handleGlobalMouseOver, { passive: true });
+    window.addEventListener('focusin', handleGlobalFocusIn, { passive: true });
+    return () => {
+      window.removeEventListener('mouseover', handleGlobalMouseOver);
+      window.removeEventListener('focusin', handleGlobalFocusIn);
+    };
+  }, [isListening]);
+
   // Comprehensive Welcome & Features Audio Announcement
   const WELCOME_AND_FEATURES_SPEECH = 
     "Welcome to VisionAssist AI — an intelligent, accessible platform designed for visually impaired and blind students. " +
@@ -149,8 +221,9 @@ export default function HomePage() {
     const fullInstructions = 
       "Hello and welcome, student! Here are the complete audio instructions for blind users. " +
       "First: Voice Control. You can tap anywhere on the screen at any time, or press the Spacebar, to activate the microphone and speak your voice command. " +
-      "Second: Navigation Commands. Say 'Student Login' to go to login. Say 'Register' to create your account. Say 'Student Dashboard' to view your portal. Say 'Read Features' to hear the platform features again. " +
-      "Third: Exam Portal. In your Student Dashboard, you can listen to audio question paper narration and dictate your exam answers using speech to text. " +
+      "Second: Cursor Hover Speech. Hovering your cursor over any button, card, or link will immediately speak what it is. " +
+      "Third: Navigation Commands. Say 'Student Login' to go to login. Say 'Register' to create your account. Say 'Student Dashboard' to view your portal. Say 'Read Features' to hear the platform features again. " +
+      "Fourth: Exam Portal. In your Student Dashboard, you can listen to audio question paper narration and dictate your exam answers using speech to text. " +
       "Whenever you are ready, tap anywhere on the screen and speak your command now!";
 
     speak(fullInstructions);
@@ -198,6 +271,12 @@ export default function HomePage() {
       readStudentInstructionsAloud();
     } else if (q.includes('read features') || q.includes('explain features') || q.includes('features') || q.includes('what can you do') || q.includes('tell me features')) {
       playWelcomeAndFeatures(true);
+    } else if (q.includes('cursor') || q.includes('hover')) {
+      setHoverSpeechEnabled(prev => {
+        const next = !prev;
+        speak(next ? 'Cursor hover speech enabled. Move your mouse over any button to hear what it is.' : 'Cursor hover speech disabled.');
+        return next;
+      });
     } else if (q.includes('camera') || q.includes('detection') || q.includes('object')) {
       speak('Starting live object and hazard detection assistant.', () => navigate('/dashboard'));
     } else if (q.includes('ocr') || q.includes('read book') || q.includes('text reader')) {
@@ -401,60 +480,112 @@ export default function HomePage() {
         boxShadow: '0 2px 10px rgba(2, 132, 199, 0.05)',
         position: 'sticky', top: 0, zIndex: 100
       }}>
-        <ProjectLogo size="medium" />
+        <div data-narrate="VisionAssist AI project logo. Home page.">
+          <ProjectLogo size="medium" />
+        </div>
 
         <nav style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <Link to="/" style={navLinkStyleActive}>Home</Link>
-          <Link to="/student-login" style={{
-            background: '#0284c7',
-            color: '#ffffff',
-            padding: '8px 14px',
-            borderRadius: '10px',
-            textDecoration: 'none',
-            fontSize: '13px',
-            fontWeight: '800',
-            boxShadow: '0 4px 10px rgba(2, 132, 199, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
+          <Link 
+            to="/" 
+            style={navLinkStyleActive}
+            data-narrate="Home link. Return to top of home page."
+            onMouseEnter={() => handleHoverSpeak('Home link. Return to top of home page.')}
+            onFocus={() => handleHoverSpeak('Home link. Return to top of home page.')}
+            onMouseLeave={handleHoverLeave}
+          >
+            Home
+          </Link>
+          
+          <Link 
+            to="/student-login" 
+            style={{
+              background: '#0284c7',
+              color: '#ffffff',
+              padding: '8px 14px',
+              borderRadius: '10px',
+              textDecoration: 'none',
+              fontSize: '13px',
+              fontWeight: '800',
+              boxShadow: '0 4px 10px rgba(2, 132, 199, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            data-narrate="Student Login button. Access blind student portal and audio exams."
+            onMouseEnter={() => handleHoverSpeak('Student Login button. Access blind student portal and audio exams.')}
+            onFocus={() => handleHoverSpeak('Student Login button. Access blind student portal and audio exams.')}
+            onMouseLeave={handleHoverLeave}
+          >
             <UserCheck size={16} /> Student Login
           </Link>
-          <Link to="/teacher-login" onClick={(e) => { e.preventDefault(); navigateSilent('/teacher-login'); }} style={{
-            background: '#9333ea',
-            color: '#ffffff',
-            padding: '8px 14px',
-            borderRadius: '10px',
-            textDecoration: 'none',
-            fontSize: '13px',
-            fontWeight: '800',
-            boxShadow: '0 4px 10px rgba(147, 51, 234, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
+
+          <Link 
+            to="/teacher-login" 
+            onClick={(e) => { e.preventDefault(); navigateSilent('/teacher-login'); }} 
+            style={{
+              background: '#9333ea',
+              color: '#ffffff',
+              padding: '8px 14px',
+              borderRadius: '10px',
+              textDecoration: 'none',
+              fontSize: '13px',
+              fontWeight: '800',
+              boxShadow: '0 4px 10px rgba(147, 51, 234, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            data-narrate="Teacher Login button. Access educator portal and question evaluation."
+            onMouseEnter={() => handleHoverSpeak('Teacher Login button. Access educator portal and question evaluation.')}
+            onFocus={() => handleHoverSpeak('Teacher Login button. Access educator portal and question evaluation.')}
+            onMouseLeave={handleHoverLeave}
+          >
             <UserCheck size={16} /> Teacher Login
           </Link>
-          <Link to="/admin-login" onClick={(e) => { e.preventDefault(); navigateSilent('/admin-login'); }} style={{
-            background: '#d97706',
-            color: '#ffffff',
-            padding: '8px 14px',
-            borderRadius: '10px',
-            textDecoration: 'none',
-            fontSize: '13px',
-            fontWeight: '800',
-            boxShadow: '0 4px 10px rgba(217, 119, 6, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
+
+          <Link 
+            to="/admin-login" 
+            onClick={(e) => { e.preventDefault(); navigateSilent('/admin-login'); }} 
+            style={{
+              background: '#d97706',
+              color: '#ffffff',
+              padding: '8px 14px',
+              borderRadius: '10px',
+              textDecoration: 'none',
+              fontSize: '13px',
+              fontWeight: '800',
+              boxShadow: '0 4px 10px rgba(217, 119, 6, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            data-narrate="Admin Login button. Access administrator dashboard and system settings."
+            onMouseEnter={() => handleHoverSpeak('Admin Login button. Access administrator dashboard and system settings.')}
+            onFocus={() => handleHoverSpeak('Admin Login button. Access administrator dashboard and system settings.')}
+            onMouseLeave={handleHoverLeave}
+          >
             <Shield size={16} /> Admin Login
           </Link>
-          <a href="#portal" style={navLinkStyle}>Menu</a>
+
+          <a 
+            href="#portal" 
+            style={navLinkStyle}
+            data-narrate="Menu link. Jump to portal access role selection."
+            onMouseEnter={() => handleHoverSpeak('Menu link. Jump to portal access role selection.')}
+            onFocus={() => handleHoverSpeak('Menu link. Jump to portal access role selection.')}
+            onMouseLeave={handleHoverLeave}
+          >
+            Menu
+          </a>
+
           <button 
             type="button"
             onClick={() => { setShowContactModal(true); speak('Opening Contact Us and 24/7 Accessibility Support modal.'); }} 
             style={{ ...navLinkStyle, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            data-narrate="Contact Us button. Open 24/7 accessibility support form."
+            onMouseEnter={() => handleHoverSpeak('Contact Us button. Open 24/7 accessibility support form.')}
+            onFocus={() => handleHoverSpeak('Contact Us button. Open 24/7 accessibility support form.')}
+            onMouseLeave={handleHoverLeave}
           >
             <Mail size={16} color="#0284c7" /> Contact Us
           </button>
@@ -472,7 +603,12 @@ export default function HomePage() {
       }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 450px' }}>
+          <div 
+            style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 450px' }}
+            data-narrate="Student Voice Assistant status. Tap anywhere on the screen or press Spacebar to speak a command."
+            onMouseEnter={() => handleHoverSpeak('Student Voice Assistant status. Tap anywhere on the screen or press Spacebar to speak a command.')}
+            onMouseLeave={handleHoverLeave}
+          >
             <div style={{
               width: '50px', height: '50px', borderRadius: '50%',
               background: isListening ? '#fef2f2' : isPlayingWelcome ? '#ffffff' : isSpeaking ? '#f0fdf4' : '#ffffff',
@@ -512,6 +648,39 @@ export default function HomePage() {
           </div>
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Cursor Hover Speech Toggle Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setHoverSpeechEnabled(prev => {
+                  const next = !prev;
+                  speak(next ? 'Cursor hover speech enabled. Move your cursor over any button to hear what it is.' : 'Cursor hover speech paused.');
+                  return next;
+                });
+              }}
+              style={{
+                backgroundColor: hoverSpeechEnabled ? '#e0f2fe' : '#f1f5f9',
+                color: hoverSpeechEnabled ? '#0284c7' : '#64748b',
+                border: hoverSpeechEnabled ? '2px solid #0284c7' : '2px solid #cbd5e1',
+                padding: '10px 14px',
+                borderRadius: '12px',
+                fontWeight: '800',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              data-narrate={`Cursor Hover Speech toggle button. Currently ${hoverSpeechEnabled ? 'ON' : 'OFF'}. Click to toggle cursor speaking.`}
+              onMouseEnter={() => handleHoverSpeak(`Cursor Hover Speech toggle button. Currently ${hoverSpeechEnabled ? 'ON' : 'OFF'}. Click to toggle cursor speaking.`)}
+              onFocus={() => handleHoverSpeak(`Cursor Hover Speech toggle button. Currently ${hoverSpeechEnabled ? 'ON' : 'OFF'}. Click to toggle cursor speaking.`)}
+              onMouseLeave={handleHoverLeave}
+              title="Toggle Cursor Hover Speech"
+            >
+              <MousePointer size={16} color={hoverSpeechEnabled ? '#0284c7' : '#64748b'} />
+              <span>Hover Speech: <strong>{hoverSpeechEnabled ? 'ON' : 'OFF'}</strong></span>
+            </button>
+
             {/* Replay Welcome & Features Button */}
             <button
               type="button"
@@ -530,6 +699,10 @@ export default function HomePage() {
                 gap: '8px',
                 boxShadow: '0 4px 12px rgba(2, 132, 199, 0.2)'
               }}
+              data-narrate="Replay Welcome and Features button. Click to hear the full audio introduction and features list."
+              onMouseEnter={() => handleHoverSpeak('Replay Welcome and Features button. Click to hear the full audio introduction and features list.')}
+              onFocus={() => handleHoverSpeak('Replay Welcome and Features button. Click to hear the full audio introduction and features list.')}
+              onMouseLeave={handleHoverLeave}
               title="Click to hear the welcome greeting and features guide aloud"
             >
               <Volume2 size={20} color={isPlayingWelcome ? '#ffffff' : '#0284c7'} />
@@ -554,6 +727,10 @@ export default function HomePage() {
                 gap: '8px',
                 boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)'
               }}
+              data-narrate="Tap to Speak microphone button. Click or tap to activate speech recognition."
+              onMouseEnter={() => handleHoverSpeak('Tap to Speak microphone button. Click or tap to activate speech recognition.')}
+              onFocus={() => handleHoverSpeak('Tap to Speak microphone button. Click or tap to activate speech recognition.')}
+              onMouseLeave={handleHoverLeave}
             >
               <Mic size={20} />
               {isListening ? 'Listening... Speak Now' : '🎙️ Tap to Speak Command'}
@@ -577,6 +754,10 @@ export default function HomePage() {
                   alignItems: 'center',
                   gap: '6px'
                 }}
+                data-narrate="Stop Audio button. Click to immediately silence spoken narration."
+                onMouseEnter={() => handleHoverSpeak('Stop Audio button. Click to immediately silence spoken narration.')}
+                onFocus={() => handleHoverSpeak('Stop Audio button. Click to immediately silence spoken narration.')}
+                onMouseLeave={handleHoverLeave}
                 title="Stop spoken audio"
               >
                 <VolumeX size={18} /> Stop Audio
@@ -605,6 +786,10 @@ export default function HomePage() {
                 outline: 'none',
                 fontWeight: '600'
               }}
+              data-narrate="Voice command text input field. Type commands like student login, register, or read features."
+              onMouseEnter={() => handleHoverSpeak('Voice command text input field. Type commands like student login, register, or read features.')}
+              onFocus={() => handleHoverSpeak('Voice command text input field. Type commands like student login, register, or read features.')}
+              onMouseLeave={handleHoverLeave}
             />
             <button
               type="submit"
@@ -618,6 +803,10 @@ export default function HomePage() {
                 fontSize: '13px',
                 cursor: 'pointer'
               }}
+              data-narrate="Execute voice command button. Click to run typed command."
+              onMouseEnter={() => handleHoverSpeak('Execute voice command button. Click to run typed command.')}
+              onFocus={() => handleHoverSpeak('Execute voice command button. Click to run typed command.')}
+              onMouseLeave={handleHoverLeave}
             >
               Execute Command
             </button>
@@ -638,7 +827,12 @@ export default function HomePage() {
           boxShadow: '0 10px 30px rgba(2, 132, 199, 0.1)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div 
+              style={{ display: 'flex', alignItems: 'center', gap: '14px' }}
+              data-narrate="Welcome Guide and Features for Blind Students section. Tap anywhere on the screen at any time to speak voice commands or hear features aloud."
+              onMouseEnter={() => handleHoverSpeak('Welcome Guide and Features for Blind Students section. Tap anywhere on the screen at any time to speak voice commands or hear features aloud.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={{ background: '#e0f2fe', padding: '14px', borderRadius: '14px', border: '1px solid #7dd3fc' }}>
                 <HelpCircle size={32} color="#0284c7" />
               </div>
@@ -668,6 +862,10 @@ export default function HomePage() {
                   alignItems: 'center',
                   gap: '8px'
                 }}
+                data-narrate="Play Welcome and Features button. Hear all platform capabilities narrated aloud."
+                onMouseEnter={() => handleHoverSpeak('Play Welcome and Features button. Hear all platform capabilities narrated aloud.')}
+                onFocus={() => handleHoverSpeak('Play Welcome and Features button. Hear all platform capabilities narrated aloud.')}
+                onMouseLeave={handleHoverLeave}
               >
                 <Volume2 size={18} color="#854d0e" /> Play Welcome & Features
               </button>
@@ -687,6 +885,10 @@ export default function HomePage() {
                   alignItems: 'center',
                   gap: '8px'
                 }}
+                data-narrate="Step-by-Step Instructions button. Hear audio guidance on how to navigate the portal."
+                onMouseEnter={() => handleHoverSpeak('Step-by-Step Instructions button. Hear audio guidance on how to navigate the portal.')}
+                onFocus={() => handleHoverSpeak('Step-by-Step Instructions button. Hear audio guidance on how to navigate the portal.')}
+                onMouseLeave={handleHoverLeave}
               >
                 <BookOpen size={18} /> Step-by-Step Instructions
               </button>
@@ -695,7 +897,12 @@ export default function HomePage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
             
-            <div style={instructionStepCardStyle}>
+            <div 
+              style={instructionStepCardStyle}
+              data-narrate="Step 1: Tap anywhere on the screen or press the Spacebar to open the microphone and speak your voice commands."
+              onMouseEnter={() => handleHoverSpeak('Step 1: Tap anywhere on the screen or press the Spacebar to open the microphone and speak your voice commands.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={stepBadgeStyle}>Step 1: Tap to Speak</div>
               <h3 style={stepTitleStyle}>Tap Anywhere on the Screen</h3>
               <p style={stepBodyStyle}>
@@ -703,7 +910,12 @@ export default function HomePage() {
               </p>
             </div>
 
-            <div style={instructionStepCardStyle}>
+            <div 
+              style={instructionStepCardStyle}
+              data-narrate="Step 2: Say Student Login to sign in, or say Register to create a new blind student account with hands-free voice prompts."
+              onMouseEnter={() => handleHoverSpeak('Step 2: Say Student Login to sign in, or say Register to create a new blind student account with hands-free voice prompts.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={stepBadgeStyle}>Step 2: Voice Login</div>
               <h3 style={stepTitleStyle}>Say "Student Login" or "Register"</h3>
               <p style={stepBodyStyle}>
@@ -711,7 +923,12 @@ export default function HomePage() {
               </p>
             </div>
 
-            <div style={instructionStepCardStyle}>
+            <div 
+              style={instructionStepCardStyle}
+              data-narrate="Step 3: Say Student Dashboard to access audio question papers, dictate your exam answers, and inspect your proctoring logs."
+              onMouseEnter={() => handleHoverSpeak('Step 3: Say Student Dashboard to access audio question papers, dictate your exam answers, and inspect your proctoring logs.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={stepBadgeStyle}>Step 3: Exam Portal</div>
               <h3 style={stepTitleStyle}>Say "Student Dashboard"</h3>
               <p style={stepBodyStyle}>
@@ -719,7 +936,12 @@ export default function HomePage() {
               </p>
             </div>
 
-            <div style={instructionStepCardStyle}>
+            <div 
+              style={instructionStepCardStyle}
+              data-narrate="Step 4: Say Read Features or Welcome at any moment to hear the full platform audio tour narrated aloud."
+              onMouseEnter={() => handleHoverSpeak('Step 4: Say Read Features or Welcome at any moment to hear the full platform audio tour narrated aloud.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={stepBadgeStyle}>Step 4: Hear Features</div>
               <h3 style={stepTitleStyle}>Say "Read Features"</h3>
               <p style={stepBodyStyle}>
@@ -744,13 +966,28 @@ export default function HomePage() {
           gap: '24px'
         }}>
           <div style={{ flex: '1 1 500px' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(255,255,255,0.2)', borderRadius: '20px', fontSize: '13px', fontWeight: '800', marginBottom: '16px', color: '#ffffff' }}>
+            <span 
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(255,255,255,0.2)', borderRadius: '20px', fontSize: '13px', fontWeight: '800', marginBottom: '16px', color: '#ffffff' }}
+              data-narrate="AI Voice Assistant badge for Blind Students."
+              onMouseEnter={() => handleHoverSpeak('AI Voice Assistant badge for Blind Students.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <Sparkles size={16} /> AI Voice Assistant for Blind Students
             </span>
-            <h2 style={{ fontSize: '34px', fontWeight: '900', margin: '0 0 12px 0', lineHeight: 1.2, color: '#ffffff' }}>
+            <h2 
+              style={{ fontSize: '34px', fontWeight: '900', margin: '0 0 12px 0', lineHeight: 1.2, color: '#ffffff' }}
+              data-narrate="Accessible Learning and Visual Guidance System."
+              onMouseEnter={() => handleHoverSpeak('Accessible Learning and Visual Guidance System.')}
+              onMouseLeave={handleHoverLeave}
+            >
               Accessible Learning & Visual Guidance System
             </h2>
-            <p style={{ fontSize: '16px', color: '#e0f2fe', margin: '0 0 24px 0', lineHeight: 1.6, maxWidth: '640px' }}>
+            <p 
+              style={{ fontSize: '16px', color: '#e0f2fe', margin: '0 0 24px 0', lineHeight: 1.6, maxWidth: '640px' }}
+              data-narrate="Designed for visually impaired candidates with hands-free voice navigation, audio question papers, speech-to-text answer dictation, OCR document readers, and currency identifiers."
+              onMouseEnter={() => handleHoverSpeak('Designed for visually impaired candidates with hands-free voice navigation, audio question papers, speech-to-text answer dictation, OCR document readers, and currency identifiers.')}
+              onMouseLeave={handleHoverLeave}
+            >
               Designed for visually impaired candidates with hands-free voice navigation, audio question papers, speech-to-text answer dictation, OCR document readers, and currency identifiers.
             </p>
             
@@ -771,6 +1008,10 @@ export default function HomePage() {
                   gap: '10px',
                   boxShadow: '0 4px 14px rgba(0,0,0,0.1)'
                 }}
+                data-narrate="Play Welcome and Features aloud button."
+                onMouseEnter={() => handleHoverSpeak('Play Welcome and Features aloud button.')}
+                onFocus={() => handleHoverSpeak('Play Welcome and Features aloud button.')}
+                onMouseLeave={handleHoverLeave}
               >
                 <Volume2 size={20} color="#0369a1" />
                 🔊 Play Welcome & Features Aloud
@@ -792,6 +1033,10 @@ export default function HomePage() {
                   gap: '8px',
                   boxShadow: '0 4px 14px rgba(0,0,0,0.15)'
                 }}
+                data-narrate="Student Login button. Access student account."
+                onMouseEnter={() => handleHoverSpeak('Student Login button. Access student account.')}
+                onFocus={() => handleHoverSpeak('Student Login button. Access student account.')}
+                onMouseLeave={handleHoverLeave}
               >
                 <UserCheck size={18} /> Student Login <ArrowRight size={18} />
               </button>
@@ -812,6 +1057,10 @@ export default function HomePage() {
                   gap: '8px',
                   boxShadow: '0 4px 14px rgba(147, 51, 234, 0.35)'
                 }}
+                data-narrate="Teacher Login button. Access teacher evaluation dashboard."
+                onMouseEnter={() => handleHoverSpeak('Teacher Login button. Access teacher evaluation dashboard.')}
+                onFocus={() => handleHoverSpeak('Teacher Login button. Access teacher evaluation dashboard.')}
+                onMouseLeave={handleHoverLeave}
               >
                 <UserCheck size={18} /> Teacher Login <ArrowRight size={18} />
               </button>
@@ -832,6 +1081,10 @@ export default function HomePage() {
                   gap: '8px',
                   boxShadow: '0 4px 14px rgba(217, 119, 6, 0.35)'
                 }}
+                data-narrate="Admin Login button. Access administrator control center."
+                onMouseEnter={() => handleHoverSpeak('Admin Login button. Access administrator control center.')}
+                onFocus={() => handleHoverSpeak('Admin Login button. Access administrator control center.')}
+                onMouseLeave={handleHoverLeave}
               >
                 <Shield size={18} /> Admin Login <ArrowRight size={18} />
               </button>
@@ -841,13 +1094,22 @@ export default function HomePage() {
 
         {/* Quick Voice Access Shortcuts for Blind Students */}
         <section style={{ marginBottom: '40px', background: '#ffffff', padding: '24px', borderRadius: '20px', border: '1px solid #bae6fd', boxShadow: '0 4px 16px rgba(2, 132, 199, 0.06)' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '800', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h3 
+            style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '800', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '10px' }}
+            data-narrate="Voice Shortcuts for Students section. You can say any of these commands."
+            onMouseEnter={() => handleHoverSpeak('Voice Shortcuts for Students section. You can say any of these commands.')}
+            onMouseLeave={handleHoverLeave}
+          >
             <Radio size={20} color="#0284c7" /> Voice Shortcuts for Students (Or Tap Screen Anywhere)
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
             <button 
               onClick={() => processStudentVoiceCommand('student login')}
               style={voiceShortcutBtnStyle}
+              data-narrate="Voice shortcut button: Say Student Login to open student sign-in."
+              onMouseEnter={() => handleHoverSpeak('Voice shortcut button: Say Student Login to open student sign-in.')}
+              onFocus={() => handleHoverSpeak('Voice shortcut button: Say Student Login to open student sign-in.')}
+              onMouseLeave={handleHoverLeave}
             >
               🎙️ Say "Student Login"
             </button>
@@ -855,6 +1117,10 @@ export default function HomePage() {
             <button 
               onClick={() => processStudentVoiceCommand('register')}
               style={voiceShortcutBtnStyle}
+              data-narrate="Voice shortcut button: Say Register Account to create a new blind student account."
+              onMouseEnter={() => handleHoverSpeak('Voice shortcut button: Say Register Account to create a new blind student account.')}
+              onFocus={() => handleHoverSpeak('Voice shortcut button: Say Register Account to create a new blind student account.')}
+              onMouseLeave={handleHoverLeave}
             >
               🎙️ Say "Register Account"
             </button>
@@ -862,6 +1128,10 @@ export default function HomePage() {
             <button 
               onClick={() => processStudentVoiceCommand('student dashboard')}
               style={voiceShortcutBtnStyle}
+              data-narrate="Voice shortcut button: Say Student Dashboard to access exam audio papers and answer dictation."
+              onMouseEnter={() => handleHoverSpeak('Voice shortcut button: Say Student Dashboard to access exam audio papers and answer dictation.')}
+              onFocus={() => handleHoverSpeak('Voice shortcut button: Say Student Dashboard to access exam audio papers and answer dictation.')}
+              onMouseLeave={handleHoverLeave}
             >
               🎙️ Say "Student Dashboard"
             </button>
@@ -869,6 +1139,10 @@ export default function HomePage() {
             <button 
               onClick={() => processStudentVoiceCommand('read features')}
               style={voiceShortcutBtnStyle}
+              data-narrate="Voice shortcut button: Say Read Features to hear the complete features guide."
+              onMouseEnter={() => handleHoverSpeak('Voice shortcut button: Say Read Features to hear the complete features guide.')}
+              onFocus={() => handleHoverSpeak('Voice shortcut button: Say Read Features to hear the complete features guide.')}
+              onMouseLeave={handleHoverLeave}
             >
               🎙️ Say "Read Features"
             </button>
@@ -877,7 +1151,12 @@ export default function HomePage() {
 
         {/* Role Portal Quick Access Section */}
         <section id="portal" style={{ marginBottom: '48px', scrollMarginTop: '100px' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: '800', color: '#0369a1', marginBottom: '8px' }}>
+          <h2 
+            style={{ fontSize: '22px', fontWeight: '800', color: '#0369a1', marginBottom: '8px' }}
+            data-narrate="Select Portal Access Role section. Choose Student, Teacher, or Admin."
+            onMouseEnter={() => handleHoverSpeak('Select Portal Access Role section. Choose Student, Teacher, or Admin.')}
+            onMouseLeave={handleHoverLeave}
+          >
             Select Portal Access Role
           </h2>
           <p style={{ color: '#475569', fontSize: '14px', marginBottom: '24px' }}>
@@ -887,7 +1166,12 @@ export default function HomePage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
             
             {/* Student Role Card */}
-            <div style={roleCardStyleStudent}>
+            <div 
+              style={roleCardStyleStudent}
+              data-narrate="Student Portal card. Hands-free voice login and registration, audio question paper reader, and voice answer dictation."
+              onMouseEnter={() => handleHoverSpeak('Student Portal card. Hands-free voice login and registration, audio question paper reader, and voice answer dictation.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
                 <div style={{ background: '#e0f2fe', padding: '14px', borderRadius: '14px', border: '1px solid #7dd3fc' }}>
                   <Mic size={28} color="#0284c7" />
@@ -901,14 +1185,46 @@ export default function HomePage() {
                 Hands-free voice login & registration, screen reader narration, audio question paper reader, and voice answer dictation.
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => navigate('/student-login')} style={roleBtnStyle}>Student Login</button>
-                <button onClick={() => navigate('/student-register')} style={roleOutlineBtnStyle}>Register</button>
-                <button onClick={() => navigate('/dashboard')} style={roleDashBtnStyle}>Dashboard</button>
+                <button 
+                  onClick={() => navigate('/student-login')} 
+                  style={roleBtnStyle}
+                  data-narrate="Student Login button. Navigate to student sign-in."
+                  onMouseEnter={() => handleHoverSpeak('Student Login button. Navigate to student sign-in.')}
+                  onFocus={() => handleHoverSpeak('Student Login button. Navigate to student sign-in.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Student Login
+                </button>
+                <button 
+                  onClick={() => navigate('/student-register')} 
+                  style={roleOutlineBtnStyle}
+                  data-narrate="Student Register button. Create a new blind student account."
+                  onMouseEnter={() => handleHoverSpeak('Student Register button. Create a new blind student account.')}
+                  onFocus={() => handleHoverSpeak('Student Register button. Create a new blind student account.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Register
+                </button>
+                <button 
+                  onClick={() => navigate('/dashboard')} 
+                  style={roleDashBtnStyle}
+                  data-narrate="Student Dashboard button. Open your personal student exam portal."
+                  onMouseEnter={() => handleHoverSpeak('Student Dashboard button. Open your personal student exam portal.')}
+                  onFocus={() => handleHoverSpeak('Student Dashboard button. Open your personal student exam portal.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Dashboard
+                </button>
               </div>
             </div>
 
             {/* Teacher Role Card */}
-            <div style={roleCardStyleTeacher}>
+            <div 
+              style={roleCardStyleTeacher}
+              data-narrate="Teacher Portal card. Create accessible exams with narration rules, AI question generator, and real-time student monitoring."
+              onMouseEnter={() => handleHoverSpeak('Teacher Portal card. Create accessible exams with narration rules, AI question generator, and real-time student monitoring.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
                 <div style={{ background: '#f3e8ff', padding: '14px', borderRadius: '14px', border: '1px solid #d8b4fe' }}>
                   <UserCheck size={28} color="#9333ea" />
@@ -922,14 +1238,46 @@ export default function HomePage() {
                 Create accessible exams with TTS narration rules, AI draft question generator, real-time student monitoring, and voice response verification.
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => navigateSilent('/teacher-login')} style={roleBtnTeacher}>Teacher Login</button>
-                <button onClick={() => navigateSilent('/teacher-register')} style={roleOutlineBtnTeacher}>Register</button>
-                <button onClick={() => navigateSilent('/teacher-dashboard')} style={roleDashBtnTeacher}>Dashboard</button>
+                <button 
+                  onClick={() => navigateSilent('/teacher-login')} 
+                  style={roleBtnTeacher}
+                  data-narrate="Teacher Login button. Navigate to teacher sign-in."
+                  onMouseEnter={() => handleHoverSpeak('Teacher Login button. Navigate to teacher sign-in.')}
+                  onFocus={() => handleHoverSpeak('Teacher Login button. Navigate to teacher sign-in.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Teacher Login
+                </button>
+                <button 
+                  onClick={() => navigateSilent('/teacher-register')} 
+                  style={roleOutlineBtnTeacher}
+                  data-narrate="Teacher Register button. Register as an educator."
+                  onMouseEnter={() => handleHoverSpeak('Teacher Register button. Register as an educator.')}
+                  onFocus={() => handleHoverSpeak('Teacher Register button. Register as an educator.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Register
+                </button>
+                <button 
+                  onClick={() => navigateSilent('/teacher-dashboard')} 
+                  style={roleDashBtnTeacher}
+                  data-narrate="Teacher Dashboard button. Open teacher portal."
+                  onMouseEnter={() => handleHoverSpeak('Teacher Dashboard button. Open teacher portal.')}
+                  onFocus={() => handleHoverSpeak('Teacher Dashboard button. Open teacher portal.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Dashboard
+                </button>
               </div>
             </div>
 
             {/* Admin Role Card */}
-            <div style={roleCardStyleAdmin}>
+            <div 
+              style={roleCardStyleAdmin}
+              data-narrate="Admin Portal card. Manage user accounts, monitor OCR logs, inspect proctoring telemetry, and review contact messages."
+              onMouseEnter={() => handleHoverSpeak('Admin Portal card. Manage user accounts, monitor OCR logs, inspect proctoring telemetry, and review contact messages.')}
+              onMouseLeave={handleHoverLeave}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
                 <div style={{ background: '#fef3c7', padding: '14px', borderRadius: '14px', border: '1px solid #fde68a' }}>
                   <Shield size={28} color="#d97706" />
@@ -943,8 +1291,26 @@ export default function HomePage() {
                 Manage user accounts (Students, Teachers, Admins), monitor OCR logs, inspect currency recognition telemetry, and run system health checks.
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => navigateSilent('/admin-login')} style={roleBtnAdmin}>Admin Login</button>
-                <button onClick={() => navigateSilent('/admin-dashboard')} style={roleDashBtnAdmin}>Dashboard</button>
+                <button 
+                  onClick={() => navigateSilent('/admin-login')} 
+                  style={roleBtnAdmin}
+                  data-narrate="Admin Login button. Navigate to administrator sign-in."
+                  onMouseEnter={() => handleHoverSpeak('Admin Login button. Navigate to administrator sign-in.')}
+                  onFocus={() => handleHoverSpeak('Admin Login button. Navigate to administrator sign-in.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Admin Login
+                </button>
+                <button 
+                  onClick={() => navigateSilent('/admin-dashboard')} 
+                  style={roleDashBtnAdmin}
+                  data-narrate="Admin Dashboard button. Open administrator control center."
+                  onMouseEnter={() => handleHoverSpeak('Admin Dashboard button. Open administrator control center.')}
+                  onFocus={() => handleHoverSpeak('Admin Dashboard button. Open administrator control center.')}
+                  onMouseLeave={handleHoverLeave}
+                >
+                  Dashboard
+                </button>
               </div>
             </div>
 
@@ -1014,6 +1380,10 @@ export default function HomePage() {
                 justifyContent: 'center',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
               }}
+              data-narrate="Close Contact Form button."
+              onMouseEnter={() => handleHoverSpeak('Close Contact Form button.')}
+              onFocus={() => handleHoverSpeak('Close Contact Form button.')}
+              onMouseLeave={handleHoverLeave}
               title="Close Contact Us Form"
             >
               <X size={20} />
@@ -1051,6 +1421,10 @@ export default function HomePage() {
                       onChange={e => setContactForm({ ...contactForm, name: e.target.value })} 
                       placeholder="e.g. Nayana N S" 
                       style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '14px', outline: 'none' }}
+                      data-narrate="Your Full Name input box."
+                      onMouseEnter={() => handleHoverSpeak('Your Full Name input box.')}
+                      onFocus={() => handleHoverSpeak('Your Full Name input box.')}
+                      onMouseLeave={handleHoverLeave}
                     />
                   </label>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', fontWeight: '700', color: '#0369a1' }}>
@@ -1062,6 +1436,10 @@ export default function HomePage() {
                       onChange={e => setContactForm({ ...contactForm, email: e.target.value })} 
                       placeholder="e.g. nayana@example.com" 
                       style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '14px', outline: 'none' }}
+                      data-narrate="Email Address input box."
+                      onMouseEnter={() => handleHoverSpeak('Email Address input box.')}
+                      onFocus={() => handleHoverSpeak('Email Address input box.')}
+                      onMouseLeave={handleHoverLeave}
                     />
                   </label>
                 </div>
@@ -1073,6 +1451,10 @@ export default function HomePage() {
                       value={contactForm.role} 
                       onChange={e => setContactForm({ ...contactForm, role: e.target.value })} 
                       style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '14px', outline: 'none', background: '#fff' }}
+                      data-narrate="Select your role dropdown."
+                      onMouseEnter={() => handleHoverSpeak('Select your role dropdown.')}
+                      onFocus={() => handleHoverSpeak('Select your role dropdown.')}
+                      onMouseLeave={handleHoverLeave}
                     >
                       <option value="Student">Blind Student</option>
                       <option value="Teacher">Teacher / Educator</option>
@@ -1088,6 +1470,10 @@ export default function HomePage() {
                       value={contactForm.subject} 
                       onChange={e => setContactForm({ ...contactForm, subject: e.target.value })} 
                       style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '14px', outline: 'none', background: '#fff' }}
+                      data-narrate="Select topic or query type dropdown."
+                      onMouseEnter={() => handleHoverSpeak('Select topic or query type dropdown.')}
+                      onFocus={() => handleHoverSpeak('Select topic or query type dropdown.')}
+                      onMouseLeave={handleHoverLeave}
                     >
                       <option value="General Inquiry">General Inquiry</option>
                       <option value="Exam Portal Support">Exam Portal Support</option>
@@ -1107,6 +1493,10 @@ export default function HomePage() {
                     onChange={e => setContactForm({ ...contactForm, message: e.target.value })} 
                     placeholder="Type your message or question here..." 
                     style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '14px', outline: 'none', fontFamily: 'inherit' }}
+                    data-narrate="Your message text box."
+                    onMouseEnter={() => handleHoverSpeak('Your message text box.')}
+                    onFocus={() => handleHoverSpeak('Your message text box.')}
+                    onMouseLeave={handleHoverLeave}
                   />
                 </label>
 
@@ -1128,6 +1518,10 @@ export default function HomePage() {
                     justifyContent: 'center',
                     gap: '8px'
                   }}
+                  data-narrate="Send Message to Support Team button."
+                  onMouseEnter={() => handleHoverSpeak('Send Message to Support Team button.')}
+                  onFocus={() => handleHoverSpeak('Send Message to Support Team button.')}
+                  onMouseLeave={handleHoverLeave}
                 >
                   <Mail size={18} /> Send Message to Support Team
                 </button>
@@ -1139,7 +1533,12 @@ export default function HomePage() {
                   📞 Direct Support Channels
                 </h3>
                 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div 
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+                  data-narrate="Support Email: support@visionassist.ai. 24 hours 7 days a week."
+                  onMouseEnter={() => handleHoverSpeak('Support Email: support@visionassist.ai. 24 hours 7 days a week.')}
+                  onMouseLeave={handleHoverLeave}
+                >
                   <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
                     <Mail size={18} color="#0284c7" />
                   </div>
@@ -1149,7 +1548,12 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div 
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+                  data-narrate="Accessibility Helpline: 1-800-VISION-AI. Toll-Free support."
+                  onMouseEnter={() => handleHoverSpeak('Accessibility Helpline: 1-800-VISION-AI. Toll-Free support.')}
+                  onMouseLeave={handleHoverLeave}
+                >
                   <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
                     <Phone size={18} color="#0284c7" />
                   </div>
@@ -1159,7 +1563,12 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div 
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+                  data-narrate="Student Voice Command: Say Help or Read Features aloud."
+                  onMouseEnter={() => handleHoverSpeak('Student Voice Command: Say Help or Read Features aloud.')}
+                  onMouseLeave={handleHoverLeave}
+                >
                   <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
                     <Mic size={18} color="#0284c7" />
                   </div>
@@ -1169,7 +1578,12 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div 
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+                  data-narrate="Accessibility Research Hub: VisionAssist Labs Accessible Technology Division."
+                  onMouseEnter={() => handleHoverSpeak('Accessibility Research Hub: VisionAssist Labs Accessible Technology Division.')}
+                  onMouseLeave={handleHoverLeave}
+                >
                   <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
                     <Shield size={18} color="#0284c7" />
                   </div>
@@ -1183,6 +1597,10 @@ export default function HomePage() {
                   type="button"
                   onClick={readStudentInstructionsAloud} 
                   style={{ background: '#ffffff', color: '#0369a1', border: '2px solid #0284c7', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  data-narrate="Read Audio Support Instructions Aloud button."
+                  onMouseEnter={() => handleHoverSpeak('Read Audio Support Instructions Aloud button.')}
+                  onFocus={() => handleHoverSpeak('Read Audio Support Instructions Aloud button.')}
+                  onMouseLeave={handleHoverLeave}
                 >
                   <Volume2 size={16} /> Read Audio Support Instructions Aloud
                 </button>
@@ -1201,11 +1619,27 @@ export default function HomePage() {
             type="button" 
             onClick={() => { setShowContactModal(true); speak('Opening Contact Us modal'); }} 
             style={{ background: 'none', border: 'none', color: '#0369a1', cursor: 'pointer', fontWeight: '800', fontSize: '15px' }}
+            data-narrate="Contact Us and 24/7 Accessibility Support link."
+            onMouseEnter={() => handleHoverSpeak('Contact Us and 24/7 Accessibility Support link.')}
+            onFocus={() => handleHoverSpeak('Contact Us and 24/7 Accessibility Support link.')}
+            onMouseLeave={handleHoverLeave}
           >
             ✉️ Contact Us & 24/7 Accessibility Support
           </button>
         </p>
-        <p style={{ margin: '0 0 12px 0', color: '#475569' }}>Have questions about VisionAssist AI? Reach out to our 24/7 Accessibility Support Team at <a href="mailto:support@visionassist.ai" style={{ color: '#0284c7', textDecoration: 'none', fontWeight: '700' }}>support@visionassist.ai</a></p>
+        <p style={{ margin: '0 0 12px 0', color: '#475569' }}>
+          Have questions about VisionAssist AI? Reach out to our 24/7 Accessibility Support Team at{' '}
+          <a 
+            href="mailto:support@visionassist.ai" 
+            style={{ color: '#0284c7', textDecoration: 'none', fontWeight: '700' }}
+            data-narrate="Send email to support@visionassist.ai link."
+            onMouseEnter={() => handleHoverSpeak('Send email to support@visionassist.ai link.')}
+            onFocus={() => handleHoverSpeak('Send email to support@visionassist.ai link.')}
+            onMouseLeave={handleHoverLeave}
+          >
+            support@visionassist.ai
+          </a>
+        </p>
         <div>VisionAssist AI — Accessible AI Blind Assistant Project © 2026. Designed for Blind & Visually Impaired Students, Teachers & Admins.</div>
       </footer>
     </div>
