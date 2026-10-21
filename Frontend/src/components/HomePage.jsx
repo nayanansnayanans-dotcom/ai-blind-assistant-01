@@ -1,6 +1,25 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mic, Eye, BookOpen, UserCheck, Shield, DollarSign, Volume2, ArrowRight, CheckCircle2, Navigation, Radio, Info, HelpCircle } from 'lucide-react';
+import { 
+  Mic, 
+  Eye, 
+  BookOpen, 
+  UserCheck, 
+  Shield, 
+  DollarSign, 
+  Volume2, 
+  VolumeX, 
+  ArrowRight, 
+  CheckCircle2, 
+  Navigation, 
+  Radio, 
+  Info, 
+  HelpCircle, 
+  Phone, 
+  Mail, 
+  Sparkles, 
+  X 
+} from 'lucide-react';
 import { speakIn, cancelSpeech } from './speech';
 import ProjectLogo from './ProjectLogo.jsx';
 import { sendContactMessageApi } from '../services/api';
@@ -11,12 +30,16 @@ export default function HomePage() {
   // Voice Assistant States for Students
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState('Tap anywhere on the screen to activate Voice Assistant listening!');
+  const [isPlayingWelcome, setIsPlayingWelcome] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('Tap anywhere on the screen or press Spacebar to activate Voice Assistant!');
   const [voiceQuery, setVoiceQuery] = useState('');
   const [contactForm, setContactForm] = useState({ name: '', email: '', role: 'Student', subject: 'General Inquiry', message: '' });
   const [contactSubmitted, setContactSubmitted] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+
   const recognitionRef = useRef(null);
+  const hasSpokenWelcomeRef = useRef(false);
+  const isPlayingWelcomeRef = useRef(false);
 
   useEffect(() => {
     const handleHash = () => {
@@ -72,12 +95,61 @@ export default function HomePage() {
     });
   };
 
+  const stopAllAudio = () => {
+    cancelSpeech();
+    stopRecognition();
+    setIsSpeaking(false);
+    setIsListening(false);
+    setIsPlayingWelcome(false);
+    isPlayingWelcomeRef.current = false;
+    setVoiceStatus('Voice Assistant paused. Tap anywhere or press Spacebar to resume.');
+  };
+
+  // Comprehensive Welcome & Features Audio Announcement
+  const WELCOME_AND_FEATURES_SPEECH = 
+    "Welcome to VisionAssist AI — an intelligent, accessible platform designed for visually impaired and blind students. " +
+    "Here are our core features: " +
+    "Number one: Hands-Free Voice Assistant. You can tap anywhere on your screen or press the Spacebar at any time to speak voice commands and navigate the platform. " +
+    "Number two: Audio Exam Assistant. Listen to examination questions narrated aloud and dictate your answers hands-free without needing a human scribe. " +
+    "Number three: AI Webcam Proctoring. Smart real-time face tracking that alerts you instantly if an unauthorized person or intruder enters the room. " +
+    "Number four: Smart OCR Book and Document Reader. Scans and reads printed books, questions, and notes out loud. " +
+    "Number five: Object and Hazard Detection. Live camera guidance to detect surrounding objects and obstacles. " +
+    "Number six: Currency Note Identifier. Recognizes paper currency notes for independent daily living. " +
+    "To navigate right now, simply tap anywhere on the screen or press the Spacebar and speak your command, such as: Student Login, Register, Student Dashboard, or Contact Us. " +
+    "Tap anywhere on your screen now to speak your command!";
+
+  const playWelcomeAndFeatures = (force = false) => {
+    if (isPlayingWelcomeRef.current && !force) return;
+
+    stopRecognition();
+    cancelSpeech();
+    hasSpokenWelcomeRef.current = true;
+    isPlayingWelcomeRef.current = true;
+    setIsPlayingWelcome(true);
+    setIsSpeaking(true);
+    setVoiceStatus('🔊 Welcome to VisionAssist AI: Narrating platform features aloud. Tap anywhere or press Spacebar to speak a command!');
+
+    speakIn(WELCOME_AND_FEATURES_SPEECH, 'en-US', {
+      onEnd: () => {
+        setIsSpeaking(false);
+        setIsPlayingWelcome(false);
+        isPlayingWelcomeRef.current = false;
+        setVoiceStatus('🎙️ Voice Assistant ready: Tap anywhere on the screen or press Spacebar to speak your command!');
+      }
+    });
+  };
+
   // Full Audio Instructions for Blind Students
   const readStudentInstructionsAloud = () => {
+    stopRecognition();
+    cancelSpeech();
+    setIsPlayingWelcome(false);
+    isPlayingWelcomeRef.current = false;
+
     const fullInstructions = 
       "Hello and welcome, student! Here are the complete audio instructions for blind users. " +
-      "First: Voice Control. You can tap anywhere on the screen at any time to activate the microphone and speak your voice command. " +
-      "Second: Navigation Commands. Say 'Student Login' to go to login. Say 'Register' to create your account. Say 'Student Dashboard' to view your portal. " +
+      "First: Voice Control. You can tap anywhere on the screen at any time, or press the Spacebar, to activate the microphone and speak your voice command. " +
+      "Second: Navigation Commands. Say 'Student Login' to go to login. Say 'Register' to create your account. Say 'Student Dashboard' to view your portal. Say 'Read Features' to hear the platform features again. " +
       "Third: Exam Portal. In your Student Dashboard, you can listen to audio question paper narration and dictate your exam answers using speech to text. " +
       "Whenever you are ready, tap anywhere on the screen and speak your command now!";
 
@@ -89,6 +161,8 @@ export default function HomePage() {
     stopRecognition();
     setIsSpeaking(false);
     setIsListening(false);
+    setIsPlayingWelcome(false);
+    isPlayingWelcomeRef.current = false;
     navigate(path);
   };
 
@@ -97,7 +171,9 @@ export default function HomePage() {
     const q = commandText.toLowerCase().trim();
     setVoiceStatus(`Recognized command: "${commandText}"`);
 
-    if (q.includes('teacher login')) {
+    if (q.includes('welcome') || q.includes('hello') || q.includes('hi vision')) {
+      playWelcomeAndFeatures(true);
+    } else if (q.includes('teacher login')) {
       navigateSilent('/teacher-login');
     } else if (q.includes('teacher register') || q.includes('teacher sign up')) {
       navigateSilent('/teacher-register');
@@ -109,7 +185,7 @@ export default function HomePage() {
       speak('Navigating to Student Login page.', () => navigate('/student-login'));
     } else if (q.includes('student register') || q.includes('register') || q.includes('sign up') || q.includes('create account')) {
       speak('Navigating to Student Registration page.', () => navigate('/student-register'));
-    } else if (q.includes('student dashboard') || q.includes('my dashboard') || q.includes('student portal')) {
+    } else if (q.includes('student dashboard') || q.includes('my dashboard') || q.includes('student portal') || q.includes('dashboard')) {
       speak('Opening Student Dashboard.', () => navigate('/dashboard'));
     } else if (q.includes('teacher dashboard') || q.includes('teacher portal')) {
       navigateSilent('/teacher-dashboard');
@@ -118,32 +194,20 @@ export default function HomePage() {
     } else if (q.includes('contact') || q.includes('support')) {
       setShowContactModal(true);
       speak('Opening Contact Us and 24/7 Accessibility Support modal.');
-    } else if (q.includes('instruction') || q.includes('guide') || q.includes('help')) {
+    } else if (q.includes('instruction') || q.includes('guide') || q.includes('help') || q.includes('how to use')) {
       readStudentInstructionsAloud();
-    } else if (q.includes('read features') || q.includes('explain features') || q.includes('features') || q.includes('what can you do')) {
-      const featureSummary = 
-        "VisionAssist AI provides six core features for blind students. " +
-        "First: Voice Navigation and Speech Assistant. " +
-        "Second: Object and Hazard Detection. " +
-        "Third: OCR Text and Book Reader. " +
-        "Fourth: Currency Note Identifier. " +
-        "Fifth: Audio Guided Student Exam Portal. " +
-        "Sixth: Teacher and Admin Portals. " +
-        "Say 'login' or 'student dashboard' to continue.";
-      speak(featureSummary);
+    } else if (q.includes('read features') || q.includes('explain features') || q.includes('features') || q.includes('what can you do') || q.includes('tell me features')) {
+      playWelcomeAndFeatures(true);
     } else if (q.includes('camera') || q.includes('detection') || q.includes('object')) {
-      speak('Starting live object and hazard detection assistant.');
+      speak('Starting live object and hazard detection assistant.', () => navigate('/dashboard'));
     } else if (q.includes('ocr') || q.includes('read book') || q.includes('text reader')) {
       speak('Opening OCR text reader for blind students.', () => navigate('/dashboard'));
     } else if (q.includes('currency') || q.includes('money')) {
       speak('Opening currency note identifier.', () => navigate('/dashboard'));
-    } else if (q.includes('stop') || q.includes('cancel')) {
-      cancelSpeech();
-      setIsSpeaking(false);
-      setIsListening(false);
-      setVoiceStatus('Voice Assistant stopped.');
+    } else if (q.includes('stop') || q.includes('cancel') || q.includes('pause') || q.includes('quiet')) {
+      stopAllAudio();
     } else {
-      const response = `Command "${commandText}" received. You can say: Login, Register, Student Dashboard, or Read Instructions.`;
+      const response = `Command "${commandText}" received. You can say: Student Login, Register, Student Dashboard, Read Features, or Help.`;
       speak(response);
     }
   };
@@ -166,7 +230,7 @@ export default function HomePage() {
 
       recognition.onstart = () => {
         setIsListening(true);
-        setVoiceStatus('🎤 Listening for student voice command... Speak now!');
+        setVoiceStatus('🎙️ Listening for student voice command... Speak now!');
       };
 
       recognition.onresult = (e) => {
@@ -203,12 +267,31 @@ export default function HomePage() {
     }
   };
 
-  // Global Tap Anywhere Screen Listener to Activate Voice Assistant
+  // Global Tap Anywhere Screen Listener to Activate Welcome or Voice Assistant
   useEffect(() => {
     const handleGlobalScreenTap = (e) => {
+      // Don't trigger if clicking interactive inputs, buttons, or links
       if (e.target.closest('input') || e.target.closest('button') || e.target.closest('a') || e.target.closest('textarea') || e.target.closest('select')) {
         return;
       }
+
+      // If welcome has never been played yet (e.g. browser blocked automatic autoplay):
+      if (!hasSpokenWelcomeRef.current) {
+        playWelcomeAndFeatures(true);
+        return;
+      }
+
+      // If welcome is currently speaking and user taps anywhere on screen:
+      // Transition immediately to voice listening so they can speak without waiting!
+      if (isPlayingWelcomeRef.current) {
+        cancelSpeech();
+        setIsPlayingWelcome(false);
+        isPlayingWelcomeRef.current = false;
+        startStudentVoiceListening(true);
+        return;
+      }
+
+      // Otherwise start listening for voice commands
       startStudentVoiceListening(true);
     };
 
@@ -223,23 +306,59 @@ export default function HomePage() {
       if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select' || document.activeElement?.isContentEditable) {
         return;
       }
+
+      // Spacebar triggers voice listening or starts welcome if not played
       if (e.code === 'Space' && !isListening) {
         e.preventDefault();
-        startStudentVoiceListening(true);
+        if (!hasSpokenWelcomeRef.current) {
+          playWelcomeAndFeatures(true);
+        } else if (isPlayingWelcomeRef.current) {
+          cancelSpeech();
+          setIsPlayingWelcome(false);
+          isPlayingWelcomeRef.current = false;
+          startStudentVoiceListening(true);
+        } else {
+          startStudentVoiceListening(true);
+        }
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [isListening]);
 
-  // Initial welcome greeting on HomePage mount (protected for React 18 StrictMode)
+  // Initial welcome greeting on HomePage mount with audio unlock fallback for all browsers
   useEffect(() => {
+    // 1. Attempt to speak immediately on mount (works in refreshed tabs / allowed contexts)
     const greetingTimer = setTimeout(() => {
-      speak("Welcome to VisionAssist AI portal for blind students. Tap anywhere on the screen or press Spacebar to activate voice assistant.");
+      if (!hasSpokenWelcomeRef.current) {
+        playWelcomeAndFeatures();
+      }
     }, 450);
+
+    // 2. Browser Autoplay Policy Fallback:
+    // If the browser blocks speech synthesis until first user gesture,
+    // listen for the very first interaction anywhere on window and trigger welcome immediately!
+    const unlockOnFirstInteraction = () => {
+      if (!hasSpokenWelcomeRef.current) {
+        try {
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.resume();
+          }
+        } catch (e) {}
+        playWelcomeAndFeatures(true);
+      }
+    };
+
+    const interactionEvents = ['pointerdown', 'touchstart', 'keydown'];
+    interactionEvents.forEach(evt => {
+      window.addEventListener(evt, unlockOnFirstInteraction, { once: true, passive: true });
+    });
 
     return () => {
       clearTimeout(greetingTimer);
+      interactionEvents.forEach(evt => {
+        window.removeEventListener(evt, unlockOnFirstInteraction);
+      });
     };
   }, []);
 
@@ -294,8 +413,13 @@ export default function HomePage() {
             textDecoration: 'none',
             fontSize: '13px',
             fontWeight: '800',
-            boxShadow: '0 4px 10px rgba(2, 132, 199, 0.2)'
-          }}>🎓 Student Login</Link>
+            boxShadow: '0 4px 10px rgba(2, 132, 199, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <UserCheck size={16} /> Student Login
+          </Link>
           <Link to="/teacher-login" onClick={(e) => { e.preventDefault(); navigateSilent('/teacher-login'); }} style={{
             background: '#9333ea',
             color: '#ffffff',
@@ -304,8 +428,13 @@ export default function HomePage() {
             textDecoration: 'none',
             fontSize: '13px',
             fontWeight: '800',
-            boxShadow: '0 4px 10px rgba(147, 51, 234, 0.2)'
-          }}>👨‍🏫 Teacher Login</Link>
+            boxShadow: '0 4px 10px rgba(147, 51, 234, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <UserCheck size={16} /> Teacher Login
+          </Link>
           <Link to="/admin-login" onClick={(e) => { e.preventDefault(); navigateSilent('/admin-login'); }} style={{
             background: '#d97706',
             color: '#ffffff',
@@ -314,62 +443,84 @@ export default function HomePage() {
             textDecoration: 'none',
             fontSize: '13px',
             fontWeight: '800',
-            boxShadow: '0 4px 10px rgba(217, 119, 6, 0.2)'
-          }}>🛡️ Admin Login</Link>
+            boxShadow: '0 4px 10px rgba(217, 119, 6, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <Shield size={16} /> Admin Login
+          </Link>
           <a href="#portal" style={navLinkStyle}>Menu</a>
           <button 
             type="button"
             onClick={() => { setShowContactModal(true); speak('Opening Contact Us and 24/7 Accessibility Support modal.'); }} 
-            style={{ ...navLinkStyle, background: 'none', border: 'none', cursor: 'pointer' }}
+            style={{ ...navLinkStyle, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            Contact Us
+            <Mail size={16} color="#0284c7" /> Contact Us
           </button>
         </nav>
       </header>
 
-      {/* STUDENT VOICE ASSISTANT COMMAND & INSTRUCTION BANNER */}
+      {/* STUDENT VOICE ASSISTANT & WELCOME AUDIO GUIDE BANNER */}
       <section style={{ 
-        background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)', 
-        borderBottom: '2px solid #7dd3fc', 
-        padding: '18px 32px'
+        background: isPlayingWelcome 
+          ? 'linear-gradient(135deg, #fef08a 0%, #fde047 100%)' 
+          : 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)', 
+        borderBottom: isPlayingWelcome ? '3px solid #eab308' : '2px solid #7dd3fc', 
+        padding: '20px 32px',
+        transition: 'all 0.3s ease'
       }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 400px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 450px' }}>
             <div style={{
-              width: '46px', height: '46px', borderRadius: '50%',
-              background: isListening ? '#fef2f2' : isSpeaking ? '#f0fdf4' : '#ffffff',
+              width: '50px', height: '50px', borderRadius: '50%',
+              background: isListening ? '#fef2f2' : isPlayingWelcome ? '#ffffff' : isSpeaking ? '#f0fdf4' : '#ffffff',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: `2px solid ${isListening ? '#ef4444' : isSpeaking ? '#22c55e' : '#0284c7'}`,
-              boxShadow: '0 4px 10px rgba(2, 132, 199, 0.15)'
+              border: `3px solid ${isListening ? '#ef4444' : isPlayingWelcome ? '#ca8a04' : isSpeaking ? '#22c55e' : '#0284c7'}`,
+              boxShadow: '0 4px 12px rgba(2, 132, 199, 0.2)'
             }}>
-              {isListening ? <Mic size={24} color="#ef4444" style={{ animation: 'pulse 1s infinite' }} /> : <Volume2 size={24} color="#0284c7" />}
+              {isListening ? (
+                <Mic size={26} color="#ef4444" style={{ animation: 'pulse 1s infinite' }} />
+              ) : isPlayingWelcome ? (
+                <Sparkles size={26} color="#ca8a04" style={{ animation: 'spin 4s linear infinite' }} />
+              ) : (
+                <Volume2 size={26} color="#0284c7" />
+              )}
             </div>
 
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: '800', color: '#0369a1', letterSpacing: '0.5px' }}>
-                  STUDENT VOICE ASSISTANT (TAP ANYWHERE TO SPEAK)
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '13px', fontWeight: '900', color: isPlayingWelcome ? '#854d0e' : '#0369a1', letterSpacing: '0.5px' }}>
+                  {isPlayingWelcome ? '🔊 NARRATING WELCOME & PLATFORM FEATURES ALOUD' : 'STUDENT VOICE ASSISTANT (TAP ANYWHERE TO SPEAK)'}
                 </span>
-                <span style={{ fontSize: '10px', background: '#0284c7', color: '#ffffff', padding: '2px 8px', borderRadius: '10px', fontWeight: '700' }}>
-                  ACTIVE
+                <span style={{ 
+                  fontSize: '11px', 
+                  background: isPlayingWelcome ? '#ca8a04' : '#0284c7', 
+                  color: '#ffffff', 
+                  padding: '2px 8px', 
+                  borderRadius: '10px', 
+                  fontWeight: '800' 
+                }}>
+                  {isPlayingWelcome ? 'SPEAKING' : 'ACTIVE'}
                 </span>
               </div>
-              <p style={{ margin: '2px 0 0 0', fontSize: '14px', color: '#0f172a', fontWeight: '600' }}>
+              <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#0f172a', fontWeight: '700', lineHeight: 1.4 }}>
                 {voiceStatus}
               </p>
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Replay Welcome & Features Button */}
             <button
               type="button"
-              onClick={readStudentInstructionsAloud}
+              onClick={() => playWelcomeAndFeatures(true)}
               style={{
-                backgroundColor: '#ffffff',
-                color: '#0369a1',
-                border: '2px solid #0284c7',
-                padding: '12px 20px',
+                backgroundColor: isPlayingWelcome ? '#ca8a04' : '#ffffff',
+                color: isPlayingWelcome ? '#ffffff' : '#0369a1',
+                border: isPlayingWelcome ? '2px solid #854d0e' : '2px solid #0284c7',
+                padding: '12px 18px',
                 borderRadius: '12px',
                 fontWeight: '900',
                 fontSize: '14px',
@@ -379,42 +530,68 @@ export default function HomePage() {
                 gap: '8px',
                 boxShadow: '0 4px 12px rgba(2, 132, 199, 0.2)'
               }}
+              title="Click to hear the welcome greeting and features guide aloud"
             >
-              <Volume2 size={20} color="#0284c7" />
-              📢 Read Instructions Aloud 🔊
+              <Volume2 size={20} color={isPlayingWelcome ? '#ffffff' : '#0284c7'} />
+              {isPlayingWelcome ? 'Playing Welcome...' : '🔊 Replay Welcome & Features'}
             </button>
 
+            {/* Tap Anywhere to Speak Microphone Button */}
             <button
               type="button"
-              onClick={startStudentVoiceListening}
+              onClick={() => startStudentVoiceListening(true)}
               style={{
                 backgroundColor: isListening ? '#ef4444' : '#0284c7',
                 color: '#ffffff',
                 border: 'none',
                 padding: '12px 20px',
                 borderRadius: '12px',
-                fontWeight: '800',
+                fontWeight: '900',
                 fontSize: '14px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)'
+                boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)'
               }}
             >
-              <Mic size={18} />
-              {isListening ? 'Listening… Speak Now' : 'Tap Anywhere to Speak 🎙️'}
+              <Mic size={20} />
+              {isListening ? 'Listening... Speak Now' : '🎙️ Tap to Speak Command'}
             </button>
+
+            {/* Stop / Cancel Audio Button */}
+            {(isSpeaking || isPlayingWelcome || isListening) && (
+              <button
+                type="button"
+                onClick={stopAllAudio}
+                style={{
+                  backgroundColor: '#fee2e2',
+                  color: '#b91c1c',
+                  border: '2px solid #ef4444',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  fontWeight: '800',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                title="Stop spoken audio"
+              >
+                <VolumeX size={18} /> Stop Audio
+              </button>
+            )}
           </div>
 
         </div>
 
         {/* Text Voice Command Fallback Bar */}
-        <div style={{ maxWidth: '1200px', margin: '12px auto 0 auto' }}>
+        <div style={{ maxWidth: '1200px', margin: '14px auto 0 auto' }}>
           <form onSubmit={handleTextCommandSubmit} style={{ display: 'flex', gap: '8px' }}>
             <input
               type="text"
-              placeholder='Or type student voice command (e.g. "student login", "register", "student dashboard", "read features")...'
+              placeholder='Or type a command (e.g. "welcome", "read features", "student login", "register", "student dashboard")...'
               value={voiceQuery}
               onChange={(e) => setVoiceQuery(e.target.value)}
               style={{
@@ -425,7 +602,8 @@ export default function HomePage() {
                 border: '1px solid #7dd3fc',
                 color: '#0f172a',
                 fontSize: '13px',
-                outline: 'none'
+                outline: 'none',
+                fontWeight: '600'
               }}
             />
             <button
@@ -450,7 +628,7 @@ export default function HomePage() {
       {/* Main Content Section */}
       <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '36px 24px' }}>
         
-        {/* INSTRUCTIONS CARD FOR BLIND STUDENTS */}
+        {/* WELCOME & INSTRUCTIONS CARD FOR BLIND STUDENTS */}
         <section style={{ 
           background: '#ffffff', 
           border: '2px solid #0284c7', 
@@ -459,71 +637,100 @@ export default function HomePage() {
           marginBottom: '40px',
           boxShadow: '0 10px 30px rgba(2, 132, 199, 0.1)'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ background: '#e0f2fe', padding: '12px', borderRadius: '12px', border: '1px solid #7dd3fc' }}>
-                <HelpCircle size={28} color="#0284c7" />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ background: '#e0f2fe', padding: '14px', borderRadius: '14px', border: '1px solid #7dd3fc' }}>
+                <HelpCircle size={32} color="#0284c7" />
               </div>
               <div>
                 <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0369a1', margin: 0 }}>
-                  📢 Complete Instructions for Blind Students
+                  📖 Welcome Guide & Features for Blind Students
                 </h2>
-                <p style={{ fontSize: '13px', color: '#475569', margin: '2px 0 0 0' }}>
-                  Step-by-step audio guide & voice navigation instructions
+                <p style={{ fontSize: '14px', color: '#475569', margin: '4px 0 0 0', fontWeight: '500' }}>
+                  Tap anywhere on the screen at any time to speak voice commands or hear features aloud
                 </p>
               </div>
             </div>
 
-            <button
-              onClick={readStudentInstructionsAloud}
-              style={{
-                background: '#0284c7',
-                color: '#ffffff',
-                border: 'none',
-                padding: '10px 18px',
-                borderRadius: '10px',
-                fontWeight: '800',
-                fontSize: '13px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <Volume2 size={18} /> Play Full Audio Guide 🔊
-            </button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => playWelcomeAndFeatures(true)}
+                style={{
+                  background: '#fef08a',
+                  color: '#854d0e',
+                  border: '2px solid #ca8a04',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  fontWeight: '800',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Volume2 size={18} color="#854d0e" /> Play Welcome & Features
+              </button>
+
+              <button
+                onClick={readStudentInstructionsAloud}
+                style={{
+                  background: '#0284c7',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  fontWeight: '800',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <BookOpen size={18} /> Step-by-Step Instructions
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
             
             <div style={instructionStepCardStyle}>
-              <div style={stepBadgeStyle}>Step 1</div>
-              <h3 style={stepTitleStyle}>Tap Anywhere to Speak</h3>
+              <div style={stepBadgeStyle}>Step 1: Tap to Speak</div>
+              <h3 style={stepTitleStyle}>Tap Anywhere on the Screen</h3>
               <p style={stepBodyStyle}>
-                Tap anywhere on your device screen at any time to open the microphone and speak your voice commands.
+                Tap anywhere on your device screen or press the <strong>Spacebar</strong> at any time to open the microphone and speak your commands.
               </p>
             </div>
 
             <div style={instructionStepCardStyle}>
-              <div style={stepBadgeStyle}>Step 2</div>
-              <h3 style={stepTitleStyle}>Voice Login & Register</h3>
+              <div style={stepBadgeStyle}>Step 2: Voice Login</div>
+              <h3 style={stepTitleStyle}>Say "Student Login" or "Register"</h3>
               <p style={stepBodyStyle}>
                 Say <strong>"Student Login"</strong> to sign in, or say <strong>"Register"</strong> to create a new blind student account with hands-free voice prompts.
               </p>
             </div>
 
             <div style={instructionStepCardStyle}>
-              <div style={stepBadgeStyle}>Step 3</div>
-              <h3 style={stepTitleStyle}>Student Portal Dashboard</h3>
+              <div style={stepBadgeStyle}>Step 3: Exam Portal</div>
+              <h3 style={stepTitleStyle}>Say "Student Dashboard"</h3>
               <p style={stepBodyStyle}>
-                Say <strong>"Student Dashboard"</strong> to access your profile, exam paper audio narration, voice answer dictation, and results.
+                Say <strong>"Student Dashboard"</strong> to access audio question papers, dictate your exam answers, and inspect your proctoring logs.
+              </p>
+            </div>
+
+            <div style={instructionStepCardStyle}>
+              <div style={stepBadgeStyle}>Step 4: Hear Features</div>
+              <h3 style={stepTitleStyle}>Say "Read Features"</h3>
+              <p style={stepBodyStyle}>
+                Say <strong>"Read Features"</strong> or <strong>"Welcome"</strong> at any moment to hear the full platform audio tour narrated aloud.
               </p>
             </div>
 
           </div>
         </section>
 
-        {/* Banner for Students */}
+        {/* Hero Banner for Students */}
         <div style={{
           background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
           borderRadius: '24px',
@@ -531,32 +738,32 @@ export default function HomePage() {
           boxShadow: '0 20px 40px -15px rgba(2, 132, 199, 0.3)',
           marginBottom: '40px',
           display: 'flex',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: '24px'
         }}>
           <div style={{ flex: '1 1 500px' }}>
-            <span style={{ display: 'inline-block', padding: '6px 14px', background: 'rgba(255,255,255,0.2)', borderRadius: '20px', fontSize: '13px', fontWeight: '700', marginBottom: '16px', color: '#ffffff' }}>
-              🎓 AI Voice Assistant for Blind Students
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(255,255,255,0.2)', borderRadius: '20px', fontSize: '13px', fontWeight: '800', marginBottom: '16px', color: '#ffffff' }}>
+              <Sparkles size={16} /> AI Voice Assistant for Blind Students
             </span>
             <h2 style={{ fontSize: '34px', fontWeight: '900', margin: '0 0 12px 0', lineHeight: 1.2, color: '#ffffff' }}>
               Accessible Learning & Visual Guidance System
             </h2>
             <p style={{ fontSize: '16px', color: '#e0f2fe', margin: '0 0 24px 0', lineHeight: 1.6, maxWidth: '640px' }}>
-              Designed for visually impaired candidates with hands-free voice login, audio question papers, speech-to-text answer dictation, OCR document readers, and currency identifiers.
+              Designed for visually impaired candidates with hands-free voice navigation, audio question papers, speech-to-text answer dictation, OCR document readers, and currency identifiers.
             </p>
             
             <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
               <button 
-                onClick={() => processStudentVoiceCommand('read features')}
+                onClick={() => playWelcomeAndFeatures(true)}
                 style={{
                   backgroundColor: '#ffffff',
                   color: '#0369a1',
                   border: 'none',
                   padding: '14px 24px',
                   fontSize: '15px',
-                  fontWeight: '800',
+                  fontWeight: '900',
                   borderRadius: '12px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -566,7 +773,7 @@ export default function HomePage() {
                 }}
               >
                 <Volume2 size={20} color="#0369a1" />
-                Read All Features Aloud 🔊
+                🔊 Play Welcome & Features Aloud
               </button>
 
               <button 
@@ -586,7 +793,7 @@ export default function HomePage() {
                   boxShadow: '0 4px 14px rgba(0,0,0,0.15)'
                 }}
               >
-                🎓 Student Login <ArrowRight size={18} />
+                <UserCheck size={18} /> Student Login <ArrowRight size={18} />
               </button>
 
               <button 
@@ -606,7 +813,7 @@ export default function HomePage() {
                   boxShadow: '0 4px 14px rgba(147, 51, 234, 0.35)'
                 }}
               >
-                👨‍🏫 Teacher Login <ArrowRight size={18} />
+                <UserCheck size={18} /> Teacher Login <ArrowRight size={18} />
               </button>
 
               <button 
@@ -626,7 +833,7 @@ export default function HomePage() {
                   boxShadow: '0 4px 14px rgba(217, 119, 6, 0.35)'
                 }}
               >
-                🛡️ Admin Login <ArrowRight size={18} />
+                <Shield size={18} /> Admin Login <ArrowRight size={18} />
               </button>
             </div>
           </div>
@@ -809,12 +1016,12 @@ export default function HomePage() {
               }}
               title="Close Contact Us Form"
             >
-              ✕
+              <X size={20} />
             </button>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
               <div style={{ background: '#e0f2fe', padding: '14px', borderRadius: '16px', border: '1px solid #7dd3fc' }}>
-                <span style={{ fontSize: '28px' }}>📞</span>
+                <Mail size={32} color="#0284c7" />
               </div>
               <div>
                 <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0369a1', margin: 0 }}>
@@ -915,21 +1122,27 @@ export default function HomePage() {
                     fontSize: '15px', 
                     cursor: 'pointer',
                     boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)',
-                    marginTop: '6px'
+                    marginTop: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
                   }}
                 >
-                  ✉️ Send Message to Support Team
+                  <Mail size={18} /> Send Message to Support Team
                 </button>
               </form>
 
               {/* Direct Support Channels Box */}
               <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: '#0369a1' }}>
-                  💬 Direct Support Channels
+                  📞 Direct Support Channels
                 </h3>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>📧</div>
+                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
+                    <Mail size={18} color="#0284c7" />
+                  </div>
                   <div>
                     <strong style={{ fontSize: '13px', color: '#0f172a' }}>24/7 Support Email</strong>
                     <div style={{ fontSize: '13px', color: '#0284c7', fontWeight: '700' }}>support@visionassist.ai</div>
@@ -937,7 +1150,9 @@ export default function HomePage() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>📞</div>
+                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
+                    <Phone size={18} color="#0284c7" />
+                  </div>
                   <div>
                     <strong style={{ fontSize: '13px', color: '#0f172a' }}>Accessibility Helpline (Toll-Free)</strong>
                     <div style={{ fontSize: '13px', color: '#0284c7', fontWeight: '700' }}>1-800-VISION-AI (1-800-847-4662)</div>
@@ -945,27 +1160,31 @@ export default function HomePage() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>🎙️</div>
+                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
+                    <Mic size={18} color="#0284c7" />
+                  </div>
                   <div>
                     <strong style={{ fontSize: '13px', color: '#0f172a' }}>Student Voice Assist Command</strong>
-                    <div style={{ fontSize: '13px', color: '#475569' }}>Say <b>"Help"</b> or <b>"Read Instructions"</b> aloud</div>
+                    <div style={{ fontSize: '13px', color: '#475569' }}>Say <b>"Help"</b> or <b>"Read Features"</b> aloud</div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>📍</div>
+                  <div style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '10px', border: '1px solid #bae6fd', color: '#0284c7', fontSize: '18px' }}>
+                    <Shield size={18} color="#0284c7" />
+                  </div>
                   <div>
                     <strong style={{ fontSize: '13px', color: '#0f172a' }}>Accessibility Research Hub</strong>
-                    <div style={{ fontSize: '13px', color: '#475569' }}>VisionAssist Labs · AI Accessible Tech Division</div>
+                    <div style={{ fontSize: '13px', color: '#475569' }}>VisionAssist Labs — AI Accessible Tech Division</div>
                   </div>
                 </div>
 
                 <button 
                   type="button"
                   onClick={readStudentInstructionsAloud} 
-                  style={{ background: '#ffffff', color: '#0369a1', border: '2px solid #0284c7', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginTop: 'auto' }}
+                  style={{ background: '#ffffff', color: '#0369a1', border: '2px solid #0284c7', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 >
-                  🔊 Read Audio Support Instructions Aloud
+                  <Volume2 size={16} /> Read Audio Support Instructions Aloud
                 </button>
               </div>
             </div>
@@ -983,7 +1202,7 @@ export default function HomePage() {
             onClick={() => { setShowContactModal(true); speak('Opening Contact Us modal'); }} 
             style={{ background: 'none', border: 'none', color: '#0369a1', cursor: 'pointer', fontWeight: '800', fontSize: '15px' }}
           >
-            📞 Contact Us & 24/7 Accessibility Support
+            ✉️ Contact Us & 24/7 Accessibility Support
           </button>
         </p>
         <p style={{ margin: '0 0 12px 0', color: '#475569' }}>Have questions about VisionAssist AI? Reach out to our 24/7 Accessibility Support Team at <a href="mailto:support@visionassist.ai" style={{ color: '#0284c7', textDecoration: 'none', fontWeight: '700' }}>support@visionassist.ai</a></p>
@@ -1007,39 +1226,6 @@ const navLinkStyleActive = {
   fontSize: '14px',
   fontWeight: '800',
   padding: '6px 12px'
-};
-
-const navBtnStyleStudent = {
-  background: '#e0f2fe',
-  color: '#0369a1',
-  border: '1px solid #7dd3fc',
-  borderRadius: '8px',
-  padding: '6px 12px',
-  textDecoration: 'none',
-  fontSize: '13px',
-  fontWeight: '700'
-};
-
-const navBtnStyleTeacher = {
-  background: '#f3e8ff',
-  color: '#7e22ce',
-  border: '1px solid #d8b4fe',
-  borderRadius: '8px',
-  padding: '6px 12px',
-  textDecoration: 'none',
-  fontSize: '13px',
-  fontWeight: '700'
-};
-
-const navBtnStyleAdmin = {
-  background: '#fef3c7',
-  color: '#b45309',
-  border: '1px solid #fde68a',
-  borderRadius: '8px',
-  padding: '6px 12px',
-  textDecoration: 'none',
-  fontSize: '13px',
-  fontWeight: '700'
 };
 
 const instructionStepCardStyle = {
@@ -1073,17 +1259,6 @@ const stepBodyStyle = {
   color: '#334155',
   margin: 0,
   lineHeight: 1.5
-};
-
-const roleCardStyle = {
-  background: '#ffffff',
-  border: '1px solid #bae6fd',
-  borderRadius: '20px',
-  padding: '28px',
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'space-between',
-  boxShadow: '0 4px 16px rgba(2, 132, 199, 0.05)'
 };
 
 const roleCardStyleStudent = {
@@ -1232,28 +1407,4 @@ const voiceShortcutBtnStyle = {
   cursor: 'pointer',
   textAlign: 'left',
   transition: 'all 0.2s ease'
-};
-
-const featureCardStyle = {
-  background: '#ffffff',
-  padding: '24px',
-  borderRadius: '16px',
-  border: '1px solid #bae6fd',
-  boxShadow: '0 4px 12px rgba(2, 132, 199, 0.05)',
-  cursor: 'pointer'
-};
-
-const cardTitleStyle = {
-  color: '#0f172a',
-  marginBottom: '8px',
-  marginTop: 0,
-  fontSize: '16px',
-  fontWeight: '700'
-};
-
-const cardBodyStyle = {
-  color: '#475569',
-  fontSize: '13px',
-  margin: 0,
-  lineHeight: 1.5
 };
