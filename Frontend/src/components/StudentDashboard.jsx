@@ -240,9 +240,8 @@ export const computeBiometricSimilarity = (biomA, biomB) => {
 };
 
 // High-Precision Multi-Person & Face Detection from Camera Canvas (Single vs Multiple People)
-// High-Precision Multi-Person & Face Detection from Camera Canvas (Single vs Multiple People)
 export const detectPeopleInCanvas = async (canvas) => {
-  if (!canvas) return { count: 0, isMultiple: false, isPresent: false };
+  if (!canvas) return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
   
   const W = canvas.width || 320;
   const H = canvas.height || 240;
@@ -253,9 +252,9 @@ export const detectPeopleInCanvas = async (canvas) => {
       const faceDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 10 });
       const detectedFaces = await faceDetector.detect(canvas);
       if (Array.isArray(detectedFaces)) {
-        // Discard tiny false-positive boxes / noise (each real face must be >= 12% frame width and height)
-        const minW = W * 0.12;
-        const minH = H * 0.12;
+        // Discard tiny false-positive boxes / noise (each real face must be >= 18% frame width and height)
+        const minW = W * 0.18;
+        const minH = H * 0.18;
         const validFaces = detectedFaces.filter(f => {
           const b = f.boundingBox || {};
           return (b.width >= minW && b.height >= minH);
@@ -272,8 +271,8 @@ export const detectPeopleInCanvas = async (canvas) => {
             for (let i = 1; i < sorted.length; i++) {
               const sec = sorted[i].boundingBox;
               const secCenterX = sec.x + sec.width / 2;
-              // Distinct separate person requires horizontal separation of >= 25% of frame width
-              if (Math.abs(primaryCenterX - secCenterX) >= W * 0.25) {
+              // Distinct separate person requires horizontal separation of >= 28% of frame width
+              if (Math.abs(primaryCenterX - secCenterX) >= W * 0.28) {
                 genuineOtherFaces++;
               }
             }
@@ -335,14 +334,14 @@ export const detectPeopleInCanvas = async (canvas) => {
             cellCount++;
             totalSampled++;
 
-            // Standard IEEE YCbCr Skin Chroma Model (accurately distinguishes human skin from wood/walls/furniture)
+            // Strict YCbCr Human Skin Chroma Model (accurately distinguishes human skin from wood/walls/furniture)
             const cb = -0.168736 * red - 0.331264 * green + 0.5 * blue + 128;
             const cr = 0.5 * red - 0.418688 * green - 0.081312 * blue + 128;
             const isSkin = (
-              cb >= 80 && cb <= 130 &&
-              cr >= 135 && cr <= 178 &&
-              red > 45 && green > 30 && blue > 18 &&
-              red > blue && (red - green) > 6
+              cb >= 85 && cb <= 128 &&
+              cr >= 136 && cr <= 176 &&
+              red > 55 && green > 35 && blue > 20 &&
+              red > green && (red - blue) > 10 && (red - green) > 6
             );
 
             if (isSkin) {
@@ -352,23 +351,25 @@ export const detectPeopleInCanvas = async (canvas) => {
           }
         }
 
-        if (cellCount > 0 && (cellSkin / cellCount) >= 0.32) {
+        if (cellCount > 0 && (cellSkin / cellCount) >= 0.38) {
           skinGrid[r * cols + c] = 1;
         }
       }
     }
 
     const overallSkinRatio = totalSampled > 0 ? (totalSkinPixels / totalSampled) : 0;
-    if (overallSkinRatio < 0.035) {
+    if (overallSkinRatio < 0.030) {
       return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
     }
 
-    // Connected Component Analysis on Upper & Middle Screen (Face Search Region)
+    // Connected Component Analysis on Upper Screen (Head Search Region)
+    // Faces are located in the upper 65% of the frame (r < rows * 0.65).
+    // This strictly excludes hands on keyboard, desks, laps, and forearms in lower rows!
+    const searchMaxRow = Math.floor(rows * 0.65);
     const visited = new Uint8Array(cols * rows);
     const headCandidates = [];
 
-    // Faces are located in the upper 75% of the frame (r < rows * 0.75)
-    for (let r = 0; r < Math.floor(rows * 0.75); r++) {
+    for (let r = 0; r < searchMaxRow; r++) {
       for (let c = 0; c < cols; c++) {
         const idx = r * cols + c;
         if (skinGrid[idx] === 1 && !visited[idx]) {
@@ -393,7 +394,7 @@ export const detectPeopleInCanvas = async (canvas) => {
               [curC, curR + 1], [curC, curR - 1]
             ];
             for (const [nc, nr] of neighbors) {
-              if (nc >= 0 && nc < cols && nr >= 0 && nr < Math.floor(rows * 0.80)) {
+              if (nc >= 0 && nc < cols && nr >= 0 && nr < searchMaxRow) {
                 const nIdx = nr * cols + nc;
                 if (skinGrid[nIdx] === 1 && !visited[nIdx]) {
                   visited[nIdx] = 1;
@@ -408,7 +409,7 @@ export const detectPeopleInCanvas = async (canvas) => {
           const aspect = heightCells / Math.max(1, widthCells);
 
           // A valid human head/face has substantial mass, oval aspect ratio, and width >= 4 cells
-          if (count >= 16 && widthCells >= 4 && heightCells >= 4 && aspect >= 0.75 && aspect <= 2.2) {
+          if (count >= 20 && widthCells >= 4 && heightCells >= 4 && aspect >= 0.70 && aspect <= 2.3) {
             headCandidates.push({
               count,
               centerCol: sumC / count,
@@ -425,31 +426,43 @@ export const detectPeopleInCanvas = async (canvas) => {
     headCandidates.sort((a, b) => b.count - a.count);
 
     if (headCandidates.length === 0) {
-      return { count: overallSkinRatio >= 0.05 ? 1 : 0, isMultiple: false, isPresent: overallSkinRatio >= 0.05, primaryFaceBox: null };
+      return { count: overallSkinRatio >= 0.04 ? 1 : 0, isMultiple: false, isPresent: overallSkinRatio >= 0.04, primaryFaceBox: null };
     }
 
     // The primary candidate head is the largest head candidate in frame
     const primaryHead = headCandidates[0];
     let multiplePeople = false;
-    let peopleCount = 1;
+    let genuineSecondHeadCount = 0;
 
-    // Check if there is a distinct SECOND human head in frame
+    // Check if there is a distinct genuine SECOND human head in frame
     for (let i = 1; i < headCandidates.length; i++) {
       const secondaryHead = headCandidates[i];
-      // A secondary person's head must be:
-      // 1. At least 40% the mass of primary head (not a knuckle, ear, or small object)
-      // 2. Horizontally separated by at least 32% of frame width (hDist >= 10 columns out of 32)
-      // 3. Having its own independent width of at least 4 cells
+      // A genuine second person's head must:
+      // 1. Have substantial mass: at least 32 cells and at least 55% the mass of primary head
+      // 2. Be located at head level in the upper frame (centerRow <= rows * 0.55)
+      // 3. Be horizontally separated by at least 35% of frame width (hDist >= 11 columns out of 32)
+      // 4. Have genuine head dimensions: width >= 5 cells, height >= 5 cells, aspect between 0.8 and 2.0
+      // 5. NOT be vertically directly below primary head (e.g. neck or collar)
       const hDist = Math.abs(primaryHead.centerCol - secondaryHead.centerCol);
-      if (secondaryHead.count >= primaryHead.count * 0.40 && hDist >= 10 && secondaryHead.widthCells >= 4) {
+      const isBelowPrimary = (hDist < 6 && secondaryHead.centerRow > primaryHead.centerRow);
+      
+      if (
+        !isBelowPrimary &&
+        secondaryHead.count >= 32 &&
+        secondaryHead.count >= primaryHead.count * 0.55 &&
+        secondaryHead.centerRow <= (rows * 0.55) &&
+        hDist >= 11 &&
+        secondaryHead.widthCells >= 5 &&
+        secondaryHead.heightCells >= 5
+      ) {
         multiplePeople = true;
-        peopleCount++;
+        genuineSecondHeadCount++;
         break;
       }
     }
 
     return {
-      count: multiplePeople ? Math.max(2, peopleCount) : 1,
+      count: multiplePeople ? (1 + genuineSecondHeadCount) : 1,
       isMultiple: multiplePeople,
       isPresent: true,
       primaryFaceBox: primaryHead ? {
@@ -3711,14 +3724,14 @@ export default function StudentDashboard() {
         const liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
         const refVector = enrolledFaceVectorRef.current;
 
-        // MULTIPLE PEOPLE IN CAMERA DETECTION (temporal debounce: requires 2 consecutive positives)
+        // MULTIPLE PEOPLE IN CAMERA DETECTION (requires 4 consecutive detections in pre-scan)
         if (peopleCheck.isMultiple) {
           consecutiveMultiplePeopleCountRef.current++;
         } else {
           consecutiveMultiplePeopleCountRef.current = 0;
         }
 
-        if (consecutiveMultiplePeopleCountRef.current >= 2) {
+        if (consecutiveMultiplePeopleCountRef.current >= 4) {
           setIsMultiplePeopleDetected(true);
           isMultiplePeopleDetectedRef.current = true;
           setDetectedPeopleCount(peopleCheck.count);
@@ -3726,9 +3739,8 @@ export default function StudentDashboard() {
           setFaceMatchScore(0);
           progress = 0;
           setFaceScanProgress(0);
-          setFaceErrorMessage(`⚠️ MALPRACTICE ALERT: Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}.`);
-          setFaceMatchStatus(`🔴 MULTIPLE PEOPLE DETECTED (${peopleCheck.count} People) — Scan Blocked`);
-          setShowMultiplePeopleWarningModal(true);
+          setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
+          setFaceMatchStatus(`🔴 Multiple people detected (${peopleCheck.count} People) — Please be alone`);
 
           const now = Date.now();
           if (now - lastMultiplePeopleWarningTimeRef.current > 7000) {
@@ -3740,12 +3752,13 @@ export default function StudentDashboard() {
 
         setIsMultiplePeopleDetected(false);
         isMultiplePeopleDetectedRef.current = false;
+        setShowMultiplePeopleWarningModal(false);
         setDetectedPeopleCount(peopleCheck.isPresent ? 1 : 0);
 
         if (!peopleCheck.isPresent) {
           progress = Math.max(0, progress - 8);
           setFaceScanProgress(progress);
-          setFaceMatchStatus("🔴 No candidate face detected in camera viewport. Please look directly at the camera.");
+          setFaceMatchStatus("🔴 Align your face inside the camera circle to scan and verify your identity...");
           setFaceErrorMessage("No candidate face detected. Please position your face inside the circle.");
           return;
         }
@@ -3776,9 +3789,9 @@ export default function StudentDashboard() {
 
         if (isFaceMatch) {
           setFaceErrorMessage('');
-          setFaceMatchStatus(`🟢 Scanning face: ${Math.min(100, progress + 16)}%... Profile match: ${matchPercent}% (${student.name} verified)`);
-          progress += 16;
+          progress += 20;
           setFaceScanProgress(Math.min(100, progress));
+          setFaceMatchStatus(`🟢 Scanning face: ${Math.min(100, progress)}%... Profile match: ${matchPercent}% (${student.name} verified)`);
 
           if (progress >= 100) {
             clearInterval(scanIntervalRef.current);
@@ -3824,7 +3837,7 @@ export default function StudentDashboard() {
               window.dispatchEvent(new Event('storage'));
             } catch (e) {}
 
-            const successMsg = `Face scanned and profile verified for student ${student.name}. Exam starting now with continuous live proctoring.`;
+            const successMsg = `Face matched with registered profile picture. Welcome ${student.name}. Entering exam now.`;
             announce(successMsg);
             speakText(successMsg);
 
@@ -3833,7 +3846,7 @@ export default function StudentDashboard() {
               if (pendingExamToStart) {
                 launchActualExam(pendingExamToStart);
               }
-            }, 1000);
+            }, 800);
           }
         } else {
           // Face mismatch against enrolled profile photo: CANNOT WRITE EXAM
@@ -3875,10 +3888,9 @@ export default function StudentDashboard() {
           setIsMultiplePeopleDetected(true);
           isMultiplePeopleDetectedRef.current = true;
           setDetectedPeopleCount(peopleCheck.count);
-          setFaceErrorMessage(`⚠️ Multiple people detected (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}.`);
+          setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
           setFaceMatchStatus(`🔴 Multiple people detected! Examination blocked.`);
-          setShowMultiplePeopleWarningModal(true);
-          speakText(`Warning: Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
+          speakText(`Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
           return;
         }
 
@@ -4054,7 +4066,7 @@ export default function StudentDashboard() {
           violationTitle = 'SCANNED FACE NOT DETECTED';
           violationHeading = 'Candidate Face Missing from Camera!';
           violationMsg = `Your face is not visible to the exam camera. Please look directly into the camera. Only candidate ${student.name} is permitted to write this exam.`;
-          violationSpeech1 = `Alert 1 of 2: Scanned face is not detected in camera. Please face the camera immediately. You have 1 warning remaining before exam exit.`;
+          violationSpeech1 = `Alert 1 of 2: Scanned face is not detected in camera. Please face the camera immediately. You have 1 warning remaining. On the 3rd violation, your exam will exit!`;
           violationSpeech2 = `Final warning. Alert 2 of 2: Scanned face is not detected! If your face is not back in the camera immediately, your exam will be terminated and exited!`;
           violationExitDetail = 'Scanned face was repeatedly not detected in the exam camera';
           violationTeacherStatus = '⚠️ Candidate Face Absent / Missing';
@@ -4072,8 +4084,8 @@ export default function StudentDashboard() {
           violationTitle = 'MULTIPLE PEOPLE DETECTED';
           violationHeading = 'Multiple People in Camera View!';
           violationMsg = `Facial recognition proctoring detected ${peopleCheck.count} people in front of your camera. Examination rules strictly require candidate ${student.name} alone.`;
-          violationSpeech1 = `Alert 1 of 2: Multiple people detected in camera! Only registered student ${student.name} is permitted to write this exam. Please ensure you are alone.`;
-          violationSpeech2 = `Final warning. Alert 2 of 2: Multiple people detected in camera! If other people remain, your exam will be terminated and exited immediately!`;
+          violationSpeech1 = `Alert 1 of 2: Multiple people detected in camera! Only registered student ${student.name} is permitted to write this exam. Please ensure you are alone. On the 3rd violation, your exam will exit!`;
+          violationSpeech2 = `Final warning. Alert 2 of 2: Multiple people detected in camera! If another person remains in view, your exam will be terminated and exited immediately!`;
           violationExitDetail = 'Other people were repeatedly detected in front of the camera';
           violationTeacherStatus = `🚨 MULTIPLE PEOPLE DETECTED (${peopleCheck.count} People)`;
 
@@ -4101,11 +4113,11 @@ export default function StudentDashboard() {
             // CONDITION 3: OTHERS ARE THERE (Unauthorized person / face mismatch)
             isViolation = true;
             violationType = 'face_mismatch';
-            violationTitle = 'UNRECOGNIZED PERSON DETECTED';
-            violationHeading = 'Unrecognized Person Detected!';
+            violationTitle = 'UNAUTHORIZED PERSON DETECTED';
+            violationHeading = 'Unauthorized Person Detected!';
             violationMsg = `The person in front of the camera does not match scanned candidate ${student.name}. Only candidate ${student.name} is permitted to write this exam.`;
-            violationSpeech1 = `Alert 1 of 2: Unrecognized person detected in camera. Only registered candidate ${student.name} is permitted to write this exam. Please face the camera.`;
-            violationSpeech2 = `Final warning. Alert 2 of 2: Unrecognized person detected! If candidate ${student.name} does not immediately resume alone, your exam will be terminated and exited!`;
+            violationSpeech1 = `Alert 1 of 2: Unauthorized person detected in camera. Only registered candidate ${student.name} is permitted to write this exam. On the 3rd violation, your exam will exit!`;
+            violationSpeech2 = `Final warning. Alert 2 of 2: Unauthorized person detected! If candidate ${student.name} does not immediately resume alone, your exam will be terminated and exited immediately!`;
             violationExitDetail = 'An unauthorized face repeatedly attempted to write the exam instead of candidate ' + student.name;
             violationTeacherStatus = '🚨 FACE MISMATCH: Unauthorized Person Writing';
 
@@ -4156,7 +4168,8 @@ export default function StudentDashboard() {
             ? 0 
             : (faceMismatchStrikeCountRef.current === 1 ? 3500 : 3000);
 
-          if (consecutiveMismatchTicksRef.current >= 2 && timeSinceLastAlert >= strikeCooldown) {
+          const minRequiredTicks = violationType === 'multiple_people' ? 3 : 2;
+          if (consecutiveMismatchTicksRef.current >= minRequiredTicks && timeSinceLastAlert >= strikeCooldown) {
             lastMismatchAlertTimeRef.current = now;
 
               if (faceMismatchStrikeCountRef.current === 0) {
@@ -6239,7 +6252,7 @@ export default function StudentDashboard() {
             style={{
               background: '#ffffff',
               borderRadius: '24px',
-              border: faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? '3px solid #ef4444' : '3px solid #0284c7',
+              border: faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '3px solid #ef4444' : '3px solid #0284c7',
               maxWidth: '580px',
               width: '100%',
               padding: '28px 32px',
@@ -6250,7 +6263,7 @@ export default function StudentDashboard() {
           >
             {/* Modal Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <span style={{ fontSize: '11px', background: faceDetected ? '#dcfce7' : (studentProfile.profilePic && faceConfidence >= 65) ? '#e0f2fe' : '#fee2e2', color: faceDetected ? '#15803d' : (studentProfile.profilePic && faceConfidence >= 65) ? '#0369a1' : '#b91c1c', padding: '4px 12px', borderRadius: '12px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <span style={{ fontSize: '11px', background: faceDetected ? '#dcfce7' : (studentProfile.profilePic && faceConfidence >= 50) ? '#e0f2fe' : '#fee2e2', color: faceDetected ? '#15803d' : (studentProfile.profilePic && faceConfidence >= 50) ? '#0369a1' : '#b91c1c', padding: '4px 12px', borderRadius: '12px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 🛡️ Mandatory Candidate Face Scanner
               </span>
               <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>
@@ -6284,8 +6297,8 @@ export default function StudentDashboard() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '12px', fontWeight: '900', color: faceDetected ? '#15803d' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? '#b91c1c' : '#15803d' }}>
-                    {faceDetected ? '✓ Locked & Enrolled' : !studentProfile.profilePic ? '🔴 Profile Photo Required' : (faceConfidence >= 65) ? `✓ Match: ${faceConfidence}%` : `⚠️ Mismatch: ${faceConfidence}%`}
+                  <span style={{ fontSize: '12px', fontWeight: '900', color: faceDetected ? '#15803d' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '#b91c1c' : '#15803d' }}>
+                    {faceDetected ? '✓ Locked & Enrolled' : !studentProfile.profilePic ? '🔴 Profile Photo Required' : (faceConfidence >= 50) ? `✓ Match: ${faceConfidence}%` : `⚠️ Mismatch: ${faceConfidence}%`}
                   </span>
                 </div>
               </div>
@@ -6331,8 +6344,8 @@ export default function StudentDashboard() {
                 overflow: 'hidden',
                 background: '#0f172a',
                 margin: '0 auto 16px auto',
-                border: isMultiplePeopleDetected ? '3px solid #ef4444' : faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? '3px solid #ef4444' : '3px solid #38bdf8',
-                boxShadow: isMultiplePeopleDetected ? '0 0 30px rgba(239, 68, 68, 0.5)' : faceDetected ? '0 0 30px rgba(34, 197, 94, 0.4)' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? '0 0 20px rgba(239, 68, 68, 0.3)' : '0 0 20px rgba(56, 189, 248, 0.2)'
+                border: isMultiplePeopleDetected ? '3px solid #ef4444' : faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '3px solid #ef4444' : '3px solid #38bdf8',
+                boxShadow: isMultiplePeopleDetected ? '0 0 30px rgba(239, 68, 68, 0.5)' : faceDetected ? '0 0 30px rgba(34, 197, 94, 0.4)' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '0 0 20px rgba(239, 68, 68, 0.3)' : '0 0 20px rgba(56, 189, 248, 0.2)'
               }}>
                 <video 
                   ref={videoRef} 
@@ -6350,8 +6363,8 @@ export default function StudentDashboard() {
                   transform: 'translate(-50%, -50%)',
                   width: '170px', height: '210px',
                   borderRadius: '50%',
-                  border: isMultiplePeopleDetected ? '3px solid #ef4444' : faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? '3px dashed #ef4444' : '3px dashed #38bdf8',
-                  boxShadow: isMultiplePeopleDetected ? '0 0 25px #ef4444' : faceDetected ? '0 0 25px #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? '0 0 15px rgba(239, 68, 68, 0.6)' : '0 0 15px rgba(56, 189, 248, 0.6)',
+                  border: isMultiplePeopleDetected ? '3px solid #ef4444' : faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '3px dashed #ef4444' : '3px dashed #38bdf8',
+                  boxShadow: isMultiplePeopleDetected ? '0 0 25px #ef4444' : faceDetected ? '0 0 25px #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '0 0 15px rgba(239, 68, 68, 0.6)' : '0 0 15px rgba(56, 189, 248, 0.6)',
                   pointerEvents: 'none',
                   transition: 'all 0.3s ease'
                 }} />
@@ -6367,7 +6380,7 @@ export default function StudentDashboard() {
                   position: 'absolute',
                   bottom: '12px', left: '50%',
                   transform: 'translateX(-50%)',
-                  background: isMultiplePeopleDetected ? 'rgba(220, 38, 38, 0.95)' : faceDetected ? 'rgba(22, 163, 74, 0.95)' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? 'rgba(185, 28, 28, 0.90)' : 'rgba(2, 132, 199, 0.90)',
+                  background: isMultiplePeopleDetected ? 'rgba(220, 38, 38, 0.95)' : faceDetected ? 'rgba(22, 163, 74, 0.95)' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? 'rgba(185, 28, 28, 0.90)' : 'rgba(2, 132, 199, 0.90)',
                   color: '#ffffff',
                   padding: '6px 18px',
                   borderRadius: '20px',
@@ -6379,14 +6392,14 @@ export default function StudentDashboard() {
                   gap: '8px',
                   whiteSpace: 'nowrap'
                 }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: isMultiplePeopleDetected ? '#fee2e2' : faceDetected ? '#ffffff' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 65)) ? '#f87171' : '#38bdf8' }}></span>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: isMultiplePeopleDetected ? '#fee2e2' : faceDetected ? '#ffffff' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '#f87171' : '#38bdf8' }}></span>
                   {isMultiplePeopleDetected 
                     ? `🚨 MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People)` 
                     : faceDetected 
                       ? `✓ Identity Locked: ${student.name}` 
                       : !studentProfile.profilePic
                         ? '🔴 Official Profile Photo Required'
-                        : (faceConfidence >= 65) 
+                        : (faceConfidence >= 50) 
                           ? `Scanning ${student.name}... (${faceScanProgress}%)` 
                           : `⚠️ Face Mismatch (${faceConfidence}% match)`}
                 </div>
@@ -6407,31 +6420,31 @@ export default function StudentDashboard() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
                   type="button"
-                  disabled={isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 65)}
+                  disabled={isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)}
                   onClick={handleManualPassFaceAuth}
                   style={{
                     flex: 1,
-                    background: isMultiplePeopleDetected ? '#ef4444' : (!enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 65)) ? '#dc2626' : faceDetected ? '#16a34a' : '#0284c7',
+                    background: isMultiplePeopleDetected ? '#ef4444' : (!enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? '#dc2626' : faceDetected ? '#16a34a' : '#0284c7',
                     color: '#ffffff',
                     border: 'none',
                     padding: '14px 20px',
                     borderRadius: '12px',
                     fontWeight: '800',
                     fontSize: '14px',
-                    cursor: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 65)) ? 'not-allowed' : 'pointer',
-                    boxShadow: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 65)) ? 'none' : '0 4px 14px rgba(2, 132, 199, 0.25)',
+                    cursor: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? 'not-allowed' : 'pointer',
+                    boxShadow: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? 'none' : '0 4px 14px rgba(2, 132, 199, 0.25)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
-                    opacity: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 65)) ? 0.8 : 1
+                    opacity: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? 0.8 : 1
                   }}
                 >
                   {isMultiplePeopleDetected 
                     ? '⚠️ Multiple People Detected (Blocked)' 
                     : !enrolledFaceVectorRef.current
                       ? '⛔ No Profile Photo (Exam Blocked)'
-                      : (!faceDetected && faceConfidence > 0 && faceConfidence < 65)
+                      : (!faceDetected && faceConfidence > 0 && faceConfidence < 50)
                         ? `⛔ Face Mismatch: Cannot Write Exam (${faceConfidence}%)`
                         : faceDetected 
                           ? '✓ Enter Exam Now' 
@@ -6459,118 +6472,7 @@ export default function StudentDashboard() {
         </div>
       )}
       
-      {/* MULTIPLE PEOPLE DETECTED WARNING POPUP MODAL (Malpractice Alert) */}
-      {(showMultiplePeopleWarningModal || isMultiplePeopleDetected) && (
-        <div 
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999999,
-            background: 'rgba(15, 23, 42, 0.88)',
-            backdropFilter: 'blur(10px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px'
-          }}
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#ffffff',
-              borderRadius: '28px',
-              border: '4px solid #dc2626',
-              maxWidth: '560px',
-              width: '100%',
-              padding: '32px 36px',
-              textAlign: 'center',
-              boxShadow: '0 25px 60px rgba(220, 38, 38, 0.5)',
-              position: 'relative'
-            }}
-          >
-            {/* Warning Icon with Pulsing Halo */}
-            <div style={{
-              width: '84px',
-              height: '84px',
-              borderRadius: '50%',
-              background: '#fee2e2',
-              display: 'grid',
-              placeItems: 'center',
-              margin: '0 auto 16px auto',
-              border: '4px solid #ef4444',
-              boxShadow: '0 0 30px rgba(239, 68, 68, 0.5)'
-            }}>
-              <span style={{ fontSize: '42px' }}>🚨</span>
-            </div>
 
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: '#fee2e2',
-              border: '1px solid #f87171',
-              color: '#dc2626',
-              padding: '6px 18px',
-              borderRadius: '20px',
-              fontWeight: '900',
-              fontSize: '13px',
-              marginBottom: '14px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}>
-              ⚠️ MALPRACTICE WARNING • {detectedPeopleCount > 1 ? `${detectedPeopleCount} People Detected` : 'Multiple People Detected'}
-            </div>
-
-            <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#991b1b', margin: '0 0 10px 0' }}>
-              Multiple People in Camera View!
-            </h2>
-
-            <p style={{ fontSize: '15px', color: '#475569', lineHeight: 1.5, margin: '0 0 18px 0', fontWeight: '600' }}>
-              Facial recognition proctoring has detected <strong>more than one person ({detectedPeopleCount} people)</strong> in front of your camera. Exam rules require strictly <strong>one candidate ({student.name})</strong> to be present.
-            </p>
-
-            <div style={{ background: '#fff5f5', border: '2px dashed #f87171', borderRadius: '16px', padding: '16px', marginBottom: '22px', textAlign: 'left' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span style={{ fontSize: '18px' }}>🔒</span>
-                <b style={{ color: '#991b1b', fontSize: '14px' }}>Security Measures Enforced:</b>
-              </div>
-              <ul style={{ margin: 0, paddingLeft: '22px', color: '#7f1d1d', fontSize: '13px', lineHeight: 1.6 }}>
-                <li>Voice assistant is <strong>locked</strong> and ignored.</li>
-                <li>Exam answer input and submission are <strong>temporarily blocked</strong>.</li>
-                <li>Teacher dashboard has logged: <strong>🔴 Multiple People Malpractice Alert</strong>.</li>
-              </ul>
-            </div>
-
-            <p style={{ fontSize: '13px', color: '#b91c1c', fontWeight: '800', marginBottom: '20px' }}>
-              👉 Please ask all other individuals to leave the camera frame immediately so only candidate {student.name} is in view.
-            </p>
-
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMultiplePeopleWarningModal(false);
-                  speakText("Checking camera view. Ensure only candidate " + student.name + " is visible.");
-                }}
-                style={{
-                  background: '#dc2626',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '14px 28px',
-                  borderRadius: '14px',
-                  fontWeight: '800',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(220, 38, 38, 0.4)'
-                }}
-              >
-                ✓ Others Have Left — Resume Verification
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* FACE MISMATCH PROCTORING ALERT MODAL (Alert 1 of 2 or Final Alert 2 of 2) */}
       {faceMismatchActiveAlert && (
@@ -6635,7 +6537,7 @@ export default function StudentDashboard() {
               textTransform: 'uppercase',
               letterSpacing: '0.5px'
             }}>
-              {faceMismatchActiveAlert.strike === 2 ? '🚨 FINAL WARNING (ALERT 2 OF 2)' : '⚠️ BIOMETRIC ALERT 1 OF 2'}
+              {faceMismatchActiveAlert.strike === 2 ? '🚨 FINAL WARNING (ALERT 2 OF 2)' : '⚠️ PROCTOR ALERT (ALERT 1 OF 2)'}
             </div>
 
             <h2 style={{ fontSize: '23px', fontWeight: '900', color: '#991b1b', margin: '0 0 10px 0' }}>
@@ -8055,8 +7957,8 @@ export default function StudentDashboard() {
                                   : 'PROCTOR ALERT: SCANNED FACE NOT DETECTED IN CAMERA!')
                               : isMultiplePeopleDetected
                                 ? (faceMismatchStrikeCount > 0
-                                    ? `PROCTOR ALERT (WARNING ${faceMismatchStrikeCount}/2): MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People)!`
-                                    : `PROCTOR ALERT: MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People in View)!`)
+                                    ? `PROCTOR ALERT (WARNING ${faceMismatchStrikeCount}/2): MULTIPLE PEOPLE DETECTED ${detectedPeopleCount > 1 ? `(${detectedPeopleCount} People)` : ''}!`
+                                    : `PROCTOR ALERT: MULTIPLE PEOPLE DETECTED ${detectedPeopleCount > 1 ? `(${detectedPeopleCount} People in View)` : ''}!`)
                                 : (faceMismatchStrikeCount > 0 
                                     ? `SECURITY ALERT (WARNING ${faceMismatchStrikeCount}/2): UNRECOGNIZED PERSON DETECTED!` 
                                     : 'SECURITY ALERT: UNRECOGNIZED PERSON DETECTED (OTHERS WRITING)!')}
@@ -8065,7 +7967,7 @@ export default function StudentDashboard() {
                             {!isFacePresentInExam
                               ? `Your face is not detected in front of the exam camera. Please look directly into the camera. ${faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate and exit your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. On the 3rd violation, the exam will automatically exit!`}`
                               : isMultiplePeopleDetected
-                                ? `Multiple people (${detectedPeopleCount} people) detected in front of the camera. Only candidate ${student.name} is permitted to write this exam. ${faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate and exit your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. On the 3rd violation, the exam will automatically exit!`}`
+                                ? `Multiple people ${detectedPeopleCount > 1 ? `(${detectedPeopleCount} people)` : ''} detected in front of the camera. Only candidate ${student.name} is permitted to write this exam. ${faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate and exit your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. On the 3rd violation, the exam will automatically exit!`}`
                                 : `The person in front of the camera does NOT match scanned student ${student.name}. ${faceMismatchStrikeCount >= 2 ? 'FINAL WARNING: One more violation will terminate your exam!' : `Proctor warning ${faceMismatchStrikeCount || 1} of 2 issued. On the 3rd violation, the exam will automatically exit!`}`}
                           </p>
                         </div>
@@ -8238,7 +8140,7 @@ export default function StudentDashboard() {
                                 {!isFacePresentInExam 
                                   ? '🔴 NO FACE' 
                                   : isMultiplePeopleDetected 
-                                    ? `🚨 MULTIPLE (${detectedPeopleCount})` 
+                                    ? (detectedPeopleCount > 1 ? `🚨 MULTIPLE (${detectedPeopleCount})` : '🚨 MULTIPLE') 
                                     : (isOtherPersonDetected || !isScannedStudentWriting) 
                                       ? (faceMismatchStrikeCount > 0 ? `🚨 WRONG PERSON (${faceMismatchStrikeCount}/2)` : '🚨 UNAUTHORIZED') 
                                       : '✓ CANDIDATE'}
@@ -8263,7 +8165,7 @@ export default function StudentDashboard() {
                                 {!isFacePresentInExam
                                   ? '🔴 PROCTOR ALERT: SCANNED FACE NOT DETECTED IN CAMERA!'
                                   : isMultiplePeopleDetected
-                                    ? `🔴 PROCTOR ALERT: MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People in View)!`
+                                    ? `🔴 PROCTOR ALERT: MULTIPLE PEOPLE DETECTED ${detectedPeopleCount > 1 ? `(${detectedPeopleCount} People in View)` : ''}!`
                                     : (isOtherPersonDetected || !isScannedStudentWriting)
                                       ? `🔴 WARNING ${faceMismatchStrikeCount > 0 ? `(Alert ${faceMismatchStrikeCount}/2)` : ''}: OTHER FACE DETECTED (NOT ${student.name})!`
                                       : '🟢 Scanned Student Writing: Verified'}
@@ -8286,7 +8188,7 @@ export default function StudentDashboard() {
                               Candidate: <strong>{student.name}</strong> • Status: {!isFacePresentInExam
                                 ? `Candidate face missing from webcam. You must look directly at the camera. (Alerts: ${faceMismatchStrikeCount} of 2, auto-exit on 3).`
                                 : isMultiplePeopleDetected
-                                  ? `Multiple people (${detectedPeopleCount} people) detected in camera view! Only candidate ${student.name} is permitted. (Alerts: ${faceMismatchStrikeCount} of 2, auto-exit on 3).`
+                                  ? `Multiple people ${detectedPeopleCount > 1 ? `(${detectedPeopleCount} people)` : ''} detected in camera view! Only candidate ${student.name} is permitted. (Alerts: ${faceMismatchStrikeCount} of 2, auto-exit on 3).`
                                   : (isOtherPersonDetected || !isScannedStudentWriting)
                                     ? `Face mismatch: Unrecognized person in camera! Except verified candidate ${student.name}, no other face is permitted. (Alerts: ${faceMismatchStrikeCount} of 2, auto-exit on 3).`
                                     : 'Verified scanned student writing alone. Voice assistant listening.'}
@@ -8349,7 +8251,7 @@ export default function StudentDashboard() {
                                 type: 'multiple_people',
                                 title: `⚠️ PROCTOR ALERT: MULTIPLE PEOPLE DETECTED`,
                                 heading: `Multiple People in Camera View!`,
-                                message: `Facial recognition proctoring detected ${detectedPeopleCount} people in front of your camera.`,
+                                message: `Facial recognition proctoring detected ${detectedPeopleCount > 1 ? `${detectedPeopleCount} people` : 'multiple people'} in front of your camera.`,
                                 submessage: `Proctoring warning ${faceMismatchStrikeCount || 1} of 2. After 2 alerts, the exam will automatically exit!`
                               });
                             } else if (isOtherPersonDetected || !isScannedStudentWriting) {
@@ -8366,7 +8268,7 @@ export default function StudentDashboard() {
                             const proctorStatus = !isFacePresentInExam
                               ? `Proctor alert: Candidate face is not detected in camera. Please face the webcam. You have had ${faceMismatchStrikeCount} of 2 alerts. On the 3rd time, the exam exits.`
                               : isMultiplePeopleDetected
-                                ? `Malpractice Security Alert: Multiple people detected in exam camera (${detectedPeopleCount} people). Only candidate ${student.name} is permitted to write. You have had ${faceMismatchStrikeCount} of 2 alerts. On the 3rd time, the exam exits.`
+                                ? `Malpractice Security Alert: Multiple people detected in exam camera ${detectedPeopleCount > 1 ? `(${detectedPeopleCount} people)` : ''}. Only candidate ${student.name} is permitted to write. You have had ${faceMismatchStrikeCount} of 2 alerts. On the 3rd time, the exam exits.`
                                 : (isOtherPersonDetected || !isScannedStudentWriting)
                                   ? `Security Warning: Unrecognized person detected in exam camera. ${faceMismatchStrikeCount > 0 ? `Warning ${faceMismatchStrikeCount} of 2 has been issued.` : ''} The person writing does not match registered candidate ${student.name}. On the 3rd time, the exam exits.`
                                   : `Facial proctoring is verified. Candidate ${student.name} is writing the exam alone in front of the webcam. Voice assistant is active.`;
