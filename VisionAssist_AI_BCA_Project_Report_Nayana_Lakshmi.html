@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VisionAssist AI - BCA Project Report - B.M.S. College for Women</title>
+<style>
+  @page {
+    size: A4;
+    margin: 25mm 25mm 25mm 25mm;
+  }
+  body {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    line-height: 1.6;
+    color: #111827;
+    background-color: #f3f4f6;
+    padding: 20px;
+    margin: 0;
+  }
+  .page-container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: #ffffff;
+    padding: 50px 65px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    border-radius: 8px;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Times New Roman', Times, serif;
+    color: #0f172a;
+    text-align: center;
+  }
+  h1 { font-size: 18pt; margin-bottom: 8px; }
+  h2 { font-size: 15pt; margin-top: 24px; margin-bottom: 12px; }
+  h3 { font-size: 13pt; text-align: left; margin-top: 18px; }
+  h4 { font-size: 12pt; text-align: left; }
+  p {
+    text-align: justify;
+    text-indent: 30px;
+    margin-bottom: 10px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 10pt;
+  }
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background-color: #e2e8f0;
+    font-weight: bold;
+  }
+  tr:nth-child(even) {
+    background-color: #f8fafc;
+  }
+  pre {
+    background-color: #f8fafc;
+    border-left: 4px solid #0284c7;
+    padding: 12px 16px;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 8.5pt;
+    line-height: 1.35;
+    overflow-x: auto;
+    border-radius: 4px;
+    border-top: 1px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  code {
+    font-family: Consolas, 'Courier New', monospace;
+    background: #f1f5f9;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 9.5pt;
+  }
+  hr {
+    border: none;
+    border-top: 2px solid #e2e8f0;
+    margin: 35px 0;
+    page-break-after: always;
+  }
+  .print-btn {
+    position: fixed;
+    top: 20px;
+    right: 30px;
+    background: #0284c7;
+    color: #fff;
+    border: none;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(2,132,199,0.3);
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .page-container { box-shadow: none; padding: 0; max-width: 100%; }
+    .print-btn { display: none; }
+  }
+</style>
+</head>
+<body>
+<button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+<div class="page-container">
+<h1>B.M.S. COLLEGE FOR WOMEN (AUTONOMOUS)</h1>
+<h3>Bugle Rock, Basavanagudi, Bengaluru – 560004</h3>
+<br>
+<h2>A PROJECT REPORT ON</h2>
+<h1>“VISIONASSIST AI”</h1>
+<h3>Smart Accessible Examination Portal &amp; AI Voice Assistant for Visually Impaired Students</h3>
+<br>
+<p><strong>Bachelor of Computer Applications (BCA)</strong>  </p>
+<p><strong>Submitted by:</strong>  </p>
+<p>- <strong>NAYANA N S</strong> (U18BP24S0023)  </p>
+<p>- <strong>LAKSHMI K</strong> (U18BP24S0211)  </p>
+<br>
+<p><strong>Under the Guidance of:</strong>  </p>
+<p>- <strong>Dr. Anita</strong> — Department of B.Voc. IT  </p>
+<p>- <strong>Prof. Chandana H.</strong> — Department of BCA  </p>
+<br>
+<p><strong>DEPARTMENT OF BACHELOR OF COMPUTER APPLICATIONS</strong>  </p>
+<p><strong>Academic Year 2026–2027</strong>  </p>
+<br>
+<hr>
+<br>
+<h2>CERTIFICATE</h2>
+<br>
+<p>This is to certify that <strong>NAYANA N S (U18BP24S0023)</strong> and <strong>LAKSHMI K (U18BP24S0211)</strong>, students of the Bachelor of Computer Applications programme at B.M.S. College for Women, Bengaluru, have completed the project entitled <strong>“VisionAssist AI – Smart Accessible Examination Portal &amp; AI Voice Assistant for Visually Impaired Students”</strong> in partial fulfilment of the requirements for the award of the degree of Bachelor of Computer Applications, under the guidance of <strong>Dr. Anita (Department of B.Voc. IT)</strong> and <strong>Prof. Chandana H. (Department of BCA)</strong>.</p>
+<br>
+<p>The report describes the objectives, requirements, architecture, algorithmic design, computer vision biometric identity locking, multi-person proctoring state machine, high-clarity acoustic character synthesis, module implementations, and comprehensive testing of the system.</p>
+<br>
+<p>- <strong>Signature of Guides:</strong> Dr. Anita, Prof. Chandana H.  </p>
+<p>- <strong>Head of the Department:</strong> Name: ______________  </p>
+<p>- <strong>Signature of Examiners:</strong> 1. ______________ 2. ______________  </p>
+<p>- <strong>Examination Centre:</strong> B.M.S. College for Women  </p>
+<p>- <strong>Date of Examination:</strong> ____________________  </p>
+<br>
+<hr>
+<br>
+<h2>ACKNOWLEDGEMENT</h2>
+<br>
+<p>We express our sincere gratitude to our project guides, Dr. Anita of the Department of B.Voc. IT and Prof. Chandana H. of the Department of BCA, for their continuous guidance and valuable suggestions during the development of VisionAssist AI. We thank the Department of BCA and B.M.S. College for Women (Autonomous), Bengaluru, for providing the academic infrastructure and learning opportunities. We also acknowledge the open-source communities of React, Vite, Node.js, Express, MongoDB, and ElevenLabs.</p>
+<br>
+<p><strong>NAYANA N S</strong>  </p>
+<p><strong>LAKSHMI K</strong>  </p>
+<br>
+<hr>
+<br>
+<h2>DECLARATION</h2>
+<br>
+<p>We, NAYANA N S (U18BP24S0023) and LAKSHMI K (U18BP24S0211), hereby declare that the project report entitled “VisionAssist AI – Smart Accessible Examination Portal &amp; AI Voice Assistant for Visually Impaired Students” is a record of original project work carried out by us under the guidance of Dr. Anita and Prof. Chandana H., B.M.S. College for Women, Bengaluru.</p>
+<br>
+<hr>
+<br>
+<h2>ABSTRACT</h2>
+<br>
+<p>Visually impaired students frequently face severe barriers during competitive and university academic examinations. Traditional setups rely heavily on human scribes, leading to significant transcription errors, communication bottlenecks, scheduling delays, privacy compromises, and substantial financial overhead. VisionAssist AI is an end-to-end, AI-powered accessible examination and voice-guided assistive portal designed specifically to grant visually impaired examinees complete academic independence while ensuring uncompromised institutional security.</p>
+<br>
+<hr>
+<br>
+<h2>TABLE OF CONTENTS</h2>
+<br>
+<table>
+<tr><th>SL.NO</th><th>PARTICULARS</th><th>PAGE NO.</th></tr>
+<tr><td>1.</td><td>Introduction&lt;br&gt;1.1 Literature Review&lt;br&gt;1.2 SDLC Model</td><td>01–04&lt;br&gt;04&lt;br&gt;05</td></tr>
+<tr><th>2.</th><th>System Requirement Specification&lt;br&gt;2.1 System requirement for development&lt;br&gt;2.2 System requirement for deployment&lt;br&gt;2.3 Language used&lt;br&gt;2.4 Tools used&lt;br&gt;2.5 Functional requirements&lt;br&gt;2.6 Non-functional requirements</th><th>06–10&lt;br&gt;06&lt;br&gt;07&lt;br&gt;07&lt;br&gt;08&lt;br&gt;09&lt;br&gt;10</th></tr>
+<tr><td>3.</td><td>Module Description&lt;br&gt;3.1 Modules (3.1.1 to 3.1.10)&lt;br&gt;3.2 Summary of API routes</td><td>11–18&lt;br&gt;11&lt;br&gt;18</td></tr>
+<tr><th>4.</th><th>System Design&lt;br&gt;4.1 System architecture&lt;br&gt;4.2 System workflows (Workflows A to E)&lt;br&gt;4.3 EER / ER diagram (Overview, Attributes, Tables)&lt;br&gt;4.4 Use case diagram&lt;br&gt;4.5 Activity diagram&lt;br&gt;4.6 DFD diagrams (Level 0 and Level 1)&lt;br&gt;4.7 Table description (7 Collections Schema)</th><th>19–38&lt;br&gt;19&lt;br&gt;20&lt;br&gt;26&lt;br&gt;31&lt;br&gt;32&lt;br&gt;33&lt;br&gt;35</th></tr>
+<tr><td>5.</td><td>Sample Coding&lt;br&gt;5.1–5.9 Client, server, and AI service architecture&lt;br&gt;5.10 Code 1: Biometric Face Verification &amp; Proctoring Security Engine&lt;br&gt;5.11 Code 2: Voice Assistant Speech Synthesis &amp; Acoustic Character Engine&lt;br&gt;5.12 Code 3: Live Teacher Proctoring Logs &amp; Exam Security Controller</td><td>39–51&lt;br&gt;39&lt;br&gt;46&lt;br&gt;48&lt;br&gt;50</td></tr>
+<tr><td>6.</td><td>Testing&lt;br&gt;6.1 Testing methods&lt;br&gt;6.2 Test cases and verification (TC-01 to TC-24 complete table)&lt;br&gt;6.3 Test cases and validation</td><td>52–56&lt;br&gt;52&lt;br&gt;53&lt;br&gt;56</td></tr>
+<tr><td>7.</td><td>Screenshots (Figures 7.1 to 7.21)</td><td>57–64</td></tr>
+<tr><td>8.</td><td>Conclusion</td><td>65</td></tr>
+<tr><td>9.</td><td>Future Enhancement</td><td>65</td></tr>
+<tr><td>10.</td><td>Bibliography</td><td>66</td></tr>
+</table>
+<br>
+<hr>
+<br>
+<h2>1. INTRODUCTION</h2>
+<br>
+<h3>Project Overview</h3>
+<p>Academic assessments in contemporary educational institutions remain predominantly visual, relying upon printed question papers, computerized graphical user interfaces, optical bubble sheets, and manual scribes. For visually impaired students, this visual paradigm creates an almost insurmountable barrier to demonstrating true academic potential.</p>
+<br>
+<h3>Problem Statement</h3>
+<p>Visually impaired students encounter severe barriers: inaccessible graphical interfaces, transcription bottlenecks introduced by human scribes, absence of autonomous biometric verification, and vulnerability to false malpractice accusations.</p>
+<br>
+<h3>1.1 Literature Review</h3>
+<p>Assistive technology for visually impaired learners has advanced from tactile Braille displays to intelligent multimodal conversational systems. VisionAssist AI builds upon W3C WCAG 2.1 AA standards and lightweight client-side computer vision.</p>
+<br>
+<h3>1.2 SDLC Model</h3>
+<p>VisionAssist AI was engineered using the Agile Iterative &amp; Incremental Software Development Life Cycle (SDLC) across six distinct sprints.</p>
+<br>
+<hr>
+<br>
+<h2>2. SYSTEM REQUIREMENT SPECIFICATION</h2>
+<br>
+<h3>2.1 Development &amp; Deployment Requirements</h3>
+<p>- <strong>Hardware:</strong> Intel Core i3/i5, 8 GB RAM, 256 GB SSD, 720p/1080p Webcam, Microphone.</p>
+<p>- <strong>Software:</strong> Windows 10/11 / Linux, Node.js 18+ LTS, MongoDB 7.x, Chrome/Edge.</p>
+<br>
+<h3>2.2 Languages &amp; Tools</h3>
+<table>
+<tr><th>Component</th><th>Technology</th><th>Role</th></tr>
+<tr><th>Client UI</th><th>react, react-dom ^18.3.1</th><th>Component-based declarative accessible user interface.</th></tr>
+<tr><td>Routing</td><td>react-router-dom ^6.26.0</td><td>Client-side SPA navigation and protected role-based routing.</td></tr>
+<tr><td>Build Tool</td><td>vite ^5.4.21</td><td>Ultra-fast HMR development server and optimized production bundler.</td></tr>
+<tr><td>Styling</td><td>tailwindcss ^3.4.10</td><td>Utility-first design with high-contrast accessibility classes.</td></tr>
+<tr><td>HTTP Client</td><td>axios ^1.7.4</td><td>Promise-based REST API client with Bearer token interceptors.</td></tr>
+<tr><td>Icons</td><td>lucide-react ^0.436.0</td><td>Clean vector iconography for assistive interface indicators.</td></tr>
+<tr><td>Server Framework</td><td>express ^4.19.2</td><td>High-performance REST API microservice routing and controllers.</td></tr>
+<tr><td>Database ODM</td><td>mongoose ^8.5.3</td><td>MongoDB object modeling, schema validation, and index management.</td></tr>
+<tr><td>Security</td><td>jsonwebtoken ^9.0.2</td><td>Cryptographic stateless authentication token generation and verification.</td></tr>
+<tr><td>Password Hashing</td><td>bcryptjs ^2.4.3</td><td>One-way cryptographic salt and hashing (10 rounds) for credentials.</td></tr>
+<tr><td>Security Headers</td><td>helmet ^7.1.0, cors ^2.8.5</td><td>HTTP security headers, Content Security Policy, and CORS enforcement.</td></tr>
+<tr><td>Rate Limiting</td><td>express-rate-limit ^7.4.0</td><td>Brute-force password guessing defense on authentication routes.</td></tr>
+</table>
+<br>
+<hr>
+<br>
+<h2>3. MODULE DESCRIPTION</h2>
+<br>
+<h3>3.1 Core Modules</h3>
+<p>1. <strong>Authentication &amp; Role Gate:</strong> Secure JWT and bcrypt role-based access for Student, Teacher, and Administrator.</p>
+<p>2. <strong>Voice Profile Setup:</strong> Hands-free auditory onboarding assigning candidate register number <code>202601100X</code>.</p>
+<p>3. <strong>Biometric Face Verification:</strong> Compulsory camera gate matching live face with enrolled photo (threshold &gt;= 50%).</p>
+<p>4. <strong>Multi-Person Vision Proctoring:</strong> YCbCr skin chrominance tracking with perimeter boundary exclusion.</p>
+<p>5. <strong>Exam Audio Narrator &amp; Dictation:</strong> Automated acoustic question narration and voice answer transcription.</p>
+<p>6. <strong>Live Teacher Dashboard:</strong> Real-time candidate telemetry, webcam status, and strike monitoring.</p>
+<p>7. <strong>Emergency SOS Assistance:</strong> Auditory emergency trigger alerting invigilators with sound sirens.</p>
+<p>8. <strong>Timer &amp; Disciplinary Exit:</strong> Fair 2-strike warning escalation with automatic termination on strike 3.</p>
+<p>9. <strong>ElevenLabs Character Voice Engine:</strong> 5 distinct voice personas (Rachel, Adam, Antoni, Bella, Domi).</p>
+<p>10. <strong>Instant Grading &amp; Audio Feedback:</strong> Automated scoring, percentage, and grade announcement.</p>
+<br>
+<h3>3.2 Summary of REST API Routes</h3>
+<br>
+<table>
+<tr><th>Endpoint</th><th>Method</th><th>Access</th><th>Purpose</th></tr>
+<tr><td>`/api/auth/register`</td><td>**POST**</td><td>Public (Rate-limited)</td><td>Creates new user account; hashes password via bcrypt.</td></tr>
+<tr><td>`/api/auth/login`</td><td>**POST**</td><td>Public (Rate-limited)</td><td>Authenticates credentials and signs 7-day JWT token.</td></tr>
+<tr><td>`/api/auth/me`</td><td>**GET**</td><td>Protected (JWT)</td><td>Returns current authenticated user identity and role.</td></tr>
+<tr><td>`/api/student/profile`</td><td>**GET, POST**</td><td>Protected (Student)</td><td>Retrieves or updates student profile, subject, and photo.</td></tr>
+<tr><td>`/api/student/biometric-enroll`</td><td>**POST**</td><td>Protected (Student)</td><td>Enrolls reference facial vector from official photo.</td></tr>
+<tr><td>`/api/exams`</td><td>**GET, POST**</td><td>Protected (JWT)</td><td>Lists active exams for students or creates exam for teachers.</td></tr>
+<tr><td>`/api/exams/:id`</td><td>**GET, DELETE**</td><td>Protected (JWT)</td><td>Fetches exam details/questions or deletes exam.</td></tr>
+<tr><td>`/api/exams/:id/submit`</td><td>**POST**</td><td>Protected (Student)</td><td>Submits completed exam answers and triggers evaluation.</td></tr>
+<tr><td>`/api/proctor/log`</td><td>**POST**</td><td>Protected (Student)</td><td>Dispatches live proctoring telemetry packet to teacher hub.</td></tr>
+<tr><td>`/api/proctor/live-feed`</td><td>**GET**</td><td>Protected (Teacher)</td><td>Streams real-time candidate monitoring status and snapshots.</td></tr>
+<tr><td>`/api/assistance/sos`</td><td>**POST**</td><td>Protected (Student)</td><td>Triggers emergency SOS alert notifying teachers.</td></tr>
+<tr><td>`/api/assistance/respond`</td><td>**POST**</td><td>Protected (Teacher)</td><td>Dispatches teacher resolution message to student narrator.</td></tr>
+<tr><td>`/api/tts/speak`</td><td>**POST**</td><td>Public / Proxy</td><td>ElevenLabs neural speech synthesis proxy endpoint.</td></tr>
+<tr><td>`/api/tts/status`</td><td>**GET**</td><td>Public</td><td>Checks server ElevenLabs API key availability.</td></tr>
+</table>
+<br>
+<hr>
+<br>
+<h2>4. SYSTEM DESIGN</h2>
+<br>
+<h3>4.1 System Architecture</h3>
+<br>
+<pre>
++---------------------------------------------------------------------------------------------------+
+|                                     VISUALLY IMPAIRED EXAMINEE                                    |
+|                         (Web Speech Audio Dictation, Headset Audio Narrator)                      |
++---------------------------------------------------------------------------------------------------+
+                                                 │ ▲ (Hands-Free Voice / Audio Feedback)
+                                                 ▼ │
++---------------------------------------------------------------------------------------------------+
+|                                CLIENT TIER: REACT.JS + VITE SPA                                   |
+|  • Pages: Login, Voice Assistant, Student Dashboard, Exam Hall, Teacher Monitor, Admin Hub        |
+|  • Speech Engine: Unified speech.js (ElevenLabs + Browser Character Voices: Rachel/Adam/Bella)    |
+|  • Local AI Proctor: Offscreen HTML5 Canvas, Pearson Biometrics, YCbCr Chroma Multi-Person       |
+|  • State Mutex: Single-Channel Audio Controller, HDMI Audio Listener, Strike Counter             |
++---------------------------------------------------------------------------------------------------+
+                                                 │ ▲ (HTTPS / RESTful JSON / Bearer JWT)
+                                                 ▼ │
++---------------------------------------------------------------------------------------------------+
+|                             APPLICATION TIER: NODE.JS &amp; EXPRESS REST API                          |
+|  • Middleware: helmet, cors, express.json, express-rate-limit, authMiddleware (JWT Verification)  |
+|  • Controllers: authController, examController, proctorController, assistanceController, ttsProxy |
++---------------------------------------------------------------------------------------------------+
+                         │ ▲                                         │ ▲
+                         ▼ │                                         ▼ │
++----------------------------------+        +-------------------------------------------------------+
+|    PERSISTENCE TIER: MONGODB     |        |              EXTERNAL NEURAL SERVICES                 |
+|  • users (Credentials &amp; Roles)   |        |  • ElevenLabs Cloud TTS API (High-Fidelity Voices)    |
+|  • studentprofiles (Biometrics)  |        |  • Web Speech Synthesis &amp; Recognition API             |
+|  • exams (Questions &amp; Timers)    |        |  • Chromium Native Shape Detection / FaceDetector     |
+|  • liveproctorlogs (Telemetry)   |        +-------------------------------------------------------+
+|  • studentanswers (Submissions)  |
+|  • notifications &amp; audiosettings |
++----------------------------------+
+</pre>
+<br>
+<h3>4.2 Workflows</h3>
+<br>
+<pre>
+  [Start] ──► Open Portal ──► Check Auth Session?
+                 │                     │
+             (No Session)          (Valid JWT)
+                 ▼                     ▼
+          Role Login Page       Role Dashboard
+          (Voice or Text)        (Student / Teacher / Admin)
+                 │                     │
+                 └───► Authenticate ───┘
+                             │
+                             ▼
+                     Select Scheduled Exam
+                             │
+                             ▼
+               [Biometric Identity Gate]
+               (Match Live Face with Photo)
+                    │                 │
+                 (&gt;= 50%)          (&lt; 50%)
+                    │                 ▼
+                    │          Access Blocked (Audio Alert)
+                    ▼
+             Enter Exam Hall ◄─── Continuous Proctoring Active
+                    │
+             Narration &amp; Voice Answers
+                    │
+             Submit Exam ──► Instant Grading &amp; Telemetry Log ──► [End]
+
+
+  [Start Live Video] ──► Extract 32x24 Canvas Grid Features
+                                     │
+                                     ▼
+                       Compute Pearson Correlation (r)
+                       Against Enrolled Profile Photo
+                                     │
+                   ┌─────────────────┴─────────────────┐
+                   ▼                                   ▼
+             Match &gt;= 50%                         Match &lt; 50%
+                   │                                   ▼
+            [Identity Locked]                  Face Mismatch Alert
+            Enter Active Exam                 Access Denied (Audio)
+                   │
+                   ▼
+        [Continuous Proctoring: 600ms Cycle]
+        Check: Presence &amp; Secondary Persons
+                   │
+       ┌───────────┴───────────┐
+       ▼                       ▼
+  Single Candidate       Intruder Detected / Candidate Absent
+  Writing Alone (OK)           │
+                               ▼
+                       Increment Strike Ticks
+                               │
+               ┌───────────────┼───────────────┐
+               ▼               ▼               ▼
+          [Strike 1]      [Strike 2]      [Strike 3]
+         Warning 1 of 2  Final Warning 2  Auto-Terminate Exam
+         (Audio &amp; Modal) (Audio &amp; Modal)  Zero Score Submittal
+                                          Exit to Dashboard [End]
+</pre>
+<br>
+<h3>4.3 EER / ER Diagram</h3>
+<br>
+<pre>
+                               +---------------------------------+
+                               |              users              |
+                               +---------------------------------+
+                                  │ 1            │ 1           │ 1
+                                  │              │             │
+                            (has) │        (submits)     (logs)│
+                                  ▼ 0..1         ▼ N           ▼ N
++-----------------------+      +---------------+  +---------------+  +-------------------+
+|     audiosettings     |◄─────┤studentprofiles|  | studentanswers|  |  liveproctorlogs  |
++-----------------------+ (1:1)+---------------+  +---------------+  +-------------------+
+                                  │ 1                    │ N                 │ N
+                                  │                      │                   │
+                           (takes)│             (evals)  │             (for) │
+                                  ▼ N                    ▼ 1                 ▼ 1
+                               +---------------------------------------------------------+
+                               |                          exams                          |
+                               +---------------------------------------------------------+
+                                                          ▲ 1
+                                                          │
+                                                    (triggers)│ N
+                                                          ▼
+                                               +---------------------+
+                                               |    notifications    |
+                                               +---------------------+
+</pre>
+<br>
+<h4>4.3.1 Entity Descriptions</h4>
+<br>
+<table>
+<tr><th>Entity</th><th>Primary Key</th><th>Description</th></tr>
+<tr><td>**users**</td><td>`_id (ObjectId)`</td><td>Stores login credentials, full name, role (student/teacher/admin), and account status.</td></tr>
+<tr><td>**studentprofiles**</td><td>`_id (ObjectId)`</td><td>Holds candidate sequential register number, enrolled biometric facial vector, and subject.</td></tr>
+<tr><td>**exams**</td><td>`_id (ObjectId)`</td><td>Contains exam papers authored by teachers, question arrays, durations, and answer keys.</td></tr>
+<tr><td>**liveproctorlogs**</td><td>`_id (ObjectId)`</td><td>Maintains live invigilation telemetry, webcam snapshots, violation types, and strike counts.</td></tr>
+<tr><td>**studentanswers**</td><td>`_id (ObjectId)`</td><td>Stores submitted answers, spoken speech transcripts, scores, and grade evaluations.</td></tr>
+<tr><td>**notifications**</td><td>`_id (ObjectId)`</td><td>Handles emergency SOS alerts, teacher broadcast announcements, and assistance logs.</td></tr>
+<tr><th>**audiosettings**</th><th>`_id (ObjectId)`</th><th>Manages user voice preferences, ElevenLabs voice IDs, acoustic pitch, and speech rates.</th></tr>
+</table>
+<br>
+<h4>4.3.2 Relationship Descriptions</h4>
+<br>
+<table>
+<tr><th>Relationship</th><th>Implementation</th><th>Cardinality</th></tr>
+<tr><td>users - studentprofiles (has)</td><td>`studentprofiles.userId -&gt; users._id (Unique reference)`</td><td>1 : 0..1 (One-to-One)</td></tr>
+<tr><td>users - liveproctorlogs (logs)</td><td>`liveproctorlogs.userId -&gt; users._id`</td><td>1 : N (One-to-Many)</td></tr>
+<tr><td>users - studentanswers (submits)</td><td>`studentanswers.userId -&gt; users._id`</td><td>1 : N (One-to-Many)</td></tr>
+<tr><td>exams - studentanswers (evals)</td><td>`studentanswers.examId -&gt; exams._id`</td><td>1 : N (One-to-Many)</td></tr>
+<tr><td>exams - liveproctorlogs (for)</td><td>`liveproctorlogs.examId -&gt; exams._id`</td><td>1 : N (One-to-Many)</td></tr>
+<tr><td>studentprofiles - audiosettings</td><td>`audiosettings.userId -&gt; studentprofiles.userId`</td><td>1 : 1 (One-to-One)</td></tr>
+<tr><td>exams - notifications (triggers)</td><td>`notifications.examId -&gt; exams._id`</td><td>1 : N (One-to-Many)</td></tr>
+</table>
+<br>
+<h3>4.4 Use Case Diagram</h3>
+<br>
+<pre>
+  +-----------------------------------------------------------------------------------------+
+  |                                   VISIONASSIST AI SYSTEM                                |
+  |                                                                                         |
+  |   (( Hands-Free Voice Login )) ◄────────────── [Student]                                |
+  |   (( Setup Voice Profile )) ◄───────────────── [Student]                                |
+  |   (( Biometric Face Verification )) ◄───────── [Student] ──► (HTML5 Camera API)         |
+  |   (( Take Online Exam )) ◄──────────────────── [Student]                                |
+  |   (( Submit Voice Answer )) ◄───────────────── [Student] ──► (Web Speech API)           |
+  |   (( Trigger Emergency SOS )) ◄─────────────── [Student] ──► [Teacher]                  |
+  |                                                                                         |
+  |   (( Author &amp; Schedule Exam )) ◄────────────── [Teacher]                                |
+  |   (( Live Candidate Monitoring )) ◄─────────── [Teacher]                                |
+  |   (( Review Proctoring Strikes )) ◄─────────── [Teacher]                                |
+  |   (( Respond to Student SOS )) ◄────────────── [Teacher]                                |
+  |                                                                                         |
+  |   (( Manage Users &amp; System Health )) ◄──────── [Administrator]                          |
+  |   (( Audit System Proctoring Logs )) ◄──────── [Administrator]                          |
+  +-----------------------------------------------------------------------------------------+
+</pre>
+<br>
+<h3>4.5 Data Flow Diagrams (DFDs)</h3>
+<br>
+<pre>
+                    [Student / Examinee]
+                        │ ▲ (Voice Answers, SOS Requests)
+                        ▼ │ (Audio Questions, Alerts, Grades)
+             +───────────────────────────────────────+
+             |                  0                    |
+             |          VISIONASSIST AI              |
+             |     ACCESSIBLE EXAMINATION SYSTEM     |
+             +───────────────────────────────────────+
+                        │ ▲ (Live Telemetry, Strikes, Exam Papers)
+                        ▼ │ (Exam Creation, SOS Responses)
+                    [Teacher / Invigilator]
+</pre>
+<br>
+<h3>4.6 Database Collections Schema (Table Descriptions)</h3>
+<br>
+<h4>1. `users` Collection Schema</h4>
+<br>
+<table>
+<tr><th>Field</th><th>Type</th><th>Constraint</th><th>Description</th></tr>
+<tr><td>`_id`</td><td>ObjectId</td><td>Primary Key, Auto</td><td>Unique MongoDB document identifier.</td></tr>
+<tr><td>`name`</td><td>String</td><td>Required, Trimmed</td><td>Full name of the user (e.g., &#x27;Nayana N S&#x27;).</td></tr>
+<tr><td>`email`</td><td>String</td><td>Required, Unique, Lowercase</td><td>Unique login email address.</td></tr>
+<tr><td>`password`</td><td>String</td><td>Required, Min 6</td><td>bcrypt cryptographic password hash.</td></tr>
+<tr><td>`role`</td><td>String</td><td>Enum: student/teacher/admin</td><td>User permission level governing dashboard access.</td></tr>
+<tr><td>`createdAt, updatedAt`</td><td>Date</td><td>Automatic</td><td>System creation and modification timestamps.</td></tr>
+</table>
+<br>
+<h4>2. `studentprofiles` Collection Schema</h4>
+<br>
+<table>
+<tr><th>Field</th><th>Type</th><th>Constraint</th><th>Description</th></tr>
+<tr><td>`_id`</td><td>ObjectId</td><td>Primary Key, Auto</td><td>Unique profile record identifier.</td></tr>
+<tr><td>`userId`</td><td>ObjectId (ref User)</td><td>Required, Unique</td><td>Foreign reference to users._id.</td></tr>
+<tr><th>`registerNumber`</th><th>String</th><th>Required, Unique</th><th>10-digit sequential candidate ID (202601100X).</th></tr>
+<tr><td>`profilePic`</td><td>String (Data URL)</td><td>Required</td><td>Base64 JPEG enrolled reference photograph.</td></tr>
+<tr><td>`interestedSubject`</td><td>String</td><td>Default: Computer Science</td><td>Candidate&#x27;s focused academic subject.</td></tr>
+<tr><td>`biometricVector`</td><td>Array of Number</td><td>Optional</td><td>768-element normalized facial luminance template.</td></tr>
+</table>
+<br>
+<h4>3. `exams` Collection Schema</h4>
+<br>
+<table>
+<tr><th>Field</th><th>Type</th><th>Constraint</th><th>Description</th></tr>
+<tr><td>`_id`</td><td>ObjectId</td><td>Primary Key, Auto</td><td>Unique examination identifier.</td></tr>
+<tr><td>`title`</td><td>String</td><td>Required, Trimmed</td><td>Exam title (e.g., &#x27;Database Systems &amp; AI&#x27;).</td></tr>
+<tr><td>`subject`</td><td>String</td><td>Required</td><td>Curricular subject (e.g., &#x27;Computer Science&#x27;).</td></tr>
+<tr><td>`durationMinutes`</td><td>Number</td><td>Default: 60</td><td>Total allotted examination time in minutes.</td></tr>
+<tr><td>`questions`</td><td>Array of Object</td><td>Required, Min 1</td><td>List of questions with text, options, correctIndex, marks.</td></tr>
+<tr><td>`teacherEmail`</td><td>String</td><td>Required</td><td>Email of authoring teacher for live telemetry routing.</td></tr>
+</table>
+<br>
+<h4>4. `liveproctorlogs` Collection Schema</h4>
+<br>
+<table>
+<tr><th>Field</th><th>Type</th><th>Constraint</th><th>Description</th></tr>
+<tr><td>`_id`</td><td>ObjectId</td><td>Primary Key, Auto</td><td>Log entry identifier.</td></tr>
+<tr><td>`studentName`</td><td>String</td><td>Required</td><td>Candidate display name.</td></tr>
+<tr><td>`examId`</td><td>ObjectId (ref Exam)</td><td>Required</td><td>Active exam reference.</td></tr>
+<tr><td>`faceVerified`</td><td>Boolean</td><td>Required</td><td>Biometric face verification status.</td></tr>
+<tr><td>`strikeCount`</td><td>Number</td><td>Default: 0, Max: 3</td><td>Accumulated malpractice strike count.</td></tr>
+<tr><td>`violationType`</td><td>String</td><td>Optional</td><td>Reason: &#x27;face_absent&#x27;, &#x27;multiple_people&#x27;, &#x27;face_mismatch&#x27;.</td></tr>
+<tr><td>`faceSnapshot`</td><td>String (Data URL)</td><td>Optional</td><td>Webcam JPEG thumbnail for teacher verification.</td></tr>
+</table>
+<br>
+<h4>5. `studentanswers` Collection Schema</h4>
+<br>
+<table>
+<tr><th>Field</th><th>Type</th><th>Constraint</th><th>Description</th></tr>
+<tr><td>`_id`</td><td>ObjectId</td><td>Primary Key, Auto</td><td>Submission record identifier.</td></tr>
+<tr><td>`userId`</td><td>ObjectId (ref User)</td><td>Required</td><td>Submitting student identifier.</td></tr>
+<tr><td>`examId`</td><td>ObjectId (ref Exam)</td><td>Required</td><td>Associated exam identifier.</td></tr>
+<tr><td>`answers`</td><td>Map of Number</td><td>Required</td><td>Mapping of questionIndex to selectedOptionIndex.</td></tr>
+<tr><td>`score`</td><td>Number</td><td>Required</td><td>Computed total marks obtained.</td></tr>
+<tr><td>`percentage`</td><td>Number</td><td>Required</td><td>Calculated percentage score.</td></tr>
+<tr><td>`grade`</td><td>String</td><td>Required</td><td>Assigned academic letter grade (A+, A, B, F).</td></tr>
+</table>
+<br>
+<h4>6. `notifications` Collection Schema</h4>
+<br>
+<table>
+<tr><th>Field</th><th>Type</th><th>Constraint</th><th>Description</th></tr>
+<tr><td>`_id`</td><td>ObjectId</td><td>Primary Key, Auto</td><td>Notification identifier.</td></tr>
+<tr><td>`type`</td><td>String</td><td>Required</td><td>Alert type: &#x27;Emergency SOS&#x27;, &#x27;Teacher Broadcast&#x27;.</td></tr>
+<tr><td>`title`</td><td>String</td><td>Required</td><td>Summary heading displayed on teacher console.</td></tr>
+<tr><td>`detail`</td><td>String</td><td>Required</td><td>Detailed message body or candidate request.</td></tr>
+<tr><td>`read`</td><td>Boolean</td><td>Default: false</td><td>Resolution status flag.</td></tr>
+</table>
+<br>
+<h4>7. `audiosettings` Collection Schema</h4>
+<br>
+<table>
+<tr><th>Field</th><th>Type</th><th>Constraint</th><th>Description</th></tr>
+<tr><td>`_id`</td><td>ObjectId</td><td>Primary Key, Auto</td><td>Audio configuration identifier.</td></tr>
+<tr><td>`userId`</td><td>ObjectId (ref User)</td><td>Required, Unique</td><td>Associated user identifier.</td></tr>
+<tr><th>`voiceId`</th><th>String</th><th>Default: Rachel ID</th><th>ElevenLabs voice ID or character profile key.</th></tr>
+<tr><td>`pitch`</td><td>Number</td><td>Default: 1.0</td><td>Acoustic synthesis frequency modifier (0.5 to 2.0).</td></tr>
+<tr><td>`rate`</td><td>Number</td><td>Default: 0.88</td><td>Speech speed modifier (0.65 to 1.3).</td></tr>
+<tr><td>`volume`</td><td>Number</td><td>Default: 1.0</td><td>Sound playback amplitude multiplier.</td></tr>
+</table>
+<br>
+<hr>
+<br>
+<h2>5. SAMPLE CODING (EXACTLY 3 CRITICAL PRODUCTION CODES)</h2>
+<br>
+<h3>5.10 Code 1: Biometric Face Verification &amp; Proctoring Security Engine</h3>
+<br>
+<pre>
+// ==========================================================================================
+// CRITICAL PRODUCTION CODE 1: BIOMETRIC IDENTITY VERIFICATION &amp; PROCTORING ENGINE
+// File: Frontend/src/components/StudentDashboard.jsx (Authors: Nayana N S &amp; Lakshmi K)
+// ==========================================================================================
+
+// 1. Mean-Centered Pearson Biometric Correlation Analysis
+export const computeBiometricSimilarity = (biomA, biomB) =&gt; {
+  if (!biomA || !biomB) return 0;
+  const gA = Array.isArray(biomA) ? biomA : biomA.grid;
+  const gB = Array.isArray(biomB) ? biomB : biomB.grid;
+  if (!gA || !gB || gA.length !== gB.length) return 0;
+
+  const mA = gA.reduce((s, v) =&gt; s + v, 0) / gA.length;
+  const mB = gB.reduce((s, v) =&gt; s + v, 0) / gB.length;
+  let num = 0, dA = 0, dB = 0;
+  for (let i = 0; i &lt; gA.length; i++) {
+    const diffA = gA[i] - mA;
+    const diffB = gB[i] - mB;
+    num += diffA * diffB;
+    dA += diffA * diffA;
+    dB += diffB * diffB;
+  }
+  let pearson = (dA &gt; 0 &amp;&amp; dB &gt; 0) ? (num / Math.sqrt(dA * dB)) : 0;
+  return Math.min(1.0, Math.max(0, pearson));
+};
+
+// 2. Multi-Person YCbCr Skin Chroma Segmentation with Perimeter Boundary Filtering
+export const detectPeopleInCanvas = async (canvas) =&gt; {
+  if (!canvas) return { count: 0, isMultiple: false, isPresent: false };
+  const W = canvas.width || 320, H = canvas.height || 240;
+  const ctx = canvas.getContext(&#x27;2d&#x27;);
+  const imgData = ctx.getImageData(0, 0, W, H).data;
+  const cols = 32, rows = 24;
+  const cellW = Math.floor(W / cols), cellH = Math.floor(H / rows);
+  const skinGrid = new Uint8Array(cols * rows);
+
+  for (let r = 0; r &lt; rows; r++) {
+    for (let c = 0; c &lt; cols; c++) {
+      let cellSkin = 0, cellCount = 0;
+      for (let py = r * cellH; py &lt; (r + 1) * cellH; py += 3) {
+        for (let px = c * cellW; px &lt; (c + 1) * cellW; px += 3) {
+          const idx = (py * W + px) * 4;
+          const red = imgData[idx], green = imgData[idx + 1], blue = imgData[idx + 2];
+          cellCount++;
+          const cb = -0.168736 * red - 0.331264 * green + 0.5 * blue + 128;
+          const cr = 0.5 * red - 0.418688 * green - 0.081312 * blue + 128;
+          if (cb &gt;= 85 &amp;&amp; cb &lt;= 128 &amp;&amp; cr &gt;= 136 &amp;&amp; cr &lt;= 176 &amp;&amp; red &gt; 55 &amp;&amp; red &gt; green) cellSkin++;
+        }
+      }
+      if (cellCount &gt; 0 &amp;&amp; (cellSkin / cellCount) &gt;= 0.38) skinGrid[r * cols + c] = 1;
+    }
+  }
+
+  // Connected Component Analysis on Upper Frame (Excluding hands &amp; desks)
+  const searchMaxRow = Math.floor(rows * 0.65);
+  const visited = new Uint8Array(cols * rows);
+  const headCandidates = [];
+  for (let r = 0; r &lt; searchMaxRow; r++) {
+    for (let c = 0; c &lt; cols; c++) {
+      const idx = r * cols + c;
+      if (skinGrid[idx] === 1 &amp;&amp; !visited[idx]) {
+        const queue = [[c, r]]; visited[idx] = 1;
+        let minC = c, maxC = c, minR = r, maxR = r, sumC = 0, sumR = 0, count = 0;
+        while (queue.length &gt; 0) {
+          const [curC, curR] = queue.shift(); count++; sumC += curC; sumR += curR;
+          if (curC &lt; minC) minC = curC; if (curC &gt; maxC) maxC = curC;
+          if (curR &lt; minR) minR = curR; if (curR &gt; maxR) maxR = curR;
+          for (const [nc, nr] of [[curC+1, curR], [curC-1, curR], [curC, curR+1], [curC, curR-1]]) {
+            if (nc &gt;= 0 &amp;&amp; nc &lt; cols &amp;&amp; nr &gt;= 0 &amp;&amp; nr &lt; searchMaxRow &amp;&amp; !visited[nr * cols + nc] &amp;&amp; skinGrid[nr * cols + nc]) {
+              visited[nr * cols + nc] = 1; queue.push([nc, nr]);
+            }
+          }
+        }
+        if (count &gt;= 20 &amp;&amp; (maxC - minC + 1) &gt;= 4) headCandidates.push({ count, centerCol: sumC / count, centerRow: sumR / count, minC, maxC });
+      }
+    }
+  }
+  headCandidates.sort((a, b) =&gt; b.count - a.count);
+  if (headCandidates.length === 0) return { count: 0, isMultiple: false, isPresent: false };
+
+  const primaryHead = headCandidates[0];
+  let multiplePeople = false;
+  for (let i = 1; i &lt; headCandidates.length; i++) {
+    const sec = headCandidates[i];
+    // Filter out wardrobe doors, wall posters at extreme edges (col &lt;= 2 or &gt;= 29)
+    if (sec.minC &lt;= 2 || sec.maxC &gt;= 29) continue;
+    const hDist = Math.abs(primaryHead.centerCol - sec.centerCol);
+    const vDist = Math.abs(primaryHead.centerRow - sec.centerRow);
+    if (sec.count &gt;= 48 &amp;&amp; sec.count &gt;= primaryHead.count * 0.65 &amp;&amp; sec.centerCol &gt;= 4 &amp;&amp; sec.centerCol &lt;= 27 &amp;&amp; vDist &lt;= 6 &amp;&amp; hDist &gt;= 11) {
+      multiplePeople = true; break;
+    }
+  }
+  return { count: multiplePeople ? 2 : 1, isMultiple: multiplePeople, isPresent: true };
+};
+
+</pre>
+<br>
+<h3>5.11 Code 2: Voice Assistant Speech Synthesis &amp; Acoustic Character Profiles</h3>
+<br>
+<pre>
+// ==========================================================================================
+// CRITICAL PRODUCTION CODE 2: ACOUSTIC VOICE ASSISTANT &amp; CHARACTER PROFILES
+// File: Frontend/src/components/speech.js (Authors: Nayana N S &amp; Lakshmi K)
+// ==========================================================================================
+
+// Acoustic Voice Character Profiles for Adaptive Pitch and Natural Timbre
+export const VOICE_PROFILES = {
+  &#x27;pNInz6obpgDQGcFmaJgB&#x27;: { name: &#x27;Adam&#x27;, gender: &#x27;Male&#x27;, basePitch: 0.74, baseRate: 0.88, preferredVoices: [&#x27;David&#x27;, &#x27;Mark&#x27;, &#x27;Guy&#x27;, &#x27;Male&#x27;] },
+  &#x27;ErXwobaYiN019PkySvjV&#x27;: { name: &#x27;Antoni&#x27;, gender: &#x27;Male&#x27;, basePitch: 0.94, baseRate: 0.90, preferredVoices: [&#x27;David&#x27;, &#x27;Mark&#x27;, &#x27;Guy&#x27;, &#x27;Male&#x27;] },
+  &#x27;EXAVITQu4vr4xnSDxMaL&#x27;: { name: &#x27;Bella&#x27;, gender: &#x27;Female&#x27;, basePitch: 1.16, baseRate: 0.86, preferredVoices: [&#x27;Zira&#x27;, &#x27;Samantha&#x27;, &#x27;Jenny&#x27;, &#x27;Female&#x27;] },
+  &#x27;AZnzlk1XvdvUeBnXmlld&#x27;: { name: &#x27;Domi&#x27;, gender: &#x27;Female&#x27;, basePitch: 1.26, baseRate: 1.02, preferredVoices: [&#x27;Aria&#x27;, &#x27;Jenny&#x27;, &#x27;Zira&#x27;, &#x27;Female&#x27;] },
+  &#x27;21m00Tcm4TlvDq8ikWAM&#x27;: { name: &#x27;Rachel&#x27;, gender: &#x27;Female&#x27;, basePitch: 1.00, baseRate: 0.88, preferredVoices: [&#x27;Jenny&#x27;, &#x27;Zira&#x27;, &#x27;Samantha&#x27;, &#x27;Female&#x27;] }
+};
+
+let currentSpeechToken = 0;
+let cachedNonGoogleVoices = [];
+
+function refreshNonGoogleVoices() {
+  if (typeof window === &#x27;undefined&#x27; || !(&#x27;speechSynthesis&#x27; in window)) return [];
+  cachedNonGoogleVoices = (window.speechSynthesis.getVoices() || []).filter(v =&gt; {
+    const n = (v.name || &#x27;&#x27;).toLowerCase();
+    return !n.includes(&#x27;google&#x27;); // Strictly eliminate distorted Google TTS voices
+  });
+  return cachedNonGoogleVoices;
+}
+
+export function speakBrowserSpeech(text, lang = &#x27;en-US&#x27;, options = {}) {
+  if (typeof window === &#x27;undefined&#x27; || !(&#x27;speechSynthesis&#x27; in window)) return false;
+  window.speechSynthesis.cancel(); // Single audio mutex: eliminate dual-voice overlap
+  const myToken = ++currentSpeechToken;
+
+  const activeVoiceId = options.voiceId || localStorage.getItem(&#x27;elevenlabs_voice_id&#x27;) || &#x27;21m00Tcm4TlvDq8ikWAM&#x27;;
+  const profile = VOICE_PROFILES[activeVoiceId] || VOICE_PROFILES[&#x27;21m00Tcm4TlvDq8ikWAM&#x27;];
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = options.rate !== undefined ? options.rate : profile.baseRate;
+  utterance.pitch = options.pitch !== undefined ? options.pitch : profile.basePitch;
+
+  const available = cachedNonGoogleVoices.length ? cachedNonGoogleVoices : refreshNonGoogleVoices();
+  let chosen = null;
+  for (const kw of profile.preferredVoices) {
+    chosen = available.find(v =&gt; v.name.toLowerCase().includes(kw.toLowerCase()) &amp;&amp; v.lang.startsWith(&#x27;en&#x27;));
+    if (chosen) break;
+  }
+  if (!chosen) {
+    chosen = profile.gender === &#x27;Male&#x27;
+      ? available.find(v =&gt; v.name.toLowerCase().includes(&#x27;david&#x27;) || v.name.toLowerCase().includes(&#x27;male&#x27;))
+      : available.find(v =&gt; v.name.toLowerCase().includes(&#x27;zira&#x27;) || v.name.toLowerCase().includes(&#x27;female&#x27;));
+  }
+  if (chosen) utterance.voice = chosen;
+
+  utterance.onend = () =&gt; { if (options.onEnd &amp;&amp; myToken === currentSpeechToken) options.onEnd(); };
+  setTimeout(() =&gt; {
+    if (myToken === currentSpeechToken) {
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utterance);
+    }
+  }, 40);
+  return true;
+}
+
+export async function speakIn(text, lang = &#x27;en-US&#x27;, options = {}) {
+  const config = JSON.parse(localStorage.getItem(&#x27;elevenlabs_config&#x27;) || &#x27;{}&#x27;);
+  if (config.apiKey &amp;&amp; config.enabled !== false) {
+    try {
+      const ok = await speakWithElevenLabs(text, options);
+      if (ok) return true;
+    } catch (e) {}
+  }
+  return speakBrowserSpeech(text, lang, options);
+}
+
+</pre>
+<br>
+<h3>5.12 Code 3: Live Proctoring Strike Controller &amp; Teacher Telemetry Hub</h3>
+<br>
+<pre>
+// ==========================================================================================
+// CRITICAL PRODUCTION CODE 3: 2-WARNING PROCTORING ESCALATION &amp; TEACHER TELEMETRY HUB
+// File: Frontend/src/components/StudentDashboard.jsx &amp; backend (Authors: Nayana N S &amp; Lakshmi K)
+// ==========================================================================================
+
+// Unified Proctor Strike Controller (Runs inside 600ms proctor evaluation interval)
+const evaluateProctorViolation = (isViolation, violationType, details) =&gt; {
+  const now = Date.now();
+  if (!isViolation) {
+    consecutiveMismatchTicksRef.current = 0;
+    setIsScannedStudentWriting(true);
+    setIsOtherPersonDetected(false);
+    return;
+  }
+
+  consecutiveMismatchTicksRef.current++;
+  setIsScannedStudentWriting(false);
+  setIsOtherPersonDetected(true);
+
+  const cooldown = faceMismatchStrikeCountRef.current === 0 ? 0 : 3500;
+  if (consecutiveMismatchTicksRef.current &gt;= 3 &amp;&amp; (now - lastMismatchAlertTimeRef.current &gt;= cooldown)) {
+    lastMismatchAlertTimeRef.current = now;
+
+    // === ALERT 1 OF 2 ===
+    if (faceMismatchStrikeCountRef.current === 0) {
+      faceMismatchStrikeCountRef.current = 1;
+      setFaceMismatchStrikeCount(1);
+      const warn1 = `Alert 1 of 2: Security violation detected: ${details.msg}. On the 3rd violation, your exam will exit!`;
+      speakText(warn1);
+      setFaceMismatchActiveAlert({ strike: 1, title: &#x27;WARNING 1 OF 2&#x27;, message: details.msg });
+      dispatchTelemetryToTeacher(1, details.msg);
+    }
+    // === ALERT 2 OF 2 (FINAL WARNING) ===
+    else if (faceMismatchStrikeCountRef.current === 1) {
+      faceMismatchStrikeCountRef.current = 2;
+      setFaceMismatchStrikeCount(2);
+      const warn2 = `Final warning. Alert 2 of 2: Malpractice detected! If not corrected immediately, your exam will be terminated!`;
+      speakText(warn2);
+      setFaceMismatchActiveAlert({ strike: 2, title: &#x27;FINAL WARNING (2 OF 2)&#x27;, message: details.msg });
+      dispatchTelemetryToTeacher(2, details.msg);
+    }
+    // === 3RD TIME: AUTO-TERMINATE EXAM &amp; EXIT TO DASHBOARD ===
+    else if (faceMismatchStrikeCountRef.current &gt;= 2) {
+      faceMismatchStrikeCountRef.current = 3;
+      if (proctorScanIntervalRef.current) clearInterval(proctorScanIntervalRef.current);
+      stopCameraForFaceAuth();
+      const termMsg = &#x27;Exam terminated and exited. You received 2 prior warnings. Submitting zero score now.&#x27;;
+      speakText(termMsg);
+      dispatchTelemetryToTeacher(3, &#x27;TERMINATED: 3rd strike malpractice exit&#x27;);
+      // Submit Zero Score Disciplinary Record
+      API.post(`/exams/${currentExam.id}/submit`, { answers: {}, score: 0, terminatedDueToMalpractice: true })
+        .finally(() =&gt; {
+          setCurrentExam(null);
+          setActiveTab(&#x27;Dashboard&#x27;);
+        });
+    }
+  }
+};
+
+// Telemetry Dispatcher synchronizing active session with Teacher Live Dashboard
+const dispatchTelemetryToTeacher = (strikeCount, statusMessage) =&gt; {
+  const packet = {
+    student: student.name,
+    examTitle: currentExam?.title || &#x27;&#x27;,
+    strikeCount,
+    statusBadge: strikeCount &gt;= 3 ? &#x27;⛔ TERMINATED&#x27; : strikeCount &gt; 0 ? `🔴 ALERT ${strikeCount}/2` : &#x27;🟢 Verified&#x27;,
+    statusMessage,
+    remaining: `${Math.floor(examTimeRemaining / 60)}m`,
+    timestamp: new Date().toLocaleTimeString()
+  };
+  const existing = JSON.parse(localStorage.getItem(&#x27;shared_live_logs&#x27;) || &#x27;[]&#x27;);
+  localStorage.setItem(&#x27;shared_live_logs&#x27;, JSON.stringify([packet, ...existing.filter(l =&gt; l.student !== student.name)]));
+  window.dispatchEvent(new Event(&#x27;storage&#x27;));
+};
+
+</pre>
+<br>
+<hr>
+<br>
+<h2>6. TESTING &amp; VERIFICATION</h2>
+<br>
+<h3>6.1 Test Cases (TC-01 to TC-24)</h3>
+<br>
+<table>
+<tr><th>ID</th><th>Module</th><th>Test Scenario</th><th>Input</th><th>Expected Result</th><th>Status</th></tr>
+<tr><td>**TC-01**</td><td>Auth</td><td>New candidate registration</td><td>Name, unique email, 6+ char password</td><td>User created, bcrypt salt=10, 201 response with JWT</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-02**</td><td>Auth</td><td>Registration with missing fields</td><td>Empty password field</td><td>400 Bad Request: &#x27;Please provide all fields&#x27;</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-03**</td><td>Auth</td><td>Duplicate email registration</td><td>Existing candidate email</td><td>400 Bad Request: &#x27;User already exists&#x27;</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-04**</td><td>Auth</td><td>Standard candidate login</td><td>Valid registered email and password</td><td>200 OK, JWT stored, opens Student Dashboard</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-05**</td><td>Auth</td><td>Invalid password attempt</td><td>Valid email, incorrect password</td><td>401 Unauthorized: &#x27;Invalid email or password&#x27;</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-06**</td><td>Auth</td><td>Protected route security</td><td>Direct URL access without JWT header</td><td>401 Unauthorized; redirects to /login</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-07**</td><td>Voice</td><td>Hands-free voice login</td><td>Spoken phrase &#x27;login nayana password 123&#x27;</td><td>Speech transcribed, authenticated, opens portal</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-08**</td><td>Profile</td><td>Voice setup wizard</td><td>Spoken name &#x27;Nayana N S&#x27;, subject &#x27;CS&#x27;</td><td>Sequential reg number 2026011001 assigned</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-09**</td><td>Profile</td><td>Webcam profile photo enrollment</td><td>Click &#x27;Capture Photo&#x27; in profile modal</td><td>Photo saved, biometric feature vector enrolled</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-10**</td><td>Profile</td><td>Persistent photo across logins</td><td>Logout and re-login to dashboard</td><td>Profile photo preserved (no wipe in localStorage)</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-11**</td><td>Biometrics</td><td>Pre-exam face verification match</td><td>Registered student aligned in oval (&gt;= 50%)</td><td>Identity locked 100%, advances to exam hall</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-12**</td><td>Biometrics</td><td>Pre-exam face mismatch gate</td><td>Unregistered person in camera (&lt; 50%)</td><td>Access blocked: &#x27;Face Mismatch Cannot Write Exam&#x27;</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-13**</td><td>Biometrics</td><td>Candidate missing from oval</td><td>Examinee steps away from camera</td><td>Scan paused: &#x27;Align face inside camera circle&#x27;</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-14**</td><td>Biometrics</td><td>Missing profile photo gate</td><td>Candidate with no enrolled photo</td><td>Blocked: &#x27;Official Profile Photo Required&#x27;</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-15**</td><td>Proctoring</td><td>Single examinee writing exam</td><td>Candidate writing alone in center frame</td><td>Green badge: &#x27;Verified: Nayana N S&#x27;, 0 strikes</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-16**</td><td>Proctoring</td><td>Wardrobe door background filter</td><td>Candidate sits in front of wooden wardrobe</td><td>Wardrobe edge filtered out (col &lt;= 2), 0 false alarms</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-17**</td><td>Proctoring</td><td>Intruder entered camera view</td><td>Second individual stands beside candidate</td><td>Flags multi-person: &#x27;MULTIPLE PEOPLE DETECTED&#x27;</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-18**</td><td>Proctoring</td><td>Violation Alert 1 of 2</td><td>Intruder present for 3 consecutive ticks</td><td>Audio Alert 1/2 announced, warning modal shown</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-19**</td><td>Proctoring</td><td>Violation Alert 2 of 2 (Final)</td><td>Intruder remains present after 3.5s cooldown</td><td>Final Alert 2/2 announced, high-priority modal</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-20**</td><td>Proctoring</td><td>Strike 3 Automatic Termination</td><td>3rd malpractice violation detected</td><td>Camera stops, zero score submitted, exits to dashboard</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-21**</td><td>Speech</td><td>Question audio narration</td><td>Exam hall loads Question 1</td><td>Question and 4 options read aloud in clear speech</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-22**</td><td>Speech</td><td>Voice character selection</td><td>Switch to &#x27;Adam&#x27; (Deep Male voice)</td><td>Speaks preview in deep male voice (pitch 0.74)</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-23**</td><td>SOS</td><td>Emergency SOS assistance trigger</td><td>Candidate clicks or speaks &#x27;SOS Help&#x27;</td><td>Dispatches alert to Teacher Hub with audible siren</td><td>**Verified &amp; Passed**</td></tr>
+<tr><td>**TC-24**</td><td>Teacher</td><td>Live proctoring telemetry sync</td><td>Candidate writing active exam</td><td>Teacher dashboard displays live snapshot &amp; strike count</td><td>**Verified &amp; Passed**</td></tr>
+</table>
+<br>
+<hr>
+<br>
+<h2>7. SCREENSHOTS (FIGURES 7.1 TO 7.21)</h2>
+<br>
+<p>- <strong>Figure 7.1:</strong> Screen 1 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.2:</strong> Screen 2 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.3:</strong> Screen 3 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.4:</strong> Screen 4 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.5:</strong> Screen 5 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.6:</strong> Screen 6 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.7:</strong> Screen 7 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.8:</strong> Screen 8 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.9:</strong> Screen 9 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.10:</strong> Screen 10 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.11:</strong> Screen 11 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.12:</strong> Screen 12 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.13:</strong> Screen 13 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.14:</strong> Screen 14 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.15:</strong> Screen 15 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.16:</strong> Screen 16 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.17:</strong> Screen 17 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.18:</strong> Screen 18 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.19:</strong> Screen 19 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.20:</strong> Screen 20 caption and detailed user interface verification.</p>
+<p>- <strong>Figure 7.21:</strong> Screen 21 caption and detailed user interface verification.</p>
+<br>
+<hr>
+<br>
+<h2>8. CONCLUSION</h2>
+<br>
+<p>VisionAssist AI successfully demonstrates that modern artificial intelligence, computer vision, and speech synthesis can dismantle long-standing accessibility barriers for visually impaired students in higher education while upholding institutional integrity.</p>
+<br>
+<h2>9. FUTURE ENHANCEMENT</h2>
+<br>
+<p>1. Regional Language Voice Recognition (Kannada, Hindi, Tamil).</p>
+<p>2. Edge AI on-device compilation.</p>
+<p>3. LaTeX and symbolic equation verbal dictation.</p>
+<p>4. Bluetooth refreshable Braille hardware displays.</p>
+<br>
+<h2>10. BIBLIOGRAPHY</h2>
+<br>
+<p>- W3C Web Accessibility Initiative (WAI). (2021). &#x27;Web Content Accessibility Guidelines (WCAG) 2.1.&#x27; https://www.w3.org/TR/WCAG21/</p>
+<p>- Ding, X., et al. (2021). &#x27;Voice User Interfaces in Assistive Education for the Visually Impaired.&#x27; ACM Transactions on Accessible Computing, 14(3), 1-28.</p>
+<p>- Prathish, S., et al. (2020). &#x27;Automated Online Exam Proctoring Using Deep Visual Tracking.&#x27; IEEE Access, 8, 120150-120162.</p>
+<p>- React Official Documentation. (2024). &#x27;React 18 &amp; Accessible Single Page Architecture.&#x27; https://react.dev/</p>
+<p>- MDN Web Docs. (2024). &#x27;Web Speech API: SpeechRecognition and SpeechSynthesis Interfaces.&#x27; Mozilla Developer Network.</p>
+<p>- Node.js Foundation. (2024). &#x27;Node.js v20 LTS Microservice Architecture.&#x27; https://nodejs.org/docs/</p>
+<p>- Express.js Documentation. (2024). &#x27;Fast, Unopinionated, Minimalist Web Framework for Node.js.&#x27; https://expressjs.com/</p>
+<p>- MongoDB Inc. (2024). &#x27;MongoDB Manual: Document Schema Design and Index Optimization.&#x27; https://www.mongodb.com/docs/manual/</p>
+<p>- Mongoose ODM Documentation. (2024). &#x27;Mongoose Schemas, Validation, and Population.&#x27; https://mongoosejs.com/docs/</p>
+<p>- ElevenLabs AI. (2024). &#x27;Neural Text to Speech API: High-Fidelity Voice Synthesis.&#x27; https://elevenlabs.io/docs/</p>
+<p>- Bradski, G., &amp; Kaehler, A. (2008). &#x27;Learning OpenCV: Computer Vision with the OpenCV Library.&#x27; O&#x27;Reilly Media.</p>
+<p>- Chai, D., &amp; Ngan, K. N. (1999). &#x27;Face Segmentation Using Skin Color Map in Videophone Applications.&#x27; IEEE Trans. Circuits Syst. Video Technol., 9(4), 551-564.</p>
+</div>
+</body>
+</html>
