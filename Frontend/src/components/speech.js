@@ -360,6 +360,37 @@ export async function speakIn(text, lang = 'en-US', options = {}) {
 
 
 
+let globalHoverTimer = null;
+let lastGlobalHoverText = '';
+
+/**
+ * High-responsiveness Hover-to-Speech / Cursor Screen Reader
+ * Immediately cancels previous speech and speaks the newly hovered element cleanly.
+ */
+export function speakHover(text, delay = 90) {
+  if (typeof window === 'undefined' || !text) return;
+  const clean = cleanTextForElevenLabs(text);
+  if (!clean || clean === lastGlobalHoverText) return;
+
+  if (globalHoverTimer) {
+    clearTimeout(globalHoverTimer);
+  }
+
+  globalHoverTimer = setTimeout(() => {
+    lastGlobalHoverText = clean;
+    cancelSpeech();
+    speakBrowserSpeech(clean, 'en-US');
+  }, delay);
+}
+
+export function resetHoverSpeech() {
+  if (globalHoverTimer) {
+    clearTimeout(globalHoverTimer);
+    globalHoverTimer = null;
+  }
+  lastGlobalHoverText = '';
+}
+
 // Backward-compatible aliases
 export function speakBuiltinTTS(text, options = {}) {
   return speakIn(text, 'en-US', options);

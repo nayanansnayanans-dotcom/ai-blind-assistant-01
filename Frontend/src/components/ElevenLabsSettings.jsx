@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getElevenLabsConfig, saveElevenLabsConfig, ELEVENLABS_VOICES, speakWithElevenLabs } from '../services/elevenlabs';
-import { speakBrowserSpeech } from './speech';
+import { speakBrowserSpeech, speakHover, resetHoverSpeech } from './speech';
 
 export default function ElevenLabsSettings({ isOpen, onClose }) {
   const [apiKey, setApiKey] = useState('');
@@ -8,6 +8,8 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
   const [enabled, setEnabled] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
   const [statusMessage, setStatusMessage] = useState({ text: '', type: 'success' });
+  const [isVoiceDropdownOpen, setIsVoiceDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -16,10 +18,26 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
       setVoiceId(config.voiceId);
       setEnabled(config.enabled);
       setStatusMessage({ text: '', type: 'success' });
+      setIsVoiceDropdownOpen(false);
     }
   }, [isOpen]);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsVoiceDropdownOpen(false);
+      }
+    };
+    if (isVoiceDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isVoiceDropdownOpen]);
+
   if (!isOpen) return null;
+
+  const selectedVoiceObj = ELEVENLABS_VOICES.find(v => v.id === voiceId) || ELEVENLABS_VOICES[0];
 
   const handleVoiceChange = (newVoiceId) => {
     setVoiceId(newVoiceId);
@@ -106,12 +124,16 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
         color: '#0f172a'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ margin: 0, color: '#0369a1', fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '900' }}>
+          <h2 
+            onMouseEnter={() => speakHover("ElevenLabs AI Voice Assistant Settings. Configure realistic human-like speech characters.")}
+            style={{ margin: 0, color: '#0369a1', fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '900', cursor: 'default' }}
+          >
             ⚡ ElevenLabs Voice Assistant
           </h2>
           <button 
             type="button" 
             onClick={onClose}
+            onMouseEnter={() => speakHover("Close ElevenLabs voice settings window")}
             style={{
               background: '#f0f9ff',
               border: '1px solid #bae6fd',
@@ -127,7 +149,10 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
         </div>
 
         <form onSubmit={handleSave} style={{ display: 'grid', gap: '16px' }}>
-          <div style={{ background: '#f0f9ff', padding: '14px 16px', borderRadius: '12px', border: '1px solid #bae6fd' }}>
+          <div 
+            onMouseEnter={() => speakHover(enabled ? "Activate Dedicated ElevenLabs AI Voice checkbox. Currently active. Provides ultra-realistic, clear, human-like voice for blind assistant navigation." : "Activate Dedicated ElevenLabs AI Voice checkbox. Currently inactive. Click to enable ultra-realistic AI voice.")}
+            style={{ background: '#f0f9ff', padding: '14px 16px', borderRadius: '12px', border: '1px solid #bae6fd', cursor: 'pointer' }}
+          >
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#0369a1', cursor: 'pointer' }}>
               <input 
                 type="checkbox"
@@ -143,7 +168,10 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', color: '#0369a1', fontSize: '0.9rem' }}>
+            <label 
+              onMouseEnter={() => speakHover("ElevenLabs API Key label. Enter your private secret key from elevenlabs.io.")}
+              style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', color: '#0369a1', fontSize: '0.9rem', cursor: 'default' }}
+            >
               ElevenLabs API Key
             </label>
             <input 
@@ -151,6 +179,8 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
               placeholder="Paste your key: sk_..."
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
+              onMouseEnter={() => speakHover("ElevenLabs API Key password input field. Stored securely on your local device.")}
+              onFocus={() => speakHover("ElevenLabs API Key input field. Type or paste your secret key.")}
               style={{
                 width: '100%',
                 padding: '12px 14px',
@@ -161,49 +191,117 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
                 outlineColor: '#0284c7'
               }}
             />
-            <span style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-              Your API key from <a href="https://elevenlabs.io" target="_blank" rel="noreferrer" style={{ color: '#0284c7', fontWeight: 'bold' }}>elevenlabs.io</a>. Stored securely on your device.
+            <span 
+              onMouseEnter={() => speakHover("Your API key from elevenlabs.io. Stored securely on your device.")}
+              style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px', display: 'block', cursor: 'default' }}
+            >
+              Your API key from <a href="https://elevenlabs.io" target="_blank" rel="noreferrer" onMouseEnter={() => speakHover("Visit elevenlabs.io in a new tab to create or view your API key.")} style={{ color: '#0284c7', fontWeight: 'bold' }}>elevenlabs.io</a>. Stored securely on your device.
             </span>
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', color: '#0369a1', fontSize: '0.9rem' }}>
+          {/* Interactive Custom Voice Selector with Live Hover-to-Speech */}
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <label 
+              onMouseEnter={() => speakHover("Select ElevenLabs Voice Character label. Choose between Rachel, Bella, Antoni, Adam, and Domi.")}
+              style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', color: '#0369a1', fontSize: '0.9rem', cursor: 'default' }}
+            >
               Select ElevenLabs Voice Character
             </label>
-            <select
-              value={voiceId}
-              onChange={(e) => handleVoiceChange(e.target.value)}
+            <button
+              type="button"
+              onClick={() => setIsVoiceDropdownOpen(prev => !prev)}
+              onMouseEnter={() => speakHover(`Select ElevenLabs Voice Character dropdown. Currently selected: ${selectedVoiceObj.name}, ${selectedVoiceObj.gender} voice. ${selectedVoiceObj.description}. Click to open voice list.`)}
               style={{
                 width: '100%',
                 padding: '12px 14px',
                 borderRadius: '10px',
-                border: '1.5px solid #bae6fd',
+                border: isVoiceDropdownOpen ? '2px solid #0284c7' : '1.5px solid #bae6fd',
                 fontSize: '0.95rem',
                 backgroundColor: '#ffffff',
                 color: '#0369a1',
                 fontWeight: '700',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                textAlign: 'left'
               }}
             >
-              {ELEVENLABS_VOICES.map((v) => (
-                <option key={v.id} value={v.id}>
-                  🎙️ {v.name} ({v.gender}) - {v.description}
-                </option>
-              ))}
-            </select>
+              <span>🎙️ {selectedVoiceObj.name} ({selectedVoiceObj.gender}) - {selectedVoiceObj.description}</span>
+              <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '8px' }}>{isVoiceDropdownOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {isVoiceDropdownOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                marginTop: '6px',
+                background: '#ffffff',
+                borderRadius: '14px',
+                border: '2px solid #38bdf8',
+                boxShadow: '0 16px 36px rgba(2, 132, 199, 0.28)',
+                zIndex: 1000,
+                maxHeight: '260px',
+                overflowY: 'auto'
+              }}>
+                {ELEVENLABS_VOICES.map((v) => {
+                  const isSelected = v.id === voiceId;
+                  const voiceSpeechText = `${v.name}, ${v.gender} voice. ${v.description}`;
+                  return (
+                    <div
+                      key={v.id}
+                      role="option"
+                      aria-selected={isSelected}
+                      tabIndex={0}
+                      onClick={() => {
+                        handleVoiceChange(v.id);
+                        setIsVoiceDropdownOpen(false);
+                      }}
+                      onMouseEnter={() => speakHover(voiceSpeechText)}
+                      onFocus={() => speakHover(voiceSpeechText)}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: '1px solid #f0f9ff',
+                        cursor: 'pointer',
+                        background: isSelected ? '#0284c7' : '#ffffff',
+                        color: isSelected ? '#ffffff' : '#0f172a',
+                        fontWeight: isSelected ? '800' : '600',
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        transition: 'background 0.15s ease'
+                      }}
+                    >
+                      <div>
+                        <span style={{ marginRight: '8px' }}>🎙️</span>
+                        <b>{v.name}</b> ({v.gender}) — <span style={{ color: isSelected ? '#e0f2fe' : '#64748b', fontSize: '0.85rem' }}>{v.description}</span>
+                      </div>
+                      {isSelected && <span style={{ color: '#ffffff', fontWeight: '900', fontSize: '14px' }}>✓ Active</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {statusMessage.text && (
-            <div style={{ 
-              background: statusMessage.type === 'error' ? '#fef2f2' : '#dcfce7', 
-              color: statusMessage.type === 'error' ? '#991b1b' : '#166534', 
-              border: statusMessage.type === 'error' ? '1px solid #fecaca' : '1px solid #bbf7d0',
-              padding: '10px 14px', 
-              borderRadius: '10px', 
-              fontSize: '0.9rem', 
-              textAlign: 'center',
-              fontWeight: '700'
-            }}>
+            <div 
+              onMouseEnter={() => speakHover(`Status message: ${statusMessage.text}`)}
+              style={{ 
+                background: statusMessage.type === 'error' ? '#fef2f2' : '#dcfce7', 
+                color: statusMessage.type === 'error' ? '#991b1b' : '#166534', 
+                border: statusMessage.type === 'error' ? '1px solid #fecaca' : '1px solid #bbf7d0',
+                padding: '10px 14px', 
+                borderRadius: '10px', 
+                fontSize: '0.9rem', 
+                textAlign: 'center',
+                fontWeight: '700'
+              }}
+            >
               {statusMessage.type === 'error' ? '⚠️' : '✅'} {statusMessage.text}
             </div>
           )}
@@ -213,6 +311,7 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
               type="button"
               onClick={handleTestVoice}
               disabled={isTesting}
+              onMouseEnter={() => speakHover(`Test Voice button. Click to play a sample audio greeting using ${selectedVoiceObj.name} voice.`)}
               style={{
                 flex: 1,
                 padding: '12px',
@@ -233,6 +332,7 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
 
             <button
               type="submit"
+              onMouseEnter={() => speakHover("Save Settings button. Click to save your ElevenLabs configuration.")}
               style={{
                 flex: 1,
                 padding: '12px',

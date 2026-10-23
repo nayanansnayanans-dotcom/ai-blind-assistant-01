@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchExams, fetchResults, postAssistanceRequest, updateStudentSubject } from '../services/api';
-import { speakIn, cancelSpeech, formatSpokenName, getBuiltinVoices, speakBuiltinTTS } from './speech';
+import { speakIn, cancelSpeech, formatSpokenName, getBuiltinVoices, speakBuiltinTTS, speakHover, resetHoverSpeech } from './speech';
 import { 
   speakWithElevenLabs, 
   cancelElevenLabsSpeech, 
@@ -2997,6 +2997,28 @@ export default function StudentDashboard() {
   const [cameraClarityBoost, setCameraClarityBoost] = useState(true);
   const [cameraLightingFeedback, setCameraLightingFeedback] = useState('good');
   const [isElevenLabsModalOpen, setIsElevenLabsModalOpen] = useState(false);
+  const [isHeaderSubDropdownOpen, setIsHeaderSubDropdownOpen] = useState(false);
+  const [isBannerSubDropdownOpen, setIsBannerSubDropdownOpen] = useState(false);
+  const headerSubjectDropdownRef = useRef(null);
+  const bannerSubjectDropdownRef = useRef(null);
+
+  // Click outside to close custom subject dropdowns
+  useEffect(() => {
+    const handleOutsideSubjectClick = (e) => {
+      if (headerSubjectDropdownRef.current && !headerSubjectDropdownRef.current.contains(e.target)) {
+        setIsHeaderSubDropdownOpen(false);
+      }
+      if (bannerSubjectDropdownRef.current && !bannerSubjectDropdownRef.current.contains(e.target)) {
+        setIsBannerSubDropdownOpen(false);
+      }
+    };
+    if (isHeaderSubDropdownOpen || isBannerSubDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideSubjectClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideSubjectClick);
+    };
+  }, [isHeaderSubDropdownOpen, isBannerSubDropdownOpen]);
   const [pendingExamToStart, setPendingExamToStart] = useState(null);
   const [faceDetecting, setFaceDetecting] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
@@ -3591,15 +3613,18 @@ export default function StudentDashboard() {
     };
   }, []);
 
-  // Hover / touch announcer: whatever the mouse or finger rests on is spoken aloud
+  // Hover / touch announcer: whatever the mouse or finger rests on is spoken aloud immediately
   useEffect(() => {
-    let dwellTimer = null;
     let lastSpokenEl = null;
-    let lastSpokenAt = 0;
 
     const describe = (el) => {
-      const target = el.closest('button, a, input, select, textarea, [role="button"], [role="tab"], [aria-label], [title], h1, h2, h3, h4, label, li, .card, [class*="card"]');
+      if (!el) return null;
+      const target = el.closest('button, a, input, select, textarea, [role="button"], [role="tab"], [role="option"], [aria-label], [title], [data-speech], h1, h2, h3, h4, label, li, tr, .card, [class*="card"]');
       if (!target) return null;
+
+      const customSpeech = target.getAttribute('data-speech');
+      if (customSpeech) return { target, text: customSpeech };
+
       const aria = target.getAttribute('aria-label') || target.getAttribute('title');
       let text = aria || '';
       if (!text) {
@@ -3615,38 +3640,27 @@ export default function StudentDashboard() {
       if (!text) return null;
       if (text.length > 160) text = text.slice(0, 160);
       const tag = target.tagName;
-      const kind = tag === 'BUTTON' || target.getAttribute('role') === 'button' ? ' button'
-        : tag === 'A' ? ' link'
-        : target.getAttribute('role') === 'tab' ? ' tab' : '';
+      const kind = (tag === 'BUTTON' || target.getAttribute('role') === 'button') && !text.toLowerCase().includes('button') ? ' button'
+        : tag === 'A' && !text.toLowerCase().includes('link') ? ' link'
+        : (target.getAttribute('role') === 'tab' || target.getAttribute('role') === 'option') && !text.toLowerCase().includes('tab') && !text.toLowerCase().includes('option') ? ' option' : '';
       return { target, text: text + kind };
     };
 
     const onPointerOver = (e) => {
       if (isVoiceListeningRef.current) return;
-      if (dwellTimer) clearTimeout(dwellTimer);
       const info = describe(e.target);
-      if (!info) return;
-      dwellTimer = setTimeout(() => {
-        const now = Date.now();
-        if (info.target === lastSpokenEl && now - lastSpokenAt < 4000) return;
-        lastSpokenEl = info.target;
-        lastSpokenAt = now;
-        speakText(info.text);
-      }, 450);
-    };
-
-    const onPointerOut = () => {
-      if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
+      if (!info || !info.text) return;
+      if (info.target === lastSpokenEl) return;
+      lastSpokenEl = info.target;
+      speakHover(info.text, 90);
     };
 
     document.addEventListener('mouseover', onPointerOver);
-    document.addEventListener('mouseout', onPointerOut);
     document.addEventListener('focusin', onPointerOver);
     return () => {
-      if (dwellTimer) clearTimeout(dwellTimer);
       document.removeEventListener('mouseover', onPointerOver);
-      document.removeEventListener('mouseout', onPointerOut);
       document.removeEventListener('focusin', onPointerOver);
+      resetHoverSpeech();
     };
   }, []);
 
@@ -7729,6 +7743,7 @@ export default function StudentDashboard() {
             <button
               key={item.id}
               onClick={() => { setActiveTab(item.id); speakText(`Opening ${item.label}`); }}
+              onMouseEnter={() => speakHover(`${item.label} tab`)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -7754,6 +7769,7 @@ export default function StudentDashboard() {
         {/* Bottom Sidebar Voice Box */}
         <div 
           onClick={triggerVoiceCommand}
+          onMouseEnter={() => speakHover("Voice Navigation. Say Hey Assistant to get started.")}
           style={{
             background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
             border: '1px solid #334155',
@@ -7784,24 +7800,28 @@ export default function StudentDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button 
               onClick={handleEmergencyAssistAlert}
+              onMouseEnter={() => speakHover("Emergency SOS button. Send immediate alert to your teacher or proctor.")}
               style={{ background: '#ef4444', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.25)' }}
             >
               <AlertCircle size={16} /> 🚨 Emergency SOS
             </button>
             <button 
               onClick={triggerVoiceCommand}
+              onMouseEnter={() => speakHover("Tap to Speak button. Click and speak a voice command.")}
               style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)' }}
             >
               <Mic size={16} /> 🎙️ Tap to Speak
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); handleRepeatSpeech(); }}
+              onMouseEnter={() => speakHover("Repeat Speech button. Hear the last instruction or spoken message again.")}
               style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <Repeat size={16} /> 🔄 Repeat Speech
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); speakDashboardFeatures(); }}
+              onMouseEnter={() => speakHover("All Features Guide button. Listen to complete audio guide of all dashboard features.")}
               style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <Volume2 size={16} /> 📢 All Features Guide
@@ -7810,6 +7830,7 @@ export default function StudentDashboard() {
             {/* Master Voice Assistant Enable / Disable Toggle */}
             <button 
               onClick={(e) => { e.stopPropagation(); toggleVoiceAssistantEnabled(); }}
+              onMouseEnter={() => speakHover(isVoiceAssistantEnabled ? "Voice Assistant is currently enabled. Click to disable audio speech." : "Voice Assistant is currently disabled. Click to enable audio speech.")}
               style={{
                 background: isVoiceAssistantEnabled ? '#ecfdf5' : '#fef2f2',
                 color: isVoiceAssistantEnabled ? '#047857' : '#b91c1c',
@@ -7843,6 +7864,7 @@ export default function StudentDashboard() {
             {/* Dedicated ElevenLabs AI Voice Settings Trigger */}
             <button 
               onClick={(e) => { e.stopPropagation(); setIsElevenLabsModalOpen(true); }}
+              onMouseEnter={() => speakHover("ElevenLabs AI Voice Assistant button. Open settings to select realistic character voices.")}
               style={{
                 background: '#f0f9ff',
                 color: '#0284c7',
@@ -7862,29 +7884,92 @@ export default function StudentDashboard() {
               <span>⚡ ElevenLabs Voice</span>
             </button>
 
-            {/* Focused Subject Selector & Indicator */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#faf5ff', padding: '8px 14px', borderRadius: '10px', border: '2px solid #c084fc', boxShadow: '0 2px 8px rgba(168, 85, 247, 0.15)' }}>
-              <span style={{ fontSize: '15px' }}>🎓</span>
-              <label style={{ fontSize: '12px', fontWeight: '800', color: '#6b21a8' }}>Subject:</label>
-              <select 
-                value={activeSubject} 
-                onChange={(e) => handleSwitchStudentSubject(e.target.value)}
-                style={{ background: 'transparent', border: 'none', color: '#581c87', fontWeight: '800', fontSize: '13px', cursor: 'pointer', outline: 'none' }}
+            {/* Focused Subject Selector & Indicator - Accessible Custom Dropdown */}
+            <div ref={headerSubjectDropdownRef} style={{ position: 'relative' }}>
+              <button
+                type="button"
+                onClick={() => setIsHeaderSubDropdownOpen(prev => !prev)}
+                onMouseEnter={() => speakHover(`Academic Subject Selector. Currently focused on ${activeSubject}. Click to switch subject.`)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#faf5ff',
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  border: '2px solid #c084fc',
+                  boxShadow: '0 2px 8px rgba(168, 85, 247, 0.15)',
+                  cursor: 'pointer',
+                  color: '#581c87',
+                  fontWeight: '800',
+                  fontSize: '13px'
+                }}
                 title="Your focused academic subject. Filters your whole dashboard."
               >
-                {!MAIN_SUBJECTS.includes(activeSubject) && (
-                  <option value={activeSubject}>{activeSubject}</option>
-                )}
-                {MAIN_SUBJECTS.map(sub => (
-                  <option key={sub} value={sub}>{sub}</option>
-                ))}
-              </select>
+                <span style={{ fontSize: '15px' }}>🎓</span>
+                <span style={{ fontSize: '12px', color: '#6b21a8' }}>Subject:</span>
+                <span>{activeSubject}</span>
+                <span style={{ fontSize: '10px', marginLeft: '4px' }}>{isHeaderSubDropdownOpen ? '▲' : '▼'}</span>
+              </button>
+              {isHeaderSubDropdownOpen && (
+                <div 
+                  role="listbox"
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '6px',
+                    background: '#ffffff',
+                    borderRadius: '12px',
+                    border: '2px solid #c084fc',
+                    boxShadow: '0 12px 30px rgba(107, 33, 168, 0.25)',
+                    minWidth: '200px',
+                    zIndex: 1000,
+                    padding: '6px',
+                    maxHeight: '280px',
+                    overflowY: 'auto'
+                  }}
+                >
+                  {MAIN_SUBJECTS.map(sub => {
+                    const isSelected = sub === activeSubject;
+                    return (
+                      <div
+                        key={sub}
+                        role="option"
+                        aria-selected={isSelected}
+                        onClick={() => {
+                          handleSwitchStudentSubject(sub);
+                          setIsHeaderSubDropdownOpen(false);
+                        }}
+                        onMouseEnter={() => speakHover(`${sub} subject`)}
+                        style={{
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          background: isSelected ? '#f3e8ff' : 'transparent',
+                          color: isSelected ? '#6b21a8' : '#1e293b',
+                          fontWeight: isSelected ? '800' : '600',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'background 0.15s ease'
+                        }}
+                      >
+                        <span>{sub}</span>
+                        {isSelected && <span style={{ color: '#9333ea', fontWeight: 'bold' }}>✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button 
               onClick={() => setActiveTab('Notifications')}
+              onMouseEnter={() => speakHover(`Notifications button. ${announcements.filter(a => !a.read).length} unread announcements.`)}
               style={{ position: 'relative', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
               title="Notifications"
             >
@@ -7898,6 +7983,7 @@ export default function StudentDashboard() {
 
             <div 
               onClick={() => setActiveTab('Profile')}
+              onMouseEnter={() => speakHover(`Student profile for ${formatSpokenName(student.name || studentProfile.name || 'Student')}. Click to view details.`)}
               style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
             >
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#0284c7', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 'bold', fontSize: '15px', overflow: 'hidden' }}>
@@ -7942,6 +8028,7 @@ export default function StudentDashboard() {
                 onChange={(e) => setTypedCommandInput(e.target.value)}
                 placeholder="Type any command here (e.g. 'open my exams', 'start viva', 'open certificates', 'read profile', 'switch to science', 'emergency sos')..."
                 aria-label="Student typed command bar"
+                onMouseEnter={() => speakHover("Type any command here. For example: open my exams, start viva, or switch subject.")}
                 style={{
                   width: '100%',
                   padding: '11px 16px 11px 44px',
@@ -7959,6 +8046,7 @@ export default function StudentDashboard() {
                 <button 
                   type="button" 
                   onClick={() => setTypedCommandInput('')}
+                  onMouseEnter={() => speakHover("Clear command input text")}
                   style={{ position: 'absolute', right: '12px', background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
                 >
                   ✖
@@ -7967,6 +8055,7 @@ export default function StudentDashboard() {
             </div>
             <button 
               type="submit"
+              onMouseEnter={() => speakHover("Run typed command button")}
               style={{
                 background: '#0284c7',
                 color: '#ffffff',
@@ -7991,6 +8080,7 @@ export default function StudentDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <button 
               onClick={() => executeCommand('all features')}
+              onMouseEnter={() => speakHover("All Features command chip. Listen to full audio guide.")}
               style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'all features' to hear all 11 features"
             >
@@ -7998,6 +8088,7 @@ export default function StudentDashboard() {
             </button>
             <button 
               onClick={() => executeCommand('my exams')}
+              onMouseEnter={() => speakHover("Exams command chip. Open scheduled exams.")}
               style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'my exams'"
             >
@@ -8005,6 +8096,7 @@ export default function StudentDashboard() {
             </button>
             <button 
               onClick={() => executeCommand('oral viva')}
+              onMouseEnter={() => speakHover("Oral Viva command chip. Open AI oral viva simulator.")}
               style={{ background: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'oral viva'"
             >
@@ -8012,6 +8104,7 @@ export default function StudentDashboard() {
             </button>
             <button 
               onClick={() => executeCommand('certificates')}
+              onMouseEnter={() => speakHover("Certificates command chip. View your certificates.")}
               style={{ background: '#fefce8', color: '#854d0e', border: '1px solid #fef08a', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'certificates'"
             >
@@ -8019,6 +8112,7 @@ export default function StudentDashboard() {
             </button>
             <button 
               onClick={() => executeCommand('study materials')}
+              onMouseEnter={() => speakHover("Study Materials command chip. Open lessons and notes.")}
               style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'study materials'"
             >
@@ -8026,6 +8120,7 @@ export default function StudentDashboard() {
             </button>
             <button 
               onClick={() => executeCommand('read profile')}
+              onMouseEnter={() => speakHover("Read Profile command chip. Hear your profile information.")}
               style={{ background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'read profile'"
             >
@@ -8033,6 +8128,7 @@ export default function StudentDashboard() {
             </button>
             <button 
               onClick={() => executeCommand('emergency')}
+              onMouseEnter={() => speakHover("Emergency SOS command chip. Send urgent alert.")}
               style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'emergency' or 'sos'"
             >
@@ -8079,7 +8175,10 @@ export default function StudentDashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 
                 {/* Greeting Banner */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: '#ffffff', padding: '20px 24px', borderRadius: '16px', border: '1px solid #e0f2fe', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.05)' }}>
+                <div 
+                  onMouseEnter={() => speakHover(`Welcome ${formatSpokenName(student.name || studentProfile.name || 'Student')}. Your accessibility is our priority.`)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '16px', background: '#ffffff', padding: '20px 24px', borderRadius: '16px', border: '1px solid #e0f2fe', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.05)', cursor: 'default' }}
+                >
                   <Sun size={36} color="#f59e0b" />
                   <div>
                     <h1 style={{ margin: 0, fontSize: '24px', color: '#0369a1', fontWeight: '800' }}>
@@ -8091,9 +8190,12 @@ export default function StudentDashboard() {
                   </div>
                 </div>
 
-                {/* Subject Focus Banner */}
+                {/* Subject Focus Banner - Accessible Custom Dropdown with Live Hover-to-Speech */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)', color: '#ffffff', padding: '16px 22px', borderRadius: '16px', boxShadow: '0 4px 14px rgba(2, 132, 199, 0.2)', flexWrap: 'wrap', gap: '14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div 
+                    onMouseEnter={() => speakHover(`Focused Subject: ${activeSubject}. Dashboard is customized strictly for ${activeSubject}.`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'default' }}
+                  >
                     <span style={{ fontSize: '26px' }}>🎓</span>
                     <div>
                       <b style={{ fontSize: '16px', display: 'block' }}>Focused Subject: {activeSubject}</b>
@@ -8102,30 +8204,83 @@ export default function StudentDashboard() {
                       </span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div ref={bannerSubjectDropdownRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '12px', fontWeight: '800', color: '#e0f2fe' }}>Switch Subject:</span>
-                    <select
-                      value={activeSubject}
-                      onChange={(e) => handleSwitchStudentSubject(e.target.value)}
+                    <button
+                      type="button"
+                      onClick={() => setIsBannerSubDropdownOpen(prev => !prev)}
+                      onMouseEnter={() => speakHover(`Switch Subject dropdown. Currently focused on ${activeSubject}. Click to view all subjects.`)}
                       style={{
                         background: '#ffffff',
                         border: 'none',
                         borderRadius: '8px',
-                        padding: '7px 14px',
+                        padding: '8px 16px',
                         fontSize: '13px',
                         fontWeight: '800',
                         color: '#0369a1',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
                       }}
                       title="Switch your subject interest anytime. Your whole dashboard adapts immediately."
                     >
-                      {!MAIN_SUBJECTS.includes(activeSubject) && (
-                        <option value={activeSubject}>{activeSubject}</option>
-                      )}
-                      {MAIN_SUBJECTS.map(sub => (
-                        <option key={sub} value={sub}>{sub}</option>
-                      ))}
-                    </select>
+                      <span>{activeSubject}</span>
+                      <span style={{ fontSize: '10px' }}>{isBannerSubDropdownOpen ? '▲' : '▼'}</span>
+                    </button>
+                    {isBannerSubDropdownOpen && (
+                      <div
+                        role="listbox"
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          right: 0,
+                          marginTop: '6px',
+                          background: '#ffffff',
+                          borderRadius: '12px',
+                          border: '2px solid #0284c7',
+                          boxShadow: '0 12px 30px rgba(2, 132, 199, 0.28)',
+                          minWidth: '220px',
+                          zIndex: 1000,
+                          padding: '6px',
+                          maxHeight: '280px',
+                          overflowY: 'auto'
+                        }}
+                      >
+                        {MAIN_SUBJECTS.map(sub => {
+                          const isSelected = sub === activeSubject;
+                          return (
+                            <div
+                              key={sub}
+                              role="option"
+                              aria-selected={isSelected}
+                              onClick={() => {
+                                handleSwitchStudentSubject(sub);
+                                setIsBannerSubDropdownOpen(false);
+                              }}
+                              onMouseEnter={() => speakHover(`${sub} subject`)}
+                              style={{
+                                padding: '10px 14px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                background: isSelected ? '#e0f2fe' : 'transparent',
+                                color: isSelected ? '#0369a1' : '#1e293b',
+                                fontWeight: isSelected ? '800' : '600',
+                                fontSize: '13px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                transition: 'background 0.15s ease'
+                              }}
+                            >
+                              <span>{sub}</span>
+                              {isSelected && <span style={{ color: '#0284c7', fontWeight: 'bold' }}>✓</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -8201,7 +8356,11 @@ export default function StudentDashboard() {
                     <tbody>
                       {filteredExams.length > 0 ? (
                         filteredExams.map(ex => (
-                          <tr key={ex.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <tr 
+                            key={ex.id} 
+                            onMouseEnter={() => speakHover(`Exam: ${ex.title || 'Theory Assessment'}, Subject: ${ex.subject}, Date: ${formatDateForVoice(ex.date)}, Duration: ${ex.duration}`)}
+                            style={{ borderBottom: '1px solid #f1f5f9' }}
+                          >
                             <td style={{ padding: '14px 8px', fontWeight: '700', color: '#0f172a' }}>
                               <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '14px' }}>{ex.title || 'Theory Assessment'}</div>
                               {ex.targetStudentEmail && (
@@ -8217,6 +8376,7 @@ export default function StudentDashboard() {
                             <td style={{ padding: '14px 8px', textAlign: 'right' }}>
                               <button 
                                 onClick={() => startExamHandler(ex)}
+                                onMouseEnter={() => speakHover(isExamActiveNow(ex) ? `Start Exam button for ${ex.title || 'Theory Assessment'}` : `View Details button for ${ex.title || 'Theory Assessment'}`)}
                                 style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}
                               >
                                 {isExamActiveNow(ex) ? 'Start Exam' : 'View Details'}
@@ -8226,7 +8386,11 @@ export default function StudentDashboard() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                          <td 
+                            colSpan={6} 
+                            onMouseEnter={() => speakHover(`No upcoming ${activeSubject} exams scheduled.`)}
+                            style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}
+                          >
                             No upcoming {activeSubject} exams scheduled.
                           </td>
                         </tr>
@@ -8242,43 +8406,78 @@ export default function StudentDashboard() {
                 
                 {/* Important Announcements */}
                 <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px' }}>
-                  <h2 style={{ margin: '0 0 14px 0', fontSize: '15px', color: '#0f172a', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 
+                    onMouseEnter={() => speakHover("Important Announcements section")}
+                    style={{ margin: '0 0 14px 0', fontSize: '15px', color: '#0f172a', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'default' }}
+                  >
                     📢 Important Announcements
                   </h2>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {announcements.length > 0 ? (
                       announcements.map(ann => (
-                        <div key={ann.id} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                        <div 
+                          key={ann.id} 
+                          onMouseEnter={() => speakHover(`Announcement: ${ann.title}. ${ann.detail || ''}. ${ann.date || ''}`)}
+                          style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px', cursor: 'pointer' }}
+                        >
                           <b style={{ fontSize: '13px', color: '#0369a1', display: 'block' }}>• {ann.title}</b>
                           {ann.detail && <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#475569', lineHeight: '1.4' }}>{ann.detail}</p>}
                           <small style={{ fontSize: '11px', color: '#94a3b8' }}>{ann.date}</small>
                         </div>
                       ))
                     ) : (
-                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>No announcements at this time.</p>
+                      <p 
+                        onMouseEnter={() => speakHover("No announcements at this time.")}
+                        style={{ margin: 0, fontSize: '13px', color: '#64748b' }}
+                      >
+                        No announcements at this time.
+                      </p>
                     )}
                   </div>
-                  <button onClick={() => setActiveTab('Notifications')} style={{ width: '100%', marginTop: '12px', background: 'none', border: 'none', color: '#0284c7', fontSize: '12px', fontWeight: '700', cursor: 'pointer', textAlign: 'center' }}>
+                  <button 
+                    onClick={() => setActiveTab('Notifications')} 
+                    onMouseEnter={() => speakHover("View all announcements in notifications center")}
+                    style={{ width: '100%', marginTop: '12px', background: 'none', border: 'none', color: '#0284c7', fontSize: '12px', fontWeight: '700', cursor: 'pointer', textAlign: 'center' }}
+                  >
                     View All →
                   </button>
                 </div>
 
                 {/* Quick Access */}
                 <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px' }}>
-                  <h2 style={{ margin: '0 0 14px 0', fontSize: '15px', color: '#0f172a', fontWeight: '800' }}>
+                  <h2 
+                    onMouseEnter={() => speakHover("Quick Access section")}
+                    style={{ margin: '0 0 14px 0', fontSize: '15px', color: '#0f172a', fontWeight: '800' }}
+                  >
                     ⚡ Quick Access
                   </h2>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <button onClick={() => setActiveTab('My Exams')} style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '14px', borderRadius: '12px', color: '#0369a1', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <button 
+                      onClick={() => setActiveTab('My Exams')} 
+                      onMouseEnter={() => speakHover("My Exams shortcut button. View and take your scheduled exams.")}
+                      style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '14px', borderRadius: '12px', color: '#0369a1', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                    >
                       <FileText size={20} color="#0284c7" /> My Exams
                     </button>
-                    <button onClick={() => setActiveTab('Study Materials')} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '12px', color: '#166534', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <button 
+                      onClick={() => setActiveTab('Study Materials')} 
+                      onMouseEnter={() => speakHover("Study Materials shortcut button. Access voice lessons, notes, and guides.")}
+                      style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '12px', color: '#166534', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                    >
                       <BookOpen size={20} color="#16a34a" /> Study Materials
                     </button>
-                    <button onClick={() => setActiveTab('Voice Assistant')} style={{ background: '#faf5ff', border: '1px solid #e9d5ff', padding: '14px', borderRadius: '12px', color: '#6b21a8', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <button 
+                      onClick={() => setActiveTab('Voice Assistant')} 
+                      onMouseEnter={() => speakHover("Voice Assistant shortcut button. Practice hands-free commands and viva voice.")}
+                      style={{ background: '#faf5ff', border: '1px solid #e9d5ff', padding: '14px', borderRadius: '12px', color: '#6b21a8', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                    >
                       <Mic size={20} color="#9333ea" /> Voice Assistant
                     </button>
-                    <button onClick={() => setActiveTab('Accessibility Settings')} style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '14px', borderRadius: '12px', color: '#9a3412', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                    <button 
+                      onClick={() => setActiveTab('Accessibility Settings')} 
+                      onMouseEnter={() => speakHover("Accessibility settings button. Configure high contrast, speech rate, and font sizes.")}
+                      style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '14px', borderRadius: '12px', color: '#9a3412', fontWeight: '700', fontSize: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                    >
                       <Eye size={20} color="#ea580c" /> Accessibility
                     </button>
                   </div>
@@ -8286,19 +8485,31 @@ export default function StudentDashboard() {
 
                 {/* Recent Activity */}
                 <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px' }}>
-                  <h2 style={{ margin: '0 0 14px 0', fontSize: '15px', color: '#0f172a', fontWeight: '800' }}>
+                  <h2 
+                    onMouseEnter={() => speakHover("Recent Activity section")}
+                    style={{ margin: '0 0 14px 0', fontSize: '15px', color: '#0f172a', fontWeight: '800' }}
+                  >
                     🕒 Recent Activity
                   </h2>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '12px', color: '#475569' }}>
-                    <div>
+                    <div 
+                      onMouseEnter={() => speakHover("Completed English Exam, September 26, 2025, score 85 percent")}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <b style={{ color: '#0f172a', display: 'block' }}>⭕ Completed: English Exam</b>
                       <small style={{ color: '#94a3b8' }}>Sep 26, 2025 • 85%</small>
                     </div>
-                    <div>
+                    <div 
+                      onMouseEnter={() => speakHover("Viewed Physics Study Material, September 24, 2025")}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <b style={{ color: '#0f172a', display: 'block' }}>📄 Viewed: Physics Study Material</b>
                       <small style={{ color: '#94a3b8' }}>Sep 24, 2025</small>
                     </div>
-                    <div>
+                    <div 
+                      onMouseEnter={() => speakHover("Logged in to your account, September 22, 2025")}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <b style={{ color: '#0f172a', display: 'block' }}>👤 Logged in to your account</b>
                       <small style={{ color: '#94a3b8' }}>Sep 22, 2025</small>
                     </div>
@@ -10310,6 +10521,7 @@ export default function StudentDashboard() {
                     const allText = announcements.map(a => `${a.title}. ${a.detail}`).join(' Next notification: ');
                     speakText(`Reading all ${announcements.length} notifications: ${allText}`);
                   }}
+                  onMouseEnter={() => speakHover("Read All Notifications Aloud button")}
                   style={{ background: '#ffffff', color: '#0369a1', border: 'none', padding: '12px 20px', borderRadius: '12px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
                 >
                   <Volume2 size={18} /> 🔊 Read All Notifications Aloud
@@ -10327,7 +10539,11 @@ export default function StudentDashboard() {
                   { label: '📢 Teacher Announcement', bg: '#f3e8ff', color: '#7e22ce' },
                   { label: '🚨 Assistance Response', bg: '#fee2e2', color: '#b91c1c' }
                 ].map((type, idx) => (
-                  <span key={idx} style={{ background: type.bg, color: type.color, padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: '800' }}>
+                  <span 
+                    key={idx} 
+                    onMouseEnter={() => speakHover(`${type.label} notification category`)}
+                    style={{ background: type.bg, color: type.color, padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: '800', cursor: 'default' }}
+                  >
                     {type.label}
                   </span>
                 ))}
@@ -10339,6 +10555,7 @@ export default function StudentDashboard() {
                   announcements.map((ann, idx) => (
                     <div 
                       key={ann.id || idx} 
+                      onMouseEnter={() => speakHover(`Notification: ${ann.title}. ${ann.detail || ann.message || ''}`)}
                       style={{ 
                         background: (ann.title && ann.title.includes('starts in 30 minutes')) ? '#fffbeb' : '#ffffff', 
                         border: (ann.title && ann.title.includes('starts in 30 minutes')) ? '2px solid #f59e0b' : '1px solid #e2e8f0', 
@@ -10349,6 +10566,7 @@ export default function StudentDashboard() {
                         alignItems: 'center',
                         flexWrap: 'wrap',
                         gap: '12px',
+                        cursor: 'pointer',
                         boxShadow: (ann.title && ann.title.includes('starts in 30 minutes')) ? '0 4px 16px rgba(245, 158, 11, 0.15)' : 'none'
                       }}
                     >
@@ -10785,6 +11003,7 @@ export default function StudentDashboard() {
                                 key={subj}
                                 type="button"
                                 onClick={() => handleSwitchStudentSubject(subj)}
+                                onMouseEnter={() => speakHover(`${subj} subject badge`)}
                                 style={{
                                   background: isFocused ? '#0284c7' : '#ffffff',
                                   color: isFocused ? '#ffffff' : '#0369a1',
@@ -10882,6 +11101,7 @@ function StatCard({ icon, bg, border, label, value, action, onClick, progress })
   return (
     <button 
       onClick={onClick}
+      onMouseEnter={() => speakHover(`${label}: ${value}. Click to ${action ? action.replace('→', '').trim() : 'view details'}`)}
       className="stat-3d card-3d"
       style={{
         background: bg,
@@ -10915,6 +11135,7 @@ function ActionBadge({ icon, title, sub, onClick }) {
   return (
     <button 
       onClick={onClick}
+      onMouseEnter={() => speakHover(`${title}. ${sub || ''}`)}
       style={{
         background: '#ffffff',
         border: '1px solid #ddd6fe',
