@@ -2943,6 +2943,13 @@ export default function StudentDashboard() {
   const [vivaQIndex, setVivaQIndex] = useState(0);
   const [vivaAnswerInput, setVivaAnswerInput] = useState('');
   const [vivaFeedback, setVivaFeedback] = useState(null);
+  const [vivaAnswersRecord, setVivaAnswersRecord] = useState({});
+  const [isVivaDictating, setIsVivaDictating] = useState(false);
+  const [isVivaSubmitted, setIsVivaSubmitted] = useState(false);
+  const [vivaOverallResult, setVivaOverallResult] = useState(null);
+  const isVivaDictatingRef = useRef(false);
+  const vivaRecognitionRef = useRef(null);
+  const lastSpokenVivaAnswerRef = useRef('');
 
   // Filtered Subject Collections: Strict full-dashboard isolation by activeSubject
   const filteredExams = useMemo(() => {
@@ -5955,14 +5962,36 @@ export default function StudentDashboard() {
         }
       }
 
-      if (transcript.includes('evaluate viva') || transcript.includes('evaluate')) {
+      if (transcript.includes('repeat question') || transcript === 'repeat' || transcript.includes('read question') || transcript.includes('listen question')) {
+        handleRepeatVivaQuestion();
+        return;
+      }
+      if (transcript.includes('next question') || transcript === 'next' || transcript.includes('next q')) {
+        handleNextVivaQuestion();
+        return;
+      }
+      if (transcript.includes('previous question') || transcript === 'previous' || transcript === 'back' || transcript.includes('prev question')) {
+        handlePrevVivaQuestion();
+        return;
+      }
+      if (transcript.includes('submit viva') || transcript.includes('submit exam') || transcript === 'submit' || transcript.includes('finish viva') || transcript.includes('finish exam')) {
+        handleSubmitVivaExam();
+        return;
+      }
+      if (transcript.includes('restart viva') || transcript.includes('retake viva')) {
+        handleRestartViva();
+        return;
+      }
+      if (transcript.includes('evaluate viva') || transcript.includes('evaluate') || transcript.includes('check answer')) {
         handleEvaluateViva();
         return;
       }
 
-      const cleanViva = rawText.replace(/^(answer|my answer is)\s*/i, '').trim() || rawText;
+      const cleanViva = rawText.replace(/^(answer|my answer is|my response is)\s*/i, '').trim() || rawText;
       setVivaAnswerInput(cleanViva);
-      speakText(`Viva response recorded: ${cleanViva}`);
+      setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanViva }));
+      lastSpokenVivaAnswerRef.current = cleanViva;
+      speakText(`You said: ${cleanViva}. Answer recorded. You can say repeat question, next question, or submit viva.`);
       return;
     }
 
@@ -6470,6 +6499,266 @@ export default function StudentDashboard() {
   const currentVivaQList = resolveCurrentVivaList();
   const activeVivaQIdx = currentVivaQList.length > 0 ? (vivaQIndex % currentVivaQList.length) : 0;
   const currentVivaQ = currentVivaQList.length > 0 ? (currentVivaQList[activeVivaQIdx] || currentVivaQList[0]) : null;
+
+  const stopVivaDictation = (speakBack = true) => {
+    isVivaDictatingRef.current = false;
+    setIsVivaDictating(false);
+    if (vivaRecognitionRef.current) {
+      try { vivaRecognitionRef.current.stop(); } catch (e) {}
+      vivaRecognitionRef.current = null;
+    }
+    const cleanText = (vivaAnswerInput || '').trim();
+    if (speakBack && cleanText) {
+      setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanText }));
+      lastSpokenVivaAnswerRef.current = cleanText;
+      speakText(`You said: ${cleanText}. Answer recorded. You can say repeat question, next question, or submit viva.`);
+    }
+  };
+
+  const startVivaDictation = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      speakText("Speech recognition is not supported in this browser. Please type your answer.");
+      return;
+    }
+
+    if (vivaRecognitionRef.current) {
+      try { vivaRecognitionRef.current.abort(); } catch (e) {}
+      vivaRecognitionRef.current = null;
+    }
+
+    isVivaDictatingRef.current = true;
+    setIsVivaDictating(true);
+    cancelSpeech();
+
+    speakText("Listening for your viva answer. Speak your answer now, and say DONE when you are finished.");
+
+    setTimeout(() => {
+      if (!isVivaDictatingRef.current) return;
+      try {
+        const rec = new SpeechRecognition();
+        rec.lang = 'en-US';
+        rec.continuous = true;
+        rec.interimResults = true;
+        vivaRecognitionRef.current = rec;
+
+        rec.onstart = () => {
+          setIsVivaDictating(true);
+          isVivaDictatingRef.current = true;
+        };
+
+        rec.onresult = (e) => {
+          let currentTranscript = '';
+          for (let i = 0; i < e.results.length; i++) {
+            currentTranscript += e.results[i][0].transcript;
+          }
+          const cleaned = currentTranscript.trim();
+          setLiveVoiceTranscript(cleaned);
+
+          const { isDone, cleanText } = parseDoneTrigger(cleaned);
+          setVivaAnswerInput(cleanText);
+
+          if (isDone) {
+            isVivaDictatingRef.current = false;
+            setIsVivaDictating(false);
+            try { rec.stop(); } catch (err) {}
+            vivaRecognitionRef.current = null;
+
+            setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanText }));
+            lastSpokenVivaAnswerRef.current = cleanText;
+
+            speakText(`You said: ${cleanText}. Answer recorded. You can say repeat question, next question, or submit viva.`);
+          }
+        };
+
+        rec.onerror = (e) => {
+          console.warn('Viva dictation recognition error:', e);
+        };
+
+        rec.onend = () => {
+          // Continuous loop: keep listening until the student says DONE
+          if (isVivaDictatingRef.current) {
+            try {
+              rec.start();
+            } catch (err) {
+              setTimeout(() => {
+                if (isVivaDictatingRef.current) {
+                  try { rec.start(); } catch (e) {}
+                }
+              }, 300);
+            }
+          }
+        };
+
+        rec.start();
+      } catch (err) {
+        console.error('Failed to start speech recognition for viva:', err);
+      }
+    }, 1200);
+  };
+
+  const handleAnswerBoxFocusOrClick = () => {
+    if (!isVivaDictatingRef.current) {
+      startVivaDictation();
+    }
+  };
+
+  const handleVivaTextareaBlur = () => {
+    const text = (vivaAnswerInput || '').trim();
+    if (text && text !== lastSpokenVivaAnswerRef.current && !isVivaDictatingRef.current) {
+      lastSpokenVivaAnswerRef.current = text;
+      setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: text }));
+      speakText(`You typed: ${text}. Answer recorded. You can say repeat question, next question, or submit viva.`);
+    }
+  };
+
+  const handleVivaTextareaKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const text = (vivaAnswerInput || '').trim();
+      if (text && text !== lastSpokenVivaAnswerRef.current) {
+        lastSpokenVivaAnswerRef.current = text;
+        setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: text }));
+        speakText(`You typed: ${text}. Answer recorded. You can say repeat question, next question, or submit viva.`);
+      }
+    }
+  };
+
+  const handleRepeatVivaQuestion = () => {
+    if (!currentVivaQ) return;
+    const msg = `Question ${activeVivaQIdx + 1} of ${currentVivaQList.length}: ${currentVivaQ.text}. Tap the answer box to speak your answer.`;
+    speakText(msg);
+  };
+
+  const handleNextVivaQuestion = () => {
+    if (isVivaDictatingRef.current) {
+      isVivaDictatingRef.current = false;
+      setIsVivaDictating(false);
+      if (vivaRecognitionRef.current) {
+        try { vivaRecognitionRef.current.abort(); } catch (e) {}
+      }
+    }
+
+    const currentAns = (vivaAnswerInput || '').trim();
+    if (currentAns) {
+      setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: currentAns }));
+    }
+
+    const nextIdx = activeVivaQIdx + 1;
+    if (nextIdx < currentVivaQList.length) {
+      setVivaQIndex(nextIdx);
+      const existingNextAns = vivaAnswersRecord[nextIdx] || '';
+      setVivaAnswerInput(existingNextAns);
+      lastSpokenVivaAnswerRef.current = existingNextAns;
+      setVivaFeedback(null);
+      const nextQ = currentVivaQList[nextIdx];
+      const msg = `Moving to Question ${nextIdx + 1} of ${currentVivaQList.length}: ${nextQ.text}. ${existingNextAns ? 'Your recorded answer is: ' + existingNextAns : 'Tap the answer box to speak your answer.'}`;
+      speakText(msg);
+    } else {
+      speakText(`You are on the last question of this viva exam. Click Submit Viva Exam to complete your assessment.`);
+    }
+  };
+
+  const handlePrevVivaQuestion = () => {
+    if (activeVivaQIdx <= 0) {
+      speakText("You are on the first question.");
+      return;
+    }
+    if (isVivaDictatingRef.current) {
+      isVivaDictatingRef.current = false;
+      setIsVivaDictating(false);
+      if (vivaRecognitionRef.current) {
+        try { vivaRecognitionRef.current.abort(); } catch (e) {}
+      }
+    }
+
+    const currentAns = (vivaAnswerInput || '').trim();
+    if (currentAns) {
+      setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: currentAns }));
+    }
+
+    const prevIdx = activeVivaQIdx - 1;
+    setVivaQIndex(prevIdx);
+    const existingPrevAns = vivaAnswersRecord[prevIdx] || '';
+    setVivaAnswerInput(existingPrevAns);
+    lastSpokenVivaAnswerRef.current = existingPrevAns;
+    setVivaFeedback(null);
+    const prevQ = currentVivaQList[prevIdx];
+    const msg = `Previous question. Question ${prevIdx + 1} of ${currentVivaQList.length}: ${prevQ.text}. ${existingPrevAns ? 'Your recorded answer is: ' + existingPrevAns : 'Tap the answer box to speak your answer.'}`;
+    speakText(msg);
+  };
+
+  const handleSubmitVivaExam = () => {
+    if (isVivaDictatingRef.current) {
+      isVivaDictatingRef.current = false;
+      setIsVivaDictating(false);
+      if (vivaRecognitionRef.current) {
+        try { vivaRecognitionRef.current.abort(); } catch (e) {}
+      }
+    }
+
+    const currentAns = (vivaAnswerInput || '').trim();
+    const updatedAnswers = {
+      ...vivaAnswersRecord,
+      ...(currentAns ? { [activeVivaQIdx]: currentAns } : {})
+    };
+    setVivaAnswersRecord(updatedAnswers);
+
+    let totalScore = 0;
+    const questionResults = currentVivaQList.map((q, idx) => {
+      const ans = (updatedAnswers[idx] || '').trim().toLowerCase();
+      const matched = (q.keywords || []).filter(kw => ans.includes(kw.toLowerCase()));
+      let qScore = 0;
+      if (ans.length > 0) {
+        qScore = Math.min(10, Math.max(5, Math.round(matched.length * 2.5 + 4)));
+      }
+      totalScore += qScore;
+      return {
+        questionNum: idx + 1,
+        questionText: q.text,
+        studentAnswer: updatedAnswers[idx] || 'No answer submitted',
+        score: qScore,
+        keywordsFound: matched,
+        feedback: qScore >= 8 ? 'Outstanding oral explanation with key domain terms' : qScore >= 5 ? 'Satisfactory oral response' : 'No response provided'
+      };
+    });
+
+    const maxScore = currentVivaQList.length * 10;
+    const averageScore = Math.round((totalScore / (currentVivaQList.length || 1)) * 10) / 10;
+    const percentage = Math.round((totalScore / (maxScore || 1)) * 100);
+    const passed = percentage >= 50;
+
+    const summary = {
+      totalScore,
+      maxScore,
+      averageScore,
+      percentage,
+      passed,
+      topic: vivaSubject,
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      questionResults
+    };
+
+    setVivaOverallResult(summary);
+    setIsVivaSubmitted(true);
+
+    const answeredCount = Object.keys(updatedAnswers).filter(k => updatedAnswers[k]?.trim()).length;
+    const spokenResult = `Oral Viva Exam submitted successfully! You answered ${answeredCount} of ${currentVivaQList.length} questions. Your average score is ${averageScore} out of 10, ${percentage} percent. ${passed ? 'Congratulations, you passed the oral viva exam!' : 'Good practice attempt. Review the material and try again.'}`;
+    speakText(spokenResult);
+  };
+
+  const handleRestartViva = () => {
+    setIsVivaSubmitted(false);
+    setVivaOverallResult(null);
+    setVivaQIndex(0);
+    setVivaAnswerInput('');
+    setVivaAnswersRecord({});
+    setVivaFeedback(null);
+    lastSpokenVivaAnswerRef.current = '';
+    const firstQ = currentVivaQList[0];
+    const msg = `Restarting viva exam for ${vivaSubject}. Question 1 of ${currentVivaQList.length}: ${firstQ?.text || ''}. Tap the answer box to speak your answer.`;
+    speakText(msg);
+  };
 
   const handleEvaluateViva = () => {
     if (!vivaAnswerInput.trim()) {
@@ -9280,133 +9569,383 @@ export default function StudentDashboard() {
                     </div>
                   </div>
 
-                  {/* Subject Selector & Question Card */}
-                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '20px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <label style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{activeSubject} Viva Topic:</label>
-                        <select 
-                          value={vivaSubject} 
-                          onChange={(e) => { setVivaSubject(e.target.value); setVivaQIndex(0); setVivaFeedback(null); setVivaAnswerInput(''); }}
-                          style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '14px' }}
+                  {/* If Viva is Submitted: Show Results & Evaluation Card */}
+                  {isVivaSubmitted && vivaOverallResult ? (
+                    <div style={{ background: '#ffffff', border: '2px solid #86efac', borderRadius: '20px', padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px', boxShadow: '0 8px 24px rgba(22, 163, 74, 0.12)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '20px' }}>
+                        <div>
+                          <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '4px 12px', borderRadius: '12px', fontWeight: '800' }}>
+                            🎉 Oral Viva Assessment Complete
+                          </span>
+                          <h2 style={{ margin: '8px 0 4px 0', fontSize: '24px', color: '#0f172a', fontWeight: '900' }}>
+                            {vivaOverallResult.topic}
+                          </h2>
+                          <small style={{ color: '#64748b', fontSize: '13px' }}>
+                            Completed on {vivaOverallResult.date} • {vivaOverallResult.questionResults.length} Questions Evaluated
+                          </small>
+                        </div>
+                        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <div style={{ background: vivaOverallResult.passed ? '#f0fdf4' : '#fff7ed', border: `2px solid ${vivaOverallResult.passed ? '#22c55e' : '#f97316'}`, padding: '12px 20px', borderRadius: '16px', textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '800', color: vivaOverallResult.passed ? '#15803d' : '#c2410c', textTransform: 'uppercase' }}>Average Score</span>
+                            <div style={{ fontSize: '28px', fontWeight: '900', color: vivaOverallResult.passed ? '#166534' : '#9a3412' }}>
+                              {vivaOverallResult.averageScore} <span style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>/ 10</span>
+                            </div>
+                            <span style={{ fontSize: '12px', fontWeight: '800', color: vivaOverallResult.passed ? '#15803d' : '#ea580c' }}>
+                              {vivaOverallResult.percentage}% • {vivaOverallResult.passed ? 'PASSED' : 'NEEDS PRACTICE'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Question by Question Breakdown */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>Questions & Oral Responses Breakdown:</h3>
+                        {vivaOverallResult.questionResults.map((qr) => (
+                          <div key={qr.questionNum} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                              <b style={{ fontSize: '14px', color: '#0369a1' }}>Question {qr.questionNum}: {qr.questionText}</b>
+                              <span style={{ background: qr.score >= 8 ? '#dcfce7' : qr.score >= 5 ? '#fef3c7' : '#fee2e2', color: qr.score >= 8 ? '#15803d' : qr.score >= 5 ? '#b45309' : '#b91c1c', padding: '3px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', whiteSpace: 'nowrap' }}>
+                                Score: {qr.score} / 10
+                              </span>
+                            </div>
+                            <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#334155' }}>
+                              <b style={{ color: '#0f172a' }}>Your Answer: </b>
+                              <span>{qr.studentAnswer}</span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: '600' }}>
+                              {qr.feedback} {qr.keywordsFound?.length > 0 && `(Key terms: ${qr.keywordsFound.join(', ')})`}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Submit Actions / Restart */}
+                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
+                        <button
+                          type="button"
+                          onClick={handleRestartViva}
+                          onMouseEnter={() => speakHover("Retake This Viva button. Start practice again from question 1.")}
+                          style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '12px 24px', borderRadius: '12px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                         >
-                          {filteredOralVivas.map(v => (
-                            <option key={v.id} value={v.title || v.subject}>
-                              {v.title ? `${v.title} (${v.subject})` : v.subject}
-                            </option>
-                          ))}
-                        </select>
+                          <Repeat size={16} /> 🔄 Retake This Viva
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const summaryText = `Viva Exam summary for ${vivaOverallResult.topic}. Your average score is ${vivaOverallResult.averageScore} out of 10, ${vivaOverallResult.percentage} percent. ${vivaOverallResult.passed ? 'You passed.' : 'Needs practice.'}`;
+                            speakText(summaryText);
+                          }}
+                          onMouseEnter={() => speakHover("Read Viva Score Summary Aloud button")}
+                          style={{ background: '#f0fdf4', color: '#166534', border: '1.5px solid #bbf7d0', padding: '12px 20px', borderRadius: '12px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                          <Volume2 size={16} /> 🔊 Read Score Summary Aloud
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsVivaSubmitted(false);
+                            setVivaOverallResult(null);
+                            setVivaQIndex(0);
+                            setVivaAnswerInput('');
+                            setVivaAnswersRecord({});
+                            setVivaFeedback(null);
+                          }}
+                          onMouseEnter={() => speakHover("Select Another Topic button")}
+                          style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', padding: '12px 20px', borderRadius: '12px', fontWeight: '800', fontSize: '14px', cursor: 'pointer' }}
+                        >
+                          📋 Practice Another Viva
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Active Viva Question & Answering Card */
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '20px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <label style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{activeSubject} Viva Topic:</label>
+                          <select 
+                            value={vivaSubject} 
+                            onChange={(e) => { 
+                              if (isVivaDictatingRef.current) stopVivaDictation(false);
+                              setVivaSubject(e.target.value); 
+                              setVivaQIndex(0); 
+                              setVivaFeedback(null); 
+                              setVivaAnswerInput(''); 
+                              setVivaAnswersRecord({});
+                            }}
+                            onMouseEnter={() => speakHover(`Current viva topic: ${vivaSubject}. Click to select a different topic.`)}
+                            style={{ padding: '8px 14px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}
+                          >
+                            {filteredOralVivas.map(v => (
+                              <option key={v.id} value={v.title || v.subject}>
+                                {v.title ? `${v.title} (${v.subject})` : v.subject}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {currentVivaQ && (
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <button 
+                              type="button"
+                              onClick={handleRepeatVivaQuestion}
+                              onMouseEnter={() => speakHover("Repeat Question button. Hear current viva question read aloud.")}
+                              style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Volume2 size={16} /> 🔄 Repeat Question
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {currentVivaQ && (
+                        <div style={{ background: '#f8fafc', border: '1.5px solid #bae6fd', borderRadius: '16px', padding: '20px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '800', color: '#0284c7', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              QUESTION {activeVivaQIdx + 1} OF {currentVivaQList.length}
+                            </span>
+                            <span style={{ fontSize: '12px', background: vivaAnswersRecord[activeVivaQIdx] ? '#dcfce7' : '#f1f5f9', color: vivaAnswersRecord[activeVivaQIdx] ? '#15803d' : '#64748b', padding: '2px 8px', borderRadius: '6px', fontWeight: '700' }}>
+                              {vivaAnswersRecord[activeVivaQIdx] ? '✓ Answer Recorded' : 'Pending Response'}
+                            </span>
+                          </div>
+                          <h3 style={{ fontSize: '19px', fontWeight: '800', margin: 0, color: '#0f172a', lineHeight: 1.4 }}>
+                            {currentVivaQ.text}
+                          </h3>
+                        </div>
+                      )}
+
+                      {/* Voice Answer Input Box */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                          <label style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>Your Oral Response (Voice Dictation / Typed Answer):</span>
+                            {isVivaDictating && (
+                              <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                🔴 Listening... Say "DONE" to finish
+                              </span>
+                            )}
+                          </label>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (isVivaDictating) {
+                                stopVivaDictation(true);
+                              } else {
+                                startVivaDictation();
+                              }
+                            }}
+                            onMouseEnter={() => speakHover(isVivaDictating ? "Stop Microphone Dictation button" : "Start Microphone Dictation button. Click to speak your answer until you say done.")}
+                            style={{ 
+                              background: isVivaDictating ? '#dc2626' : '#7c3aed', 
+                              color: '#fff', 
+                              border: 'none', 
+                              padding: '8px 16px', 
+                              borderRadius: '8px', 
+                              fontWeight: '800', 
+                              fontSize: '12px', 
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '6px',
+                              boxShadow: isVivaDictating ? '0 0 12px rgba(220, 38, 38, 0.4)' : '0 2px 6px rgba(124, 58, 237, 0.25)',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            {isVivaDictating ? (
+                              <>
+                                <span>⏹</span> Stop Dictation & Read Back
+                              </>
+                            ) : (
+                              <>
+                                <Mic size={14} /> 🎙️ Start Microphone Dictation
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        <textarea 
+                          rows={4}
+                          placeholder="Tap here or click 'Start Microphone Dictation' to speak your answer aloud (assistant listens continuously until you say 'DONE'). You can also type your answer here..."
+                          value={vivaAnswerInput}
+                          onClick={handleAnswerBoxFocusOrClick}
+                          onFocus={handleAnswerBoxFocusOrClick}
+                          onBlur={handleVivaTextareaBlur}
+                          onKeyDown={handleVivaTextareaKeyDown}
+                          onChange={(e) => setVivaAnswerInput(e.target.value)}
+                          onMouseEnter={() => speakHover("Oral viva answer box. Tap to speak your answer until you say done, or type your answer.")}
+                          style={{ 
+                            width: '100%', 
+                            padding: '16px', 
+                            borderRadius: '14px', 
+                            border: isVivaDictating ? '2px solid #ef4444' : '1.5px solid #cbd5e1', 
+                            fontSize: '15px', 
+                            fontWeight: '500', 
+                            boxSizing: 'border-box',
+                            outline: 'none',
+                            background: isVivaDictating ? '#fff5f5' : '#ffffff',
+                            color: '#0f172a',
+                            boxShadow: isVivaDictating ? '0 0 14px rgba(239, 68, 68, 0.25)' : 'none',
+                            transition: 'all 0.2s ease'
+                          }}
+                        />
+
+                        {/* Helper Guidance Badge for Blind Students */}
+                        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            💡 <b>Auditory Screen Reader:</b> Tap the box to start speaking. Speak freely — assistant listens until you say <b>"DONE"</b>. Then it reads back your answer!
+                          </span>
+                          {vivaAnswerInput && (
+                            <button
+                              type="button"
+                              onClick={() => speakText(`Your current recorded answer is: ${vivaAnswerInput}`)}
+                              onMouseEnter={() => speakHover("Read my answer aloud button")}
+                              style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '12px', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
+                            >
+                              🔊 Read Answer Aloud
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Primary Viva Actions Bar: Repeat Question, Next Question, Previous Question, Submit Button */}
+                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', marginTop: '6px' }}>
+                        
+                        {/* Repeat Question Button */}
                         <button 
-                          onClick={() => speakText(`Viva Question ${activeVivaQIdx + 1} of ${currentVivaQList.length}: ${currentVivaQ.text}`)}
-                          style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          type="button"
+                          onClick={handleRepeatVivaQuestion}
+                          onMouseEnter={() => speakHover("Repeat Question button. Hear current viva question read aloud.")}
+                          style={{ 
+                            background: '#e0f2fe', 
+                            color: '#0369a1', 
+                            border: '1.5px solid #bae6fd', 
+                            padding: '14px 20px', 
+                            borderRadius: '12px', 
+                            fontWeight: '800', 
+                            fontSize: '14px', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px' 
+                          }}
                         >
-                          <Volume2 size={16} /> Listen Question Aloud
+                          <Repeat size={16} /> 🔄 Repeat Question
                         </button>
+
+                        {/* Previous Question Button */}
+                        {activeVivaQIdx > 0 && (
+                          <button 
+                            type="button"
+                            onClick={handlePrevVivaQuestion}
+                            onMouseEnter={() => speakHover("Previous Question button. Go back to previous viva question.")}
+                            style={{ 
+                              background: '#f8fafc', 
+                              border: '1px solid #cbd5e1', 
+                              color: '#334155', 
+                              padding: '14px 18px', 
+                              borderRadius: '12px', 
+                              fontWeight: '800', 
+                              fontSize: '14px', 
+                              cursor: 'pointer' 
+                            }}
+                          >
+                            ← Previous Question
+                          </button>
+                        )}
+
+                        {/* Next Question Button */}
+                        {activeVivaQIdx < currentVivaQList.length - 1 && (
+                          <button 
+                            type="button"
+                            onClick={handleNextVivaQuestion}
+                            onMouseEnter={() => speakHover("Next Question button. Advance to next viva question.")}
+                            style={{ 
+                              background: '#0284c7', 
+                              border: 'none', 
+                              color: '#ffffff', 
+                              padding: '14px 24px', 
+                              borderRadius: '12px', 
+                              fontWeight: '800', 
+                              fontSize: '14px', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)'
+                            }}
+                          >
+                            <span>Next Question →</span>
+                          </button>
+                        )}
+
+                        {/* Single Question Instant Evaluator */}
+                        <button 
+                          type="button"
+                          onClick={handleEvaluateViva}
+                          onMouseEnter={() => speakHover("Evaluate Response button. Get instant score and keyword feedback on your answer.")}
+                          style={{ 
+                            background: '#f0fdf4', 
+                            color: '#166534', 
+                            border: '1.5px solid #bbf7d0', 
+                            padding: '14px 20px', 
+                            borderRadius: '12px', 
+                            fontWeight: '800', 
+                            fontSize: '14px', 
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          ✨ Evaluate Answer
+                        </button>
+
+                        {/* Submit Viva Exam Button */}
+                        <button 
+                          type="button"
+                          onClick={handleSubmitVivaExam}
+                          onMouseEnter={() => speakHover("Submit Oral Viva button. Complete your viva exam and calculate your overall score.")}
+                          style={{ 
+                            background: '#16a34a', 
+                            color: '#ffffff', 
+                            border: 'none', 
+                            padding: '14px 28px', 
+                            borderRadius: '12px', 
+                            fontWeight: '900', 
+                            fontSize: '15px', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px',
+                            boxShadow: '0 4px 14px rgba(22, 163, 74, 0.35)',
+                            marginLeft: 'auto'
+                          }}
+                        >
+                          <span>📤 Submit Viva Exam</span>
+                          {activeVivaQIdx === currentVivaQList.length - 1 && (
+                            <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.25)', padding: '2px 8px', borderRadius: '8px' }}>Final</span>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Viva Feedback Evaluation Card */}
+                      {vivaFeedback && (
+                        <div style={{ background: '#f0fdf4', border: '2px solid #bbf7d0', padding: '20px', borderRadius: '16px', marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#166534' }}>Viva Score: {vivaFeedback.score} / 10</h4>
+                            <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '12px', fontWeight: '800' }}>
+                              {vivaFeedback.score >= 8 ? '🎉 Outstanding' : '👍 Pass'}
+                            </span>
+                          </div>
+                          <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#166534', fontWeight: '600' }}>{vivaFeedback.feedbackMsg}</p>
+                          <div style={{ fontSize: '12px', color: '#15803d' }}>
+                            Key Terms Covered: <strong>{(vivaFeedback.keywordsFound || []).join(', ') || 'General explanation'}</strong>
+                          </div>
+                        </div>
                       )}
                     </div>
-
-                    {currentVivaQ && (
-                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '800', color: '#0284c7' }}>QUESTION {activeVivaQIdx + 1} OF {currentVivaQList.length}</span>
-                        <h3 style={{ fontSize: '18px', fontWeight: '800', margin: '8px 0 0 0', color: '#0f172a' }}>{currentVivaQ.text}</h3>
-                      </div>
-                    )}
-
-                {/* Voice Answer Input Box */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>Your Oral Response (Voice Dictation / Typed Answer):</label>
-                    <button 
-                      onClick={() => {
-                        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                        if (!SpeechRecognition) { alert('Speech recognition not supported'); return; }
-                        const rec = new SpeechRecognition();
-                        rec.lang = 'en-US';
-                        rec.continuous = true;
-                        rec.interimResults = true;
-                        rec.onstart = () => {
-                          speakText("Listening for your viva response. Speak freely or say DONE when finished.");
-                        };
-                        rec.onresult = (e) => {
-                          let currentTranscript = '';
-                          for (let i = 0; i < e.results.length; i++) {
-                            currentTranscript += e.results[i][0].transcript;
-                          }
-                          const cleaned = currentTranscript.trim();
-                          setLiveVoiceTranscript(cleaned);
-                          const { isDone, cleanText } = parseDoneTrigger(cleaned);
-                          setVivaAnswerInput(cleanText);
-
-                          if (isDone) {
-                            try { rec.stop(); } catch (err) {}
-                            speakText("Viva response saved. Evaluating your answer...");
-                            setTimeout(() => handleEvaluateViva(), 500);
-                            return;
-                          }
-                        };
-                        rec.onerror = () => {};
-                        rec.onend = () => {};
-                        try { rec.start(); } catch (err) {}
-                      }}
-                      style={{ background: '#7c3aed', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <Mic size={14} /> Start Microphone Dictation
-                    </button>
-                  </div>
-
-                  <textarea 
-                    rows={4}
-                    placeholder="Speak using microphone or type your viva explanation here..."
-                    value={vivaAnswerInput}
-                    onChange={(e) => setVivaAnswerInput(e.target.value)}
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: '500', boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
-                    onClick={handleEvaluateViva}
-                    style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '14px 28px', borderRadius: '12px', fontWeight: '800', fontSize: '15px', cursor: 'pointer', flex: 1, boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)' }}
-                  >
-                    ✨ Evaluate Oral Viva Response
-                  </button>
-                  <button 
-                    onClick={() => {
-                      const nextIdx = (activeVivaQIdx + 1) % currentVivaQList.length;
-                      setVivaQIndex(nextIdx);
-                      setVivaAnswerInput('');
-                      setVivaFeedback(null);
-                      const nextQ = currentVivaQList[nextIdx];
-                      if (nextQ) {
-                        speakText(`Question ${nextIdx + 1} of ${currentVivaQList.length}: ${nextQ.text}`);
-                      }
-                    }}
-                    style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#0f172a', padding: '14px 20px', borderRadius: '12px', fontWeight: '800', fontSize: '14px', cursor: 'pointer' }}
-                  >
-                    Next Question →
-                  </button>
-                </div>
-
-                {/* Viva Feedback Evaluation Card */}
-                {vivaFeedback && (
-                  <div style={{ background: '#f0fdf4', border: '2px solid #bbf7d0', padding: '20px', borderRadius: '16px', marginTop: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#166534' }}>Viva Score: {vivaFeedback.score} / 10</h4>
-                      <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '12px', fontWeight: '800' }}>
-                        {vivaFeedback.score >= 8 ? '🎉 Outstanding' : '👍 Pass'}
-                      </span>
-                    </div>
-                    <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#166534', fontWeight: '600' }}>{vivaFeedback.feedbackMsg}</p>
-                    <div style={{ fontSize: '12px', color: '#15803d' }}>
-                      Key Terms Covered: <strong>{(vivaFeedback.keywordsFound || []).join(', ') || 'General explanation'}</strong>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
+                  )}
+                </>
           ) : (
             <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '20px', padding: '48px 24px', textAlign: 'center' }}>
               <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#e0f2fe', display: 'grid', placeItems: 'center', margin: '0 auto 16px auto' }}>
