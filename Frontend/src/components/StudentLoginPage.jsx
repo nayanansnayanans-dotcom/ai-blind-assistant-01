@@ -505,7 +505,7 @@ export default function StudentLoginPage() {
         studentLoginOtpApi(targetEmail, digits).then(res => {
           setIsVerifyingLoginOtp(false);
           if (res && res.success) {
-            const cleanName = formatSpokenName(res.user?.username || res.user?.name || targetEmail);
+            const cleanName = formatSpokenName(res.user?.name || res.user?.fullName || res.user?.username || targetEmail);
             const savedPic = res.user?.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null;
             if (savedPic) {
               localStorage.setItem('student_profile_pic', savedPic);
@@ -743,7 +743,7 @@ export default function StudentLoginPage() {
       const res = await studentLoginOtpApi(emailToUse, cleanOtp);
       setIsVerifyingLoginOtp(false);
       if (res && res.success) {
-        const cleanName = formatSpokenName(res.user?.username || res.user?.name || emailToUse);
+        const cleanName = formatSpokenName(res.user?.name || res.user?.fullName || res.user?.username || emailToUse);
         const savedPic = res.user?.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null;
         if (savedPic) {
           localStorage.setItem('student_profile_pic', savedPic);
@@ -827,7 +827,7 @@ export default function StudentLoginPage() {
         username: savedProf.name || localStorage.getItem('user_name') || ''
       });
       if (res && res.success) {
-        const cleanName = formatSpokenName(res.user?.username || res.user?.name || email);
+        const cleanName = formatSpokenName(res.user?.name || res.user?.fullName || res.user?.username || email);
         const savedPic = res.user?.profilePic || savedProf.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null;
         if (savedPic) {
           localStorage.setItem('student_profile_pic', savedPic);

@@ -602,8 +602,25 @@ const readStudentProfile = () => {
       delete userProfile.studentId;
     }
 
-    const rawStoredName = userProfile.name || session.name || session.fullName || session.username || regUser.name || regUser.username || localStorage.getItem('user_name') || (userEmail ? userEmail.split('@')[0] : '') || 'Student';
-    const cleanName = rawStoredName ? formatSpokenName(rawStoredName) : (userEmail ? userEmail.split('@')[0] : 'Student');
+    const rawStoredName = userProfile.name || session.name || session.fullName || regUser.name || regUser.fullName || localStorage.getItem('user_name') || userProfile.username || session.username || regUser.username || (userEmail ? userEmail.split('@')[0] : '') || 'Student';
+    const cleanName = formatSpokenName(rawStoredName);
+
+    // Keep stored profile name and session name synced with clean human name
+    if (userEmail && cleanName && cleanName !== 'Student') {
+      if (userProfile.name !== cleanName) {
+        userProfile.name = cleanName;
+        allProfiles[userEmail] = userProfile;
+        try {
+          localStorage.setItem('student_profiles_by_email', JSON.stringify(allProfiles));
+        } catch (e) {}
+      }
+      if (session.name !== cleanName) {
+        session.name = cleanName;
+        try {
+          localStorage.setItem('auth_session', JSON.stringify(session));
+        } catch (e) {}
+      }
+    }
 
     const email = userEmail || userProfile.email || session.email || 'student@school.edu';
     
@@ -2177,8 +2194,9 @@ export const isExamAssignedToStudent = (exam, studentEmail, studentName) => {
     return targetName === cleanName || cleanName.includes(targetName) || targetName.includes(cleanName);
   }
 
-  // 3. Assigned students list (not 'all')
-  if (assignedList.length > 0 && !assignedList.includes('all')) {
+  // 3. Assigned students list (if specified)
+  if (assignedList.length > 0) {
+    if (assignedList.includes('all')) return true;
     return assignedList.some(s => 
       (cleanEmail && s === cleanEmail) || 
       (cleanName && (s === cleanName || cleanName.includes(s) || s.includes(cleanName)))
@@ -2197,14 +2215,17 @@ export const isExamAssignedToStudent = (exam, studentEmail, studentName) => {
     }
   }
 
-  // 5. If title contains another student's name (e.g. "Nayana" when user is "Sowmya")
-  if (cleanName && !cleanName.includes('nayana')) {
-    if (examTitle.includes('nayana') || examDesc.includes('nayana')) {
+  // 5. If title contains another student's name (e.g. "Nayana", "Lakshmi", "Jaanu", "Sowmya")
+  const otherNames = ['nayana', 'lakshmi', 'jaanu', 'sowmya'];
+  for (const stu of otherNames) {
+    if (cleanName && !cleanName.includes(stu) && (examTitle.includes(stu) || examDesc.includes(stu))) {
       return false;
     }
   }
 
-  return true;
+  // 6. For newly registered users or unassigned exams without explicit assignment to this student:
+  // Default to FALSE so new users start with strictly 0 upcoming exams and 0 active exams until a teacher assigns one.
+  return false;
 };
 
 export const isNotificationForStudent = (notif, studentEmail, studentName) => {
@@ -2222,11 +2243,11 @@ export const isNotificationForStudent = (notif, studentEmail, studentName) => {
 
   // Discard known fake static announcement strings
   if (title.includes('computer networks exam starts in 30 minutes')) return false;
-  if (title.includes('operating systems theory assessment') && idStr.startsWith('notif-')) return false;
-  if (title.includes('physics motion & laws of force') && idStr.startsWith('notif-')) return false;
-  if (title.includes('computer networks & cyber security') && title.includes('result published')) return false;
-  if (title.includes('extra 15 mins allocated for exam') && idStr.startsWith('notif-')) return false;
-  if (title.includes('emergency sos request resolved') && idStr.startsWith('notif-')) return false;
+  if (title.includes('operating systems theory assessment')) return false;
+  if (title.includes('physics motion & laws of force')) return false;
+  if (title.includes('computer networks & cyber security')) return false;
+  if (title.includes('extra 15 mins allocated for exam')) return false;
+  if (title.includes('emergency sos request resolved')) return false;
 
   const tEmail = String(notif.targetStudentEmail || '').toLowerCase().trim();
   const tName = String(notif.targetStudentName || '').toLowerCase().trim();
@@ -2255,10 +2276,19 @@ export const isNotificationForStudent = (notif, studentEmail, studentName) => {
   }
 
   // 4. Other student name in title/detail
-  if (cleanName && !cleanName.includes('nayana')) {
-    if (title.includes('nayana') || detail.includes('nayana')) {
+  const otherNames = ['nayana', 'lakshmi', 'jaanu', 'sowmya'];
+  for (const stu of otherNames) {
+    if (cleanName && !cleanName.includes(stu) && (title.includes(stu) || detail.includes(stu))) {
       return false;
     }
+  }
+
+  // 5. If notification is targeted to another student, exclude it
+  if (tEmail && tEmail !== cleanEmail) return false;
+
+  // 6. For new users, only show notifications if explicitly targeted to them or general broadcast
+  if (!tEmail && !tName && !notif.isBroadcast) {
+    return false;
   }
 
   return true;
@@ -7874,11 +7904,11 @@ export default function StudentDashboard() {
                 {studentProfile.profilePic ? (
                   <img src={studentProfile.profilePic} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  (student.name || 'S').split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'S'
+                  formatSpokenName(student.name || studentProfile.name || 'Student').split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'S'
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <b style={{ fontSize: '14px', color: '#0f172a' }}>{student.name || 'Student'}</b>
+                <b style={{ fontSize: '14px', color: '#0f172a' }}>{formatSpokenName(student.name || studentProfile.name || 'Student')}</b>
                 <small style={{ fontSize: '11px', color: '#64748b' }}>Student</small>
               </div>
             </div>
@@ -8053,7 +8083,7 @@ export default function StudentDashboard() {
                   <Sun size={36} color="#f59e0b" />
                   <div>
                     <h1 style={{ margin: 0, fontSize: '24px', color: '#0369a1', fontWeight: '800' }}>
-                      {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })()}, {student.name}!
+                      {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })()}, {formatSpokenName(student.name || studentProfile.name || 'Student')}!
                     </h1>
                     <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b', fontWeight: '600' }}>
                       Your accessibility. Our priority.
@@ -8102,7 +8132,7 @@ export default function StudentDashboard() {
                 {/* Stat Cards (4 Cards) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                   <StatCard icon={<Calendar size={22} color="#0284c7" />} bg="#f0f9ff" border="#bae6fd" label="Upcoming Exams" value={filteredExams.length.toString()} action="View Schedule →" onClick={() => setActiveTab('My Exams')} />
-                  <StatCard icon={<FileText size={22} color="#16a34a" />} bg="#f0fdf4" border="#bbf7d0" label="Active Exams" value={filteredExams.filter(e => isExamActiveNow(e)).length.toString()} action="Start Exam →" onClick={() => { const activeEx = filteredExams.find(e => isExamActiveNow(e)) || filteredExams[0]; if (activeEx) startExamHandler(activeEx); else speakText("No active exams right now."); }} />
+                  <StatCard icon={<FileText size={22} color="#16a34a" />} bg="#f0fdf4" border="#bbf7d0" label="Active Exams" value={filteredExams.filter(e => isExamActiveNow(e)).length.toString()} action="Start Exam →" onClick={() => { const activeEx = filteredExams.find(e => isExamActiveNow(e)); if (activeEx) startExamHandler(activeEx); else speakText("No active exams right now. Please check back when your teacher assigns an assessment."); }} />
                   <StatCard icon={<BarChart2 size={22} color="#9333ea" />} bg="#faf5ff" border="#e9d5ff" label="Completed Exams" value={filteredResults.length.toString()} action="View Results →" onClick={() => setActiveTab('Results & Performance')} />
                   <StatCard icon={<Award size={22} color="#ea580c" />} bg="#fff7ed" border="#ffedd5" label="Overall Progress" value={filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'} action="View Details →" onClick={() => setActiveTab('Results & Performance')} progress={filteredResults.length > 0 ? overallProgress : 0} />
                 </div>

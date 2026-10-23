@@ -75,6 +75,25 @@ const createTransporter = () => {
   });
 };
 
+// Helper to format human spoken name from email username
+const formatSpokenName = (nameStr) => {
+  if (!nameStr) return 'Student';
+  let clean = String(nameStr).trim();
+  if (clean.includes('@')) clean = clean.split('@')[0];
+  clean = clean.replace(/\d+$/g, '');
+  clean = clean.replace(/[._-]+/g, ' ');
+  if (/^[a-zA-Z]+ns$/i.test(clean) && clean.length > 4) {
+    clean = clean.slice(0, -2) + ' N S';
+  } else if (/^[a-zA-Z]+k$/i.test(clean) && clean.length > 5) {
+    clean = clean.slice(0, -1) + ' K';
+  }
+  const parts = clean.split(' ').filter(Boolean).map(w => {
+    if (w.length <= 2 && /^[a-zA-Z]+$/.test(w)) return w.toUpperCase();
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  });
+  return parts.join(' ').trim() || 'Student';
+};
+
 // Helper to generate JWT Token
 const generateToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET || "visionassist_secret_key", {
@@ -801,7 +820,9 @@ router.post("/student-send-login-otp", async (req, res) => {
 
     if (!user) {
       const assignedId = await getNextStudentRegisterNumber();
-      const studentName = cleanEmail === 'januns1234@gmail.com' ? 'Jaanu Ns' : cleanEmail.split('@')[0];
+      const studentName = cleanEmail === 'januns1234@gmail.com' 
+        ? 'Jaanu N S' 
+        : (cleanEmail === 'sowmyans123@gmail.com' ? 'Sowmya N S' : formatSpokenName(cleanEmail.split('@')[0]));
       if (global.isMongoAvailable) {
         user = await User.create({
           username: studentName,
@@ -927,7 +948,9 @@ router.post("/student-login-otp", async (req, res) => {
 
     if (!user) {
       const assignedId = await getNextStudentRegisterNumber();
-      const studentName = cleanEmail === 'januns1234@gmail.com' ? 'Jaanu Ns' : cleanEmail.split('@')[0];
+      const studentName = cleanEmail === 'januns1234@gmail.com' 
+        ? 'Jaanu N S' 
+        : (cleanEmail === 'sowmyans123@gmail.com' ? 'Sowmya N S' : formatSpokenName(cleanEmail.split('@')[0]));
       if (global.isMongoAvailable) {
         user = await User.create({
           username: studentName,

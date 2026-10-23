@@ -381,9 +381,23 @@ export function formatSpokenName(nameStr) {
   if (clean.includes('@')) {
     clean = clean.split('@')[0];
   }
+  
+  // Strip trailing numbers which originate from email addresses / usernames (e.g. sowmyans123 -> sowmyans, rahul123 -> rahul)
+  clean = clean.replace(/\d+$/g, '');
+
+  // Replace common delimiters with spaces
   clean = clean.replace(/[._-]+/g, ' ');
+
+  // Decompose common South Indian initial suffixes attached to names
+  // e.g. sowmyans -> sowmya N S, nayanans -> nayana N S, januns -> jaanu N S, lakshmik -> lakshmi K
+  if (/^[a-zA-Z]+ns$/i.test(clean) && clean.length > 4) {
+    clean = clean.slice(0, -2) + ' N S';
+  } else if (/^[a-zA-Z]+k$/i.test(clean) && clean.length > 5) {
+    clean = clean.slice(0, -1) + ' K';
+  }
+
   const parts = clean.split(' ').filter(Boolean).map(w => {
-    if (w.length === 1) return w.toUpperCase();
+    if (w.length <= 2 && /^[a-zA-Z]+$/.test(w)) return w.toUpperCase();
     return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
   });
   return parts.join(' ').trim() || 'Student';
