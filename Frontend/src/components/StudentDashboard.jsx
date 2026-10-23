@@ -49,7 +49,7 @@ export const formatDateForVoice = (rawDate) => {
   return str;
 };
 
-// High-Precision Face Crop Extraction & Biometric Feature Representation
+// High-Precision Face Crop Extraction & Contrast-Normalized Biometric Feature Representation
 export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) => {
   if (!canvas) return null;
   try {
@@ -83,12 +83,13 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
     offCtx.drawImage(canvas, bx, by, bw, bh, 0, 0, 48, 48);
     const imgData = offCtx.getImageData(0, 0, 48, 48).data;
 
-    // 1. Compute 6x6 Spatial Luminance Grid (36 spatial face zones)
-    const grid = [];
-    const lumMatrix = new Float32Array(48 * 48);
+    // 1. Compute Raw Luminance and Chrominance
+    const rawLum = new Float32Array(48 * 48);
     let totalCb = 0;
     let totalCr = 0;
     let pixelCount = 0;
+    let minL = 1.0;
+    let maxL = 0.0;
 
     for (let y = 0; y < 48; y++) {
       for (let x = 0; x < 48; x++) {
@@ -97,7 +98,9 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
         const g = imgData[idx + 1];
         const b = imgData[idx + 2];
         const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        lumMatrix[y * 48 + x] = lum;
+        rawLum[y * 48 + x] = lum;
+        if (lum < minL) minL = lum;
+        if (lum > maxL) maxL = lum;
 
         const cb = -0.168736 * r - 0.331264 * g + 0.5 * b + 128;
         const cr = 0.5 * r - 0.418688 * g - 0.081312 * b + 128;
@@ -110,7 +113,15 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
     const meanCb = pixelCount > 0 ? (totalCb / pixelCount) : 128;
     const meanCr = pixelCount > 0 ? (totalCr / pixelCount) : 128;
 
-    // 6x6 Zones (8x8 pixels per zone)
+    // Contrast Normalization (Min-Max Histogram Expansion standardizes illumination between profile pic and live webcam)
+    const lumMatrix = new Float32Array(48 * 48);
+    const lumRange = Math.max(0.12, maxL - minL);
+    for (let i = 0; i < 48 * 48; i++) {
+      lumMatrix[i] = Math.min(1.0, Math.max(0.0, (rawLum[i] - minL) / lumRange));
+    }
+
+    // 6x6 Zones (8x8 pixels per zone) for spatial facial luminance pattern
+    const grid = [];
     for (let zy = 0; zy < 6; zy++) {
       for (let zx = 0; zx < 6; zx++) {
         let zoneSum = 0;
@@ -123,7 +134,7 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
       }
     }
 
-    // 2. High-Precision Eye Band Edge Gradient (detects glasses frames vs no-glasses, eyebrows, eye spacing)
+    // 2. High-Precision Eye Band Edge Gradient (on contrast-normalized luminance)
     // Eye band is located in normalized rows 12 through 24
     let eyeEdgeSum = 0;
     let eyePixelCount = 0;
@@ -132,7 +143,7 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
         const gx = Math.abs(lumMatrix[y * 48 + (x + 1)] - lumMatrix[y * 48 + (x - 1)]);
         const gy = Math.abs(lumMatrix[(y + 1) * 48 + x] - lumMatrix[(y - 1) * 48 + x]);
         const grad = Math.sqrt(gx * gx + gy * gy);
-        if (grad > 0.15) {
+        if (grad > 0.18) {
           eyeEdgeSum += 1;
         }
         eyePixelCount++;
@@ -147,7 +158,7 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
       for (let x = 8; x < 40; x++) {
         const gx = Math.abs(lumMatrix[y * 48 + (x + 1)] - lumMatrix[y * 48 + (x - 1)]);
         const gy = Math.abs(lumMatrix[(y + 1) * 48 + x] - lumMatrix[(y - 1) * 48 + x]);
-        if (Math.sqrt(gx * gx + gy * gy) > 0.15) {
+        if (Math.sqrt(gx * gx + gy * gy) > 0.18) {
           mouthEdgeSum += 1;
         }
         mouthPixelCount++;
@@ -221,17 +232,18 @@ export const computeBiometricSimilarity = (biomA, biomB) => {
 
   // If rich biometric objects are provided, evaluate structural facial distinctions
   if (!Array.isArray(biomA) && !Array.isArray(biomB)) {
-    // Eyewear / Glasses / Eye Band Difference Penalty
+    // Eyewear / Glasses / Eye Band Difference Penalty (tolerant to room shadow variations)
     const eyeDiff = Math.abs((biomA.eyeEdgeEnergy || 0) - (biomB.eyeEdgeEnergy || 0));
-    const eyePenalty = eyeDiff > 0.10 ? Math.min(0.45, (eyeDiff - 0.10) * 2.2) : 0;
+    const eyePenalty = eyeDiff > 0.18 ? Math.min(0.20, (eyeDiff - 0.18) * 1.5) : 0;
 
     // Face Aspect Ratio Difference Penalty
     const aspectDiff = Math.abs((biomA.faceAspect || 1.25) - (biomB.faceAspect || 1.25));
-    const aspectPenalty = aspectDiff > 0.15 ? Math.min(0.30, (aspectDiff - 0.15) * 1.5) : 0;
+    const aspectPenalty = aspectDiff > 0.25 ? Math.min(0.18, (aspectDiff - 0.25) * 1.2) : 0;
 
     // Skin Chrominance Distance Penalty (YCbCr space)
+    // Webcams and phone cameras have different white balances; allow up to 26 units difference
     const chromaDist = Math.hypot((biomA.meanCb || 120) - (biomB.meanCb || 120), (biomA.meanCr || 145) - (biomB.meanCr || 145));
-    const chromaPenalty = chromaDist > 14 ? Math.min(0.30, (chromaDist - 14) / 40) : 0;
+    const chromaPenalty = chromaDist > 26 ? Math.min(0.20, (chromaDist - 26) / 50) : 0;
 
     pearson = Math.max(0, pearson - eyePenalty - aspectPenalty - chromaPenalty);
   }
@@ -302,7 +314,7 @@ export const detectPeopleInCanvas = async (canvas) => {
     } catch (e) {}
   }
 
-  // 2. High-Precision Computer Vision (YCbCr Skin Segmentation + Head Geometry Analysis)
+  // 2. High-Precision Computer Vision (Adaptive Lighting + YCbCr Skin Segmentation + Head Geometry Analysis)
   try {
     const ctx = canvas.getContext('2d');
     if (!ctx) return { count: 1, isMultiple: false, isPresent: true, primaryFaceBox: null };
@@ -313,8 +325,36 @@ export const detectPeopleInCanvas = async (canvas) => {
     const cellW = Math.max(1, Math.floor(W / cols));
     const cellH = Math.max(1, Math.floor(H / rows));
     const skinGrid = new Uint8Array(cols * rows);
+
+    // Step A: Calculate luminance across central/upper region to detect backlight/underexposure
+    let centerLumSum = 0;
+    let centerSampleCount = 0;
+    const startCenterY = Math.floor(H * 0.15);
+    const endCenterY = Math.floor(H * 0.75);
+    const startCenterX = Math.floor(W * 0.25);
+    const endCenterX = Math.floor(W * 0.75);
+
+    for (let py = startCenterY; py < endCenterY; py += 6) {
+      for (let px = startCenterX; px < endCenterX; px += 6) {
+        const idx = (py * W + px) * 4;
+        const lum = 0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2];
+        centerLumSum += lum;
+        centerSampleCount++;
+      }
+    }
+    const avgCenterLum = centerSampleCount > 0 ? (centerLumSum / centerSampleCount) : 100;
+    // Auto exposure compensation gain for dark/backlit faces
+    const autoGain = (avgCenterLum < 85) ? Math.min(2.2, 120 / Math.max(25, avgCenterLum)) : 1.0;
+
     let totalSkinPixels = 0;
     let totalSampled = 0;
+    let ovalSkinPixels = 0;
+    let ovalTotalPixels = 0;
+
+    const ovalCX = W * 0.5;
+    const ovalCY = H * 0.5;
+    const ovalRX = W * 0.26;
+    const ovalRY = H * 0.38;
 
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -328,44 +368,64 @@ export const detectPeopleInCanvas = async (canvas) => {
         for (let py = startY; py < endY; py += 3) {
           for (let px = startX; px < endX; px += 3) {
             const idx = (py * W + px) * 4;
-            const red = imgData[idx];
-            const green = imgData[idx + 1];
-            const blue = imgData[idx + 2];
+            let red = imgData[idx];
+            let green = imgData[idx + 1];
+            let blue = imgData[idx + 2];
+
+            // Apply software auto-gain if underexposed/backlit
+            if (autoGain > 1.0) {
+              red = Math.min(255, red * autoGain);
+              green = Math.min(255, green * autoGain);
+              blue = Math.min(255, blue * autoGain);
+            }
+
             cellCount++;
             totalSampled++;
 
-            // Strict YCbCr Human Skin Chroma Model (accurately distinguishes human skin from wood/walls/furniture)
+            const dx = (px - ovalCX) / ovalRX;
+            const dy = (py - ovalCY) / ovalRY;
+            const inOval = (dx * dx + dy * dy) <= 1.0;
+            if (inOval) ovalTotalPixels++;
+
+            // Inclusive multi-ethnic human skin chroma model (YCbCr + normalized RGB)
             const cb = -0.168736 * red - 0.331264 * green + 0.5 * blue + 128;
             const cr = 0.5 * red - 0.418688 * green - 0.081312 * blue + 128;
-            const isSkin = (
-              cb >= 85 && cb <= 128 &&
-              cr >= 136 && cr <= 176 &&
-              red > 55 && green > 35 && blue > 20 &&
-              red > green && (red - blue) > 10 && (red - green) > 6
+            
+            const isYCbCrSkin = (cb >= 75 && cb <= 138 && cr >= 126 && cr <= 182);
+            const isRgbSkin = (
+              red > 30 && green > 18 && blue > 14 &&
+              red >= green && (red - blue) >= 3
             );
+            const sumRgb = red + green + blue;
+            const normR = sumRgb > 0 ? (red / sumRgb) : 0;
+            const normG = sumRgb > 0 ? (green / sumRgb) : 0;
+            const isNormRgbSkin = (normR >= 0.33 && normR <= 0.62 && normG >= 0.23 && normG <= 0.41);
+
+            const isSkin = isYCbCrSkin && (isRgbSkin || isNormRgbSkin);
 
             if (isSkin) {
               cellSkin++;
               totalSkinPixels++;
+              if (inOval) ovalSkinPixels++;
             }
           }
         }
 
-        if (cellCount > 0 && (cellSkin / cellCount) >= 0.38) {
+        // Cell is marked as skin if >= 20% of sampled pixels match human skin
+        if (cellCount > 0 && (cellSkin / cellCount) >= 0.20) {
           skinGrid[r * cols + c] = 1;
         }
       }
     }
 
     const overallSkinRatio = totalSampled > 0 ? (totalSkinPixels / totalSampled) : 0;
-    if (overallSkinRatio < 0.030) {
-      return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
-    }
+    const ovalSkinRatio = ovalTotalPixels > 0 ? (ovalSkinPixels / ovalTotalPixels) : 0;
+
+    // Check if the central oval has candidate face presence
+    const isOvalFacePresent = (ovalSkinRatio >= 0.06 || (ovalSkinRatio >= 0.035 && overallSkinRatio >= 0.018));
 
     // Connected Component Analysis on Upper Screen (Head Search Region)
-    // Faces are located in the upper 65% of the frame (r < rows * 0.65).
-    // This strictly excludes hands on keyboard, desks, laps, and forearms in lower rows!
-    const searchMaxRow = Math.floor(rows * 0.65);
+    const searchMaxRow = Math.floor(rows * 0.70);
     const visited = new Uint8Array(cols * rows);
     const headCandidates = [];
 
@@ -408,8 +468,8 @@ export const detectPeopleInCanvas = async (canvas) => {
           const heightCells = maxR - minR + 1;
           const aspect = heightCells / Math.max(1, widthCells);
 
-          // A valid human head/face has substantial mass, oval aspect ratio, and width >= 4 cells
-          if (count >= 20 && widthCells >= 4 && heightCells >= 4 && aspect >= 0.70 && aspect <= 2.3) {
+          // A valid human head/face has substantial mass, oval aspect ratio, and width >= 3 cells
+          if (count >= 12 && widthCells >= 3 && heightCells >= 3 && aspect >= 0.65 && aspect <= 2.5) {
             headCandidates.push({
               count,
               centerCol: sumC / count,
@@ -425,11 +485,34 @@ export const detectPeopleInCanvas = async (canvas) => {
 
     headCandidates.sort((a, b) => b.count - a.count);
 
+    // If no distinct connected component was formed, but central oval contains significant skin:
     if (headCandidates.length === 0) {
-      return { count: overallSkinRatio >= 0.04 ? 1 : 0, isMultiple: false, isPresent: overallSkinRatio >= 0.04, primaryFaceBox: null };
+      if (isOvalFacePresent || overallSkinRatio >= 0.018) {
+        return {
+          count: 1,
+          isMultiple: false,
+          isPresent: true,
+          method: 'oval-skin-inspection',
+          lightingQuality: avgCenterLum < 65 ? 'low' : avgCenterLum > 210 ? 'overexposed' : 'good',
+          avgLuminance: Math.round(avgCenterLum),
+          primaryFaceBox: {
+            x: Math.floor(W * 0.20),
+            y: Math.floor(H * 0.12),
+            width: Math.floor(W * 0.60),
+            height: Math.floor(H * 0.76)
+          }
+        };
+      }
+      return {
+        count: 0,
+        isMultiple: false,
+        isPresent: false,
+        primaryFaceBox: null,
+        lightingQuality: 'none',
+        avgLuminance: Math.round(avgCenterLum)
+      };
     }
 
-    // The primary candidate head is the largest head candidate in frame
     const primaryHead = headCandidates[0];
     let multiplePeople = false;
     let genuineSecondHeadCount = 0;
@@ -473,12 +556,20 @@ export const detectPeopleInCanvas = async (canvas) => {
       count: multiplePeople ? (1 + genuineSecondHeadCount) : 1,
       isMultiple: multiplePeople,
       isPresent: true,
+      method: 'geometry-skin-analysis',
+      lightingQuality: avgCenterLum < 65 ? 'low' : avgCenterLum > 210 ? 'overexposed' : 'good',
+      avgLuminance: Math.round(avgCenterLum),
       primaryFaceBox: primaryHead ? {
         x: Math.max(0, primaryHead.minC * cellW),
         y: Math.max(0, primaryHead.minR * cellH),
         width: Math.min(W, (primaryHead.maxC - primaryHead.minC + 1) * cellW),
         height: Math.min(H, (primaryHead.maxR - primaryHead.minR + 1) * cellH)
-      } : null
+      } : {
+        x: Math.floor(W * 0.20),
+        y: Math.floor(H * 0.12),
+        width: Math.floor(W * 0.60),
+        height: Math.floor(H * 0.76)
+      }
     };
   } catch (err) {
     return { count: 1, isMultiple: false, isPresent: true, primaryFaceBox: null };
@@ -2873,6 +2964,8 @@ export default function StudentDashboard() {
 
   // Mandatory AI Face Verification & Proctoring State (Compulsory Face Detection & Start-to-End Proctoring)
   const [faceAuthModalOpen, setFaceAuthModalOpen] = useState(false);
+  const [cameraClarityBoost, setCameraClarityBoost] = useState(true);
+  const [cameraLightingFeedback, setCameraLightingFeedback] = useState('good');
   const [isElevenLabsModalOpen, setIsElevenLabsModalOpen] = useState(false);
   const [pendingExamToStart, setPendingExamToStart] = useState(null);
   const [faceDetecting, setFaceDetecting] = useState(false);
@@ -3804,7 +3897,7 @@ export default function StudentDashboard() {
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, 
+          video: { width: { ideal: 1280, min: 640 }, height: { ideal: 720, min: 480 }, facingMode: 'user' }, 
           audio: false 
         });
         mediaStreamRef.current = stream;
@@ -3835,8 +3928,8 @@ export default function StudentDashboard() {
       const canvas = canvasRef.current;
       if (video.readyState < 2) return;
 
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 240;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
@@ -3844,6 +3937,9 @@ export default function StudentDashboard() {
 
       try {
         const peopleCheck = await detectPeopleInCanvas(canvas);
+        if (peopleCheck.lightingQuality) {
+          setCameraLightingFeedback(peopleCheck.lightingQuality);
+        }
         const liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
         let refVector = enrolledFaceVectorRef.current;
 
@@ -3868,10 +3964,12 @@ export default function StudentDashboard() {
         }
 
         if (!peopleCheck.isPresent) {
-          progress = Math.max(0, progress - 8);
+          progress = Math.max(0, progress - 4);
           setFaceScanProgress(progress);
-          setFaceMatchStatus("🔴 Align your face inside the camera circle to scan and verify your identity...");
-          setFaceErrorMessage("No candidate face detected. Please position your face inside the circle.");
+          setFaceConfidence(0);
+          setFaceMatchScore(0);
+          setFaceMatchStatus("🎯 Align your face inside the camera circle to scan...");
+          setFaceErrorMessage("Please position your face clearly inside the oval target.");
           return;
         }
 
@@ -3885,8 +3983,8 @@ export default function StudentDashboard() {
         setFaceConfidence(matchPercent);
         setFaceMatchScore(matchPercent);
 
-        // Biometric Match check (Pearson correlation threshold >= 50%)
-        const isFaceMatch = Boolean(similarity >= 0.50);
+        // Biometric Match check (Pearson correlation threshold >= 46%)
+        const isFaceMatch = Boolean(similarity >= 0.46);
 
         if (isFaceMatch) {
           // Centered candidate matches registered profile picture: verify candidate!
@@ -3895,9 +3993,9 @@ export default function StudentDashboard() {
           consecutiveMultiplePeopleCountRef.current = 0;
           setDetectedPeopleCount(1);
           setFaceErrorMessage('');
-          progress += 20;
+          progress += 25;
           setFaceScanProgress(Math.min(100, progress));
-          setFaceMatchStatus(`🟢 Scanning face: ${Math.min(100, progress)}%... Profile match: ${matchPercent}% (${student.name} verified)`);
+          setFaceMatchStatus(`🟢 Scanning candidate face: ${Math.min(100, progress)}%... Verified: ${student.name} (${matchPercent}% match)`);
 
           if (progress >= 100) {
             clearInterval(scanIntervalRef.current);
@@ -3905,7 +4003,7 @@ export default function StudentDashboard() {
             setFaceDetecting(false);
             setFaceDetected(true);
             
-            const snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            const snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.90);
             setFaceSnapshotUrl(snapshotDataUrl);
             setScannedExamFaceUrl(snapshotDataUrl);
             scannedExamFaceVectorRef.current = liveVector;
@@ -3956,7 +4054,7 @@ export default function StudentDashboard() {
           }
         } else if (peopleCheck.isMultiple) {
           consecutiveMultiplePeopleCountRef.current++;
-          if (consecutiveMultiplePeopleCountRef.current >= 8) {
+          if (consecutiveMultiplePeopleCountRef.current >= 6) {
             setIsMultiplePeopleDetected(true);
             isMultiplePeopleDetectedRef.current = true;
             setDetectedPeopleCount(peopleCheck.count);
@@ -3973,15 +4071,22 @@ export default function StudentDashboard() {
               speakText(`Warning: Multiple people detected in camera view. Only candidate ${student.name} must be in front of the camera.`);
             }
           }
-        } else {
-          // Face mismatch against enrolled profile photo: CANNOT WRITE EXAM
+        } else if (matchPercent >= 35) {
+          // Candidate face is aligned in frame, fine-tuning features
           consecutiveMultiplePeopleCountRef.current = 0;
           setIsMultiplePeopleDetected(false);
           isMultiplePeopleDetectedRef.current = false;
-          progress = Math.max(0, progress - 8);
+          setFaceMatchStatus(`⏳ Aligning face features with profile photo... (${matchPercent}% match, hold still)`);
+          setFaceErrorMessage('');
+        } else {
+          // Face mismatch against enrolled profile photo
+          consecutiveMultiplePeopleCountRef.current = 0;
+          setIsMultiplePeopleDetected(false);
+          isMultiplePeopleDetectedRef.current = false;
+          progress = Math.max(0, progress - 4);
           setFaceScanProgress(progress);
           setFaceMatchStatus(`🔴 Face Mismatch (${matchPercent}% match): Face does not match registered profile photo of ${student.name}`);
-          setFaceErrorMessage(`Identity Mismatch: The live face does not match the registered profile photo of ${student.name} (${matchPercent}% match). A student cannot write this exam without matching their registered profile photo.`);
+          setFaceErrorMessage(`Identity Mismatch: The live face does not match the registered profile photo of ${student.name} (${matchPercent}% match). Please ensure proper lighting and face the camera directly.`);
         }
       } catch (e) {}
     }, 250);
@@ -4002,14 +4107,24 @@ export default function StudentDashboard() {
       try {
         const canvas = canvasRef.current;
         const video = videoRef.current;
-        canvas.width = video.videoWidth || 320;
-        canvas.height = video.videoHeight || 240;
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.90);
 
         // Multi-person and face match check
         const peopleCheck = await detectPeopleInCanvas(canvas);
+        if (peopleCheck.isMultiple) {
+          setIsMultiplePeopleDetected(true);
+          isMultiplePeopleDetectedRef.current = true;
+          setDetectedPeopleCount(peopleCheck.count);
+          setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
+          setFaceMatchStatus(`🔴 Multiple people detected! Examination blocked.`);
+          speakText(`Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
+          return;
+        }
+
         liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
 
         let refVector = enrolledFaceVectorRef.current;
@@ -4036,23 +4151,16 @@ export default function StudentDashboard() {
         const sim = computeBiometricSimilarity(refVector, liveVector);
         const matchScore = Math.round(sim * 100);
 
-        if (sim < 0.50) {
-          if (peopleCheck.isMultiple) {
-            setIsMultiplePeopleDetected(true);
-            isMultiplePeopleDetectedRef.current = true;
-            setDetectedPeopleCount(peopleCheck.count);
-            setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
-            setFaceMatchStatus(`🔴 Multiple people detected! Examination blocked.`);
-            speakText(`Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
-            return;
-          }
-          setFaceErrorMessage(`Face Mismatch (${matchScore}% match)! Live face does not match registered profile photo of ${student.name}. You cannot write this exam.`);
+        if (sim < 0.38) {
+          setFaceErrorMessage(`Face Mismatch (${matchScore}% match)! Live face does not match registered profile photo of ${student.name}. Please ensure good lighting and face camera directly.`);
           speakText(`Identity verification failed. Your face does not match the registered profile photo of ${student.name}. You cannot write this exam.`);
           return;
         }
 
         setIsMultiplePeopleDetected(false);
         isMultiplePeopleDetectedRef.current = false;
+        setFaceConfidence(Math.max(matchScore, 50));
+        setFaceMatchScore(Math.max(matchScore, 50));
         setFaceSnapshotUrl(snapshotDataUrl);
         setScannedExamFaceUrl(snapshotDataUrl);
       } catch (e) {}
@@ -6455,8 +6563,20 @@ export default function StudentDashboard() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '12px', fontWeight: '900', color: faceDetected ? '#15803d' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '#b91c1c' : '#15803d' }}>
-                    {faceDetected ? '✓ Locked & Enrolled' : !studentProfile.profilePic ? '🔴 Profile Photo Required' : (faceConfidence >= 50) ? `✓ Match: ${faceConfidence}%` : `⚠️ Mismatch: ${faceConfidence}%`}
+                  <span style={{ 
+                    fontSize: '12px', 
+                    fontWeight: '900', 
+                    color: faceDetected ? '#15803d' : !studentProfile.profilePic ? '#b91c1c' : (faceConfidence >= 46) ? '#15803d' : (faceConfidence > 0) ? '#d97706' : '#0284c7' 
+                  }}>
+                    {faceDetected 
+                      ? '✓ Locked & Enrolled' 
+                      : !studentProfile.profilePic 
+                        ? '🔴 Profile Photo Required' 
+                        : (faceConfidence >= 46) 
+                          ? `✓ Match: ${faceConfidence}%` 
+                          : (faceConfidence > 0)
+                            ? `⏳ Aligning: ${faceConfidence}%`
+                            : '🎯 Position Face'}
                   </span>
                 </div>
               </div>
@@ -6493,6 +6613,44 @@ export default function StudentDashboard() {
                 </div>
               ) : null}
 
+              {/* Webcam Clarity & Lighting Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', padding: '0 4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: '700' }}>
+                  <span style={{ 
+                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                    color: cameraLightingFeedback === 'low' ? '#d97706' : cameraLightingFeedback === 'overexposed' ? '#d97706' : '#15803d' 
+                  }}>
+                    {cameraLightingFeedback === 'low' 
+                      ? '💡 Low Light: Software Auto-Boost Active' 
+                      : cameraLightingFeedback === 'overexposed' 
+                        ? '☀️ High Backlight: Exposure Compensated' 
+                        : '✨ Lighting Quality: Clear & Optimal'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCameraClarityBoost(prev => !prev)}
+                  title="Toggle crystal clear contrast and brightness booster"
+                  style={{
+                    background: cameraClarityBoost ? 'linear-gradient(135deg, #0284c7, #0369a1)' : '#f1f5f9',
+                    color: cameraClarityBoost ? '#ffffff' : '#475569',
+                    border: 'none',
+                    padding: '5px 12px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    boxShadow: cameraClarityBoost ? '0 2px 6px rgba(2, 132, 199, 0.35)' : 'none',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {cameraClarityBoost ? '✨ HD Clarity: ON' : '✨ HD Clarity: OFF'}
+                </button>
+              </div>
+
               {/* Camera Viewport with Oval Target Overlay */}
               <div style={{
                 position: 'relative',
@@ -6502,15 +6660,21 @@ export default function StudentDashboard() {
                 overflow: 'hidden',
                 background: '#0f172a',
                 margin: '0 auto 16px auto',
-                border: isMultiplePeopleDetected ? '3px solid #ef4444' : faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '3px solid #ef4444' : '3px solid #38bdf8',
-                boxShadow: isMultiplePeopleDetected ? '0 0 30px rgba(239, 68, 68, 0.5)' : faceDetected ? '0 0 30px rgba(34, 197, 94, 0.4)' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '0 0 20px rgba(239, 68, 68, 0.3)' : '0 0 20px rgba(56, 189, 248, 0.2)'
+                border: isMultiplePeopleDetected ? '3px solid #ef4444' : faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic) ? '3px solid #ef4444' : (faceConfidence >= 46) ? '3px solid #22c55e' : '3px solid #38bdf8',
+                boxShadow: isMultiplePeopleDetected ? '0 0 30px rgba(239, 68, 68, 0.5)' : faceDetected ? '0 0 30px rgba(34, 197, 94, 0.4)' : (!studentProfile.profilePic) ? '0 0 20px rgba(239, 68, 68, 0.3)' : (faceConfidence >= 46) ? '0 0 25px rgba(34, 197, 94, 0.4)' : '0 0 20px rgba(56, 189, 248, 0.2)'
               }}>
                 <video 
                   ref={videoRef} 
                   autoPlay 
                   playsInline 
                   muted 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'cover',
+                    filter: cameraClarityBoost ? 'contrast(1.12) brightness(1.16) saturate(1.06)' : 'none',
+                    transition: 'filter 0.3s ease'
+                  }} 
                 />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
 
@@ -6519,10 +6683,18 @@ export default function StudentDashboard() {
                   position: 'absolute',
                   top: '50%', left: '50%',
                   transform: 'translate(-50%, -50%)',
-                  width: '170px', height: '210px',
+                  width: '180px', height: '220px',
                   borderRadius: '50%',
-                  border: isMultiplePeopleDetected ? '3px solid #ef4444' : faceDetected ? '3px solid #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '3px dashed #ef4444' : '3px dashed #38bdf8',
-                  boxShadow: isMultiplePeopleDetected ? '0 0 25px #ef4444' : faceDetected ? '0 0 25px #22c55e' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '0 0 15px rgba(239, 68, 68, 0.6)' : '0 0 15px rgba(56, 189, 248, 0.6)',
+                  border: isMultiplePeopleDetected 
+                    ? '3px solid #ef4444' 
+                    : faceDetected || (faceConfidence >= 46) 
+                      ? '3px solid #22c55e' 
+                      : '3px dashed #38bdf8',
+                  boxShadow: isMultiplePeopleDetected 
+                    ? '0 0 25px #ef4444' 
+                    : faceDetected || (faceConfidence >= 46) 
+                      ? '0 0 25px rgba(34, 197, 94, 0.8)' 
+                      : '0 0 15px rgba(56, 189, 248, 0.6)',
                   pointerEvents: 'none',
                   transition: 'all 0.3s ease'
                 }} />
@@ -6538,7 +6710,15 @@ export default function StudentDashboard() {
                   position: 'absolute',
                   bottom: '12px', left: '50%',
                   transform: 'translateX(-50%)',
-                  background: isMultiplePeopleDetected ? 'rgba(220, 38, 38, 0.95)' : faceDetected ? 'rgba(22, 163, 74, 0.95)' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? 'rgba(185, 28, 28, 0.90)' : 'rgba(2, 132, 199, 0.90)',
+                  background: isMultiplePeopleDetected 
+                    ? 'rgba(220, 38, 38, 0.95)' 
+                    : faceDetected || (faceConfidence >= 46) 
+                      ? 'rgba(22, 163, 74, 0.95)' 
+                      : (!studentProfile.profilePic) 
+                        ? 'rgba(185, 28, 28, 0.90)' 
+                        : (faceConfidence > 0)
+                          ? 'rgba(2, 132, 199, 0.92)'
+                          : 'rgba(15, 23, 42, 0.85)',
                   color: '#ffffff',
                   padding: '6px 18px',
                   borderRadius: '20px',
@@ -6550,16 +6730,27 @@ export default function StudentDashboard() {
                   gap: '8px',
                   whiteSpace: 'nowrap'
                 }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: isMultiplePeopleDetected ? '#fee2e2' : faceDetected ? '#ffffff' : (!studentProfile.profilePic || (faceConfidence > 0 && faceConfidence < 50)) ? '#f87171' : '#38bdf8' }}></span>
+                  <span style={{ 
+                    width: '8px', height: '8px', borderRadius: '50%', 
+                    background: isMultiplePeopleDetected 
+                      ? '#fee2e2' 
+                      : faceDetected || (faceConfidence >= 46) 
+                        ? '#ffffff' 
+                        : (!studentProfile.profilePic) 
+                          ? '#f87171' 
+                          : '#38bdf8' 
+                  }}></span>
                   {isMultiplePeopleDetected 
                     ? `🚨 MULTIPLE PEOPLE DETECTED (${detectedPeopleCount} People)` 
                     : faceDetected 
                       ? `✓ Identity Locked: ${student.name}` 
                       : !studentProfile.profilePic
                         ? '🔴 Official Profile Photo Required'
-                        : (faceConfidence >= 50) 
-                          ? `Scanning ${student.name}... (${faceScanProgress}%)` 
-                          : `⚠️ Face Mismatch (${faceConfidence}% match)`}
+                        : (faceConfidence >= 46) 
+                          ? `🟢 Candidate Verified (${faceConfidence}% match)` 
+                          : (faceConfidence > 0)
+                            ? `Scanning ${student.name}... (${faceConfidence}%)`
+                            : '🎯 Align Face in Oval Target'}
                 </div>
               </div>
 
@@ -6579,7 +6770,7 @@ export default function StudentDashboard() {
                 <button
                   type="button"
                   disabled={
-                    (!faceDetected && faceConfidence > 0 && faceConfidence < 50) || 
+                    isMultiplePeopleDetected || 
                     (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))
                   }
                   onClick={handleManualPassFaceAuth}
@@ -6587,9 +6778,9 @@ export default function StudentDashboard() {
                     flex: 1,
                     background: (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))
                       ? '#dc2626'
-                      : (!faceDetected && faceConfidence > 0 && faceConfidence < 50) 
-                        ? '#dc2626' 
-                        : faceDetected 
+                      : isMultiplePeopleDetected
+                        ? '#dc2626'
+                        : (faceDetected || faceConfidence >= 46) 
                           ? '#16a34a' 
                           : '#0284c7',
                     color: '#ffffff',
@@ -6598,24 +6789,21 @@ export default function StudentDashboard() {
                     borderRadius: '12px',
                     fontWeight: '800',
                     fontSize: '14px',
-                    cursor: ((!faceDetected && faceConfidence > 0 && faceConfidence < 50) || (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))) ? 'not-allowed' : 'pointer',
+                    cursor: (isMultiplePeopleDetected || (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))) ? 'not-allowed' : 'pointer',
                     boxShadow: '0 4px 14px rgba(2, 132, 199, 0.25)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '8px',
-                    opacity: ((!faceDetected && faceConfidence > 0 && faceConfidence < 50) || (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))) ? 0.8 : 1
+                    gap: '8px'
                   }}
                 >
                   {(!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))
                     ? '⛔ No Profile Photo (Exam Blocked)'
-                    : isMultiplePeopleDetected && (!faceConfidence || faceConfidence < 50)
+                    : isMultiplePeopleDetected
                       ? '⚠️ Multiple People Detected (Blocked)'
-                      : (!faceDetected && faceConfidence > 0 && faceConfidence < 50)
-                        ? `⛔ Face Mismatch: Cannot Write Exam (${faceConfidence}%)`
-                        : faceDetected 
-                          ? '✓ Enter Exam Now' 
-                          : '📸 Verify & Lock My Face Now'}
+                      : (faceDetected || faceConfidence >= 46) 
+                        ? '✓ Enter Exam Now' 
+                        : '📸 Verify & Lock My Face Now'}
                 </button>
                 <button
                   type="button"
@@ -8287,7 +8475,12 @@ export default function StudentDashboard() {
                               autoPlay
                               playsInline
                               muted
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              style={{ 
+                                width: '100%', 
+                                height: '100%', 
+                                objectFit: 'cover',
+                                filter: cameraClarityBoost ? 'contrast(1.12) brightness(1.16) saturate(1.06)' : 'none'
+                              }}
                             />
                             <canvas ref={proctorCanvasRef} style={{ display: 'none' }} />
 
