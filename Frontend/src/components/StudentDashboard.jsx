@@ -511,8 +511,8 @@ const readStudentProfile = () => {
       delete userProfile.studentId;
     }
 
-    const rawStoredName = userProfile.name || session.name || session.fullName || session.username || regUser.name || regUser.username || localStorage.getItem('user_name') || (userEmail ? userEmail.split('@')[0] : '') || 'Nayana N S';
-    const cleanName = rawStoredName ? formatSpokenName(rawStoredName) : 'Nayana N S';
+    const rawStoredName = userProfile.name || session.name || session.fullName || session.username || regUser.name || regUser.username || localStorage.getItem('user_name') || (userEmail ? userEmail.split('@')[0] : '') || 'Student';
+    const cleanName = rawStoredName ? formatSpokenName(rawStoredName) : (userEmail ? userEmail.split('@')[0] : 'Student');
 
     const email = userEmail || userProfile.email || session.email || 'student@school.edu';
     
@@ -2061,6 +2061,118 @@ const initialResults = [];
 
 const initialAnnouncements = [];
 
+export const isExamAssignedToStudent = (exam, studentEmail, studentName) => {
+  if (!exam) return false;
+  const cleanEmail = (studentEmail || '').toLowerCase().trim();
+  const cleanName = (studentName || '').toLowerCase().trim();
+
+  const targetEmail = String(exam.targetStudentEmail || '').toLowerCase().trim();
+  const targetName = String(exam.targetStudentName || '').toLowerCase().trim();
+  const assignedList = Array.isArray(exam.assignedStudents) 
+    ? exam.assignedStudents.map(s => String(s).toLowerCase().trim()) 
+    : [];
+
+  const examTitle = String(exam.title || exam.examTitle || '').toLowerCase();
+  const examDesc = String(exam.instructions || exam.description || '').toLowerCase();
+
+  // 1. Explicit target email check
+  if (targetEmail) {
+    return cleanEmail && targetEmail === cleanEmail;
+  }
+
+  // 2. Explicit target name check
+  if (targetName) {
+    if (!cleanName) return false;
+    return targetName === cleanName || cleanName.includes(targetName) || targetName.includes(cleanName);
+  }
+
+  // 3. Assigned students list (not 'all')
+  if (assignedList.length > 0 && !assignedList.includes('all')) {
+    return assignedList.some(s => 
+      (cleanEmail && s === cleanEmail) || 
+      (cleanName && (s === cleanName || cleanName.includes(s) || s.includes(cleanName)))
+    );
+  }
+
+  // 4. Personalized exam in title or instructions (e.g. "Personalized Exam for Nayana Ns" or "Assessment - Nayana Ns")
+  const personalizedMatch = examTitle.match(/personalized exam for ([^:]+)/i) || 
+                            examTitle.match(/assessment - ([a-z0-9 ]+)/i) ||
+                            examDesc.match(/specifically for ([^.]+)/i);
+  if (personalizedMatch) {
+    const extractedName = personalizedMatch[1].trim().toLowerCase();
+    if (extractedName && extractedName !== 'all' && extractedName !== 'blind students') {
+      if (!cleanName) return false;
+      return cleanName === extractedName || cleanName.includes(extractedName) || extractedName.includes(cleanName);
+    }
+  }
+
+  // 5. If title contains another student's name (e.g. "Nayana" when user is "Sowmya")
+  if (cleanName && !cleanName.includes('nayana')) {
+    if (examTitle.includes('nayana') || examDesc.includes('nayana')) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+export const isNotificationForStudent = (notif, studentEmail, studentName) => {
+  if (!notif) return false;
+  const cleanEmail = (studentEmail || '').toLowerCase().trim();
+  const cleanName = (studentName || '').toLowerCase().trim();
+
+  const idStr = String(notif.id || '');
+  // Discard legacy mock notifications
+  if (idStr.startsWith('notif-1') || idStr.startsWith('notif-2') || idStr.startsWith('notif-3') ||
+      idStr.startsWith('notif-4') || idStr.startsWith('notif-5') || idStr.startsWith('notif-6')) return false;
+
+  const title = String(notif.title || '').toLowerCase();
+  const detail = String(notif.detail || notif.message || '').toLowerCase();
+
+  // Discard known fake static announcement strings
+  if (title.includes('computer networks exam starts in 30 minutes')) return false;
+  if (title.includes('operating systems theory assessment') && idStr.startsWith('notif-')) return false;
+  if (title.includes('physics motion & laws of force') && idStr.startsWith('notif-')) return false;
+  if (title.includes('computer networks & cyber security') && title.includes('result published')) return false;
+  if (title.includes('extra 15 mins allocated for exam') && idStr.startsWith('notif-')) return false;
+  if (title.includes('emergency sos request resolved') && idStr.startsWith('notif-')) return false;
+
+  const tEmail = String(notif.targetStudentEmail || '').toLowerCase().trim();
+  const tName = String(notif.targetStudentName || '').toLowerCase().trim();
+
+  // 1. Explicit target email check
+  if (tEmail) {
+    return cleanEmail && tEmail === cleanEmail;
+  }
+
+  // 2. Explicit target name check
+  if (tName) {
+    if (!cleanName) return false;
+    return tName === cleanName || cleanName.includes(tName) || tName.includes(cleanName);
+  }
+
+  // 3. Personalized check in title/detail
+  const personalizedMatch = title.match(/personalized exam for ([^:]+)/i) || 
+                            detail.match(/specifically for ([^.]+)/i) ||
+                            title.match(/assessment - ([a-z0-9 ]+)/i);
+  if (personalizedMatch) {
+    const extractedName = personalizedMatch[1].trim().toLowerCase();
+    if (extractedName && extractedName !== 'all' && extractedName !== 'blind students') {
+      if (!cleanName) return false;
+      return cleanName === extractedName || cleanName.includes(extractedName) || extractedName.includes(cleanName);
+    }
+  }
+
+  // 4. Other student name in title/detail
+  if (cleanName && !cleanName.includes('nayana')) {
+    if (title.includes('nayana') || detail.includes('nayana')) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export const isExamActiveNow = (exam) => {
   if (!exam) return false;
   const status = (exam.status || '').toLowerCase();
@@ -2491,10 +2603,9 @@ export default function StudentDashboard() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          return parsed.filter(n => {
-            const idStr = String(n.id || '');
-            return !idStr.startsWith('notif-1') && !idStr.startsWith('notif-2') && !idStr.startsWith('notif-3') && !idStr.startsWith('notif-4') && !idStr.startsWith('notif-5') && !idStr.startsWith('notif-6');
-          });
+          const sEmail = (studentProfile.email || '').toLowerCase().trim();
+          const sName = (studentProfile.name || '').toLowerCase().trim();
+          return parsed.filter(n => isNotificationForStudent(n, sEmail, sName));
         }
       }
     } catch (e) {}
@@ -2718,24 +2829,9 @@ export default function StudentDashboard() {
     const studentName = (student.name || studentProfile.name || '').toLowerCase().trim();
 
     const matching = (exams || []).filter(ex => {
-      // 1. If exam is targeted to a particular student, check if this student matches
-      const targetEmail = (ex.targetStudentEmail || '').toLowerCase().trim();
-      const targetName = (ex.targetStudentName || '').toLowerCase().trim();
-      const assignedList = Array.isArray(ex.assignedStudents) 
-        ? ex.assignedStudents.map(s => String(s).toLowerCase().trim()) 
-        : [];
-
-      if (targetEmail) {
-        // Targeted to a specific student: ONLY that student can see it
-        const isMyExam = (studentEmail && targetEmail === studentEmail) || 
-                         (studentName && targetName && targetName === studentName);
-        if (!isMyExam) return false;
-      } else if (assignedList.length > 0 && !assignedList.includes('all')) {
-        // Assigned to specific students
-        const isAssigned = assignedList.some(s => 
-          (studentEmail && s === studentEmail) || (studentName && s === studentName)
-        );
-        if (!isAssigned) return false;
+      // 1. Is this exam assigned to this student?
+      if (!isExamAssignedToStudent(ex, studentEmail, studentName)) {
+        return false;
       }
 
       // 2. Filter by activeSubject
@@ -5097,20 +5193,7 @@ export default function StudentDashboard() {
             const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
             const studentName = (student.name || studentProfile.name || '').toLowerCase().trim();
 
-            const cleanNotifs = parsedNotifs.filter(n => {
-              const idStr = String(n.id || '');
-              if (idStr.startsWith('notif-1') || idStr.startsWith('notif-2') || idStr.startsWith('notif-3') ||
-                  idStr.startsWith('notif-4') || idStr.startsWith('notif-5') || idStr.startsWith('notif-6')) return false;
-              if (String(n.title || '').includes('Computer Networks exam starts in 30 minutes')) return false;
-              if (String(n.title || '').includes('Operating Systems Theory Assessment') && idStr.startsWith('notif-')) return false;
-
-              // Student target check
-              const tEmail = String(n.targetStudentEmail || '').toLowerCase().trim();
-              const tName = String(n.targetStudentName || '').toLowerCase().trim();
-              if (tEmail && studentEmail && tEmail !== studentEmail) return false;
-              if (tName && studentName && tName !== studentName) return false;
-              return true;
-            });
+            const cleanNotifs = parsedNotifs.filter(n => isNotificationForStudent(n, studentEmail, studentName));
 
             setAnnouncements(cleanNotifs);
             if (cleanNotifs.length !== parsedNotifs.length) {
@@ -5123,7 +5206,7 @@ export default function StudentDashboard() {
               if (!seenNotifIdsRef.current.has(notifIdStr)) {
                 seenNotifIdsRef.current.add(notifIdStr);
                 setActivePopupNotif(n);
-                speakText(`Notification Alert! ${n.title}. ${n.detail}`);
+                speakText(`Notification Alert! ${n.title}. ${n.detail || n.message || ''}`);
               }
             });
           }
@@ -7585,11 +7668,14 @@ export default function StudentDashboard() {
             <button 
               onClick={() => setActiveTab('Notifications')}
               style={{ position: 'relative', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+              title="Notifications"
             >
               <Bell size={20} color="#475569" />
-              <span style={{ position: 'absolute', top: '2px', right: '2px', background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 'bold', width: '16px', height: '16px', borderRadius: '50%', display: 'grid', placeItems: 'center' }}>
-                3
-              </span>
+              {announcements.filter(a => !a.read).length > 0 && (
+                <span style={{ position: 'absolute', top: '2px', right: '2px', background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 'bold', minWidth: '16px', height: '16px', padding: '0 4px', borderRadius: '50%', display: 'grid', placeItems: 'center' }}>
+                  {announcements.filter(a => !a.read).length}
+                </span>
+              )}
             </button>
 
             <div 
