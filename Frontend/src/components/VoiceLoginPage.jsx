@@ -113,12 +113,8 @@ export default function VoiceLoginPage() {
     try {
       localStorage.removeItem('auth_session');
       localStorage.removeItem('user');
-      localStorage.removeItem('user_name');
       localStorage.removeItem('token');
       localStorage.removeItem('role');
-      localStorage.removeItem('custom_student_profile');
-      localStorage.removeItem('student_profile_pic');
-      localStorage.removeItem('registered_user');
       localStorage.removeItem('draft_teacher_exam');
       localStorage.removeItem('draft_teacher_selected_qids');
     } catch (e) {}

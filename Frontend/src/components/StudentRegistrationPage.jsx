@@ -581,20 +581,18 @@ export default function StudentRegistrationPage() {
       const res = await registerUser(regPayload);
       if (res && res.success) {
         try {
-          localStorage.removeItem('custom_student_profile');
-          localStorage.removeItem('student_profile_pic');
-          localStorage.removeItem('user_name');
-          localStorage.removeItem('registered_user');
           // Ensure newly registered student starts with zero exams and zero certificates
           const prevCompleted = JSON.parse(localStorage.getItem('student_completed_results') || '[]');
           localStorage.setItem('student_completed_results', JSON.stringify(prevCompleted.filter(r => (r.studentEmail || r.email || '').toLowerCase().trim() !== cleanEmail.toLowerCase())));
           const prevShared = JSON.parse(localStorage.getItem('shared_student_results') || '[]');
           localStorage.setItem('shared_student_results', JSON.stringify(prevShared.filter(r => (r.studentEmail || r.email || '').toLowerCase().trim() !== cleanEmail.toLowerCase())));
         } catch (e) {}
+        const savedPic = res.user?.profilePic || localStorage.getItem('student_profile_pic') || null;
         localStorage.setItem('auth_session', JSON.stringify({ 
           email: res.user?.email || cleanEmail, 
           role: 'student', 
           name: fullName,
+          profilePic: savedPic,
           phone: phoneToUse,
           studentId: res.user?.studentId || res.user?.registerNumber || '',
           registerNumber: res.user?.registerNumber || res.user?.studentId || ''

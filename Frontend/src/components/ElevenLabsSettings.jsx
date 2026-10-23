@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getElevenLabsConfig, saveElevenLabsConfig, ELEVENLABS_VOICES, speakWithElevenLabs } from '../services/elevenlabs';
+import { speakBrowserSpeech } from './speech';
 
 export default function ElevenLabsSettings({ isOpen, onClose }) {
   const [apiKey, setApiKey] = useState('');
@@ -20,11 +21,35 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
+  const handleVoiceChange = (newVoiceId) => {
+    setVoiceId(newVoiceId);
+    saveElevenLabsConfig({ apiKey: apiKey.trim(), voiceId: newVoiceId, enabled: true });
+    const selectedVoiceObj = ELEVENLABS_VOICES.find(v => v.id === newVoiceId) || ELEVENLABS_VOICES[0];
+    const charName = selectedVoiceObj.name.split(' ')[0];
+    const previewText = `Voice switched to ${charName}. I am ready to assist you.`;
+    if (apiKey.trim()) {
+      speakWithElevenLabs(previewText, { voiceId: newVoiceId, apiKey: apiKey.trim() }).then(ok => {
+        if (!ok) speakBrowserSpeech(previewText, 'en-US', { voiceId: newVoiceId });
+      });
+    } else {
+      speakBrowserSpeech(previewText, 'en-US', { voiceId: newVoiceId });
+    }
+  };
+
   const handleSave = (e) => {
     e.preventDefault();
     saveElevenLabsConfig({ apiKey: apiKey.trim(), voiceId, enabled });
-    setStatusMessage({ text: 'ElevenLabs Voice Settings saved successfully!', type: 'success' });
-    speakWithElevenLabs('ElevenLabs settings saved successfully!');
+    const selectedVoiceObj = ELEVENLABS_VOICES.find(v => v.id === voiceId) || ELEVENLABS_VOICES[0];
+    const charName = selectedVoiceObj.name.split(' ')[0];
+    setStatusMessage({ text: `${charName} Voice Settings saved successfully!`, type: 'success' });
+    const saveConfirm = `${charName} voice assistant settings saved successfully!`;
+    if (apiKey.trim()) {
+      speakWithElevenLabs(saveConfirm, { voiceId, apiKey: apiKey.trim() }).then(succ => {
+        if (!succ) speakBrowserSpeech(saveConfirm, 'en-US', { voiceId });
+      });
+    } else {
+      speakBrowserSpeech(saveConfirm, 'en-US', { voiceId });
+    }
     setTimeout(() => setStatusMessage({ text: '', type: 'success' }), 4000);
   };
 
@@ -32,17 +57,24 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
     setIsTesting(true);
     saveElevenLabsConfig({ apiKey: apiKey.trim(), voiceId, enabled: true });
     
-    const sampleText = "Hello! I am Rachel, your dedicated ElevenLabs AI voice assistant. I am ready to assist you.";
-    const success = await speakWithElevenLabs(sampleText, { voiceId, apiKey: apiKey.trim() });
+    const selectedVoiceObj = ELEVENLABS_VOICES.find(v => v.id === voiceId) || ELEVENLABS_VOICES[0];
+    const charName = selectedVoiceObj.name.split(' ')[0];
+    const sampleText = `Hello! I am ${charName}, your dedicated AI voice assistant. I am ready to assist you.`;
+    
+    let success = false;
+    if (apiKey.trim()) {
+      success = await speakWithElevenLabs(sampleText, { voiceId, apiKey: apiKey.trim() });
+    }
     
     if (!success) {
+      speakBrowserSpeech(sampleText, 'en-US', { voiceId });
       setStatusMessage({ 
-        text: 'ElevenLabs API call failed. Please check your ElevenLabs API Key from elevenlabs.io.', 
-        type: 'error' 
+        text: `Playing ${charName} (${selectedVoiceObj.gender}) voice sample successfully!`, 
+        type: 'success' 
       });
     } else {
       setStatusMessage({ 
-        text: 'Playing ElevenLabs AI voice sample successfully!', 
+        text: `Playing ${charName} (${selectedVoiceObj.gender}) ElevenLabs AI voice sample successfully!`, 
         type: 'success' 
       });
     }
@@ -140,7 +172,7 @@ export default function ElevenLabsSettings({ isOpen, onClose }) {
             </label>
             <select
               value={voiceId}
-              onChange={(e) => setVoiceId(e.target.value)}
+              onChange={(e) => handleVoiceChange(e.target.value)}
               style={{
                 width: '100%',
                 padding: '12px 14px',

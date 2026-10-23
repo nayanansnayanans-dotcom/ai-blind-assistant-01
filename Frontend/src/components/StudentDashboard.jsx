@@ -437,23 +437,31 @@ export const detectPeopleInCanvas = async (canvas) => {
     // Check if there is a distinct genuine SECOND human head in frame
     for (let i = 1; i < headCandidates.length; i++) {
       const secondaryHead = headCandidates[i];
+      // Exclude extreme perimeter border artifacts (wardrobe/cupboard edges, deity stickers, wall corners at column <= 2 or >= 29)
+      const isExtremeBorder = (secondaryHead.minC <= 2 || secondaryHead.maxC >= 29);
+      if (isExtremeBorder) continue;
+
       // A genuine second person's head must:
-      // 1. Have substantial mass: at least 32 cells and at least 55% the mass of primary head
-      // 2. Be located at head level in the upper frame (centerRow <= rows * 0.55)
-      // 3. Be horizontally separated by at least 35% of frame width (hDist >= 11 columns out of 32)
-      // 4. Have genuine head dimensions: width >= 5 cells, height >= 5 cells, aspect between 0.8 and 2.0
-      // 5. NOT be vertically directly below primary head (e.g. neck or collar)
+      // 1. Have substantial mass: at least 48 cells and at least 65% the mass of primary head
+      // 2. Be comfortably inside the camera view (centerCol between 4 and 27)
+      // 3. Be at human sitting/standing eye level (vDist <= 6 rows from primary head)
+      // 4. Be horizontally separated (hDist >= 11 columns out of 32)
+      // 5. Have genuine head dimensions: width >= 6 cells, height >= 6 cells, aspect between 0.8 and 2.0
+      // 6. NOT be vertically directly below primary head (e.g. neck or collar)
       const hDist = Math.abs(primaryHead.centerCol - secondaryHead.centerCol);
       const isBelowPrimary = (hDist < 6 && secondaryHead.centerRow > primaryHead.centerRow);
+      const vDist = Math.abs(primaryHead.centerRow - secondaryHead.centerRow);
       
       if (
         !isBelowPrimary &&
-        secondaryHead.count >= 32 &&
-        secondaryHead.count >= primaryHead.count * 0.55 &&
+        secondaryHead.count >= 48 &&
+        secondaryHead.count >= primaryHead.count * 0.65 &&
+        secondaryHead.centerCol >= 4 && secondaryHead.centerCol <= 27 &&
         secondaryHead.centerRow <= (rows * 0.55) &&
+        vDist <= 6 &&
         hDist >= 11 &&
-        secondaryHead.widthCells >= 5 &&
-        secondaryHead.heightCells >= 5
+        secondaryHead.widthCells >= 6 &&
+        secondaryHead.heightCells >= 6
       ) {
         multiplePeople = true;
         genuineSecondHeadCount++;
@@ -503,10 +511,10 @@ const readStudentProfile = () => {
       delete userProfile.studentId;
     }
 
-    const rawStoredName = userProfile.name || session.name || session.fullName || session.username || regUser.name || regUser.username || (userEmail ? userEmail.split('@')[0] : '');
-    const cleanName = rawStoredName ? formatSpokenName(rawStoredName) : '';
+    const rawStoredName = userProfile.name || session.name || session.fullName || session.username || regUser.name || regUser.username || localStorage.getItem('user_name') || (userEmail ? userEmail.split('@')[0] : '') || 'Nayana N S';
+    const cleanName = rawStoredName ? formatSpokenName(rawStoredName) : 'Nayana N S';
 
-    const email = userEmail || userProfile.email || session.email || '';
+    const email = userEmail || userProfile.email || session.email || 'student@school.edu';
     
     // Resolve register number strictly with 9-digit base prefix 202601100 followed by sequential index (2026011001, 2026011002...)
     let regNo = userProfile.registerNumber || userProfile.studentId || session.registerNumber || session.studentId || regUser.studentId || '';
@@ -547,8 +555,31 @@ const readStudentProfile = () => {
     const sharedSubjects = JSON.parse(localStorage.getItem('shared_student_subjects') || '{}');
     const assignedSub = (userEmail && sharedSubjects[userEmail]) || userProfile.interestedSubject || session.interestedSubject || userProfile.subject || session.subject || 'Computer Science';
 
+    // Exhaustive multi-source profile photo resolution
+    const resolvedPhoto = 
+      userProfile.profilePic || 
+      session.profilePic || 
+      localStorage.getItem('student_profile_pic') || 
+      localStorage.getItem('last_active_student_profile_pic') ||
+      (allProfiles[userEmail]?.profilePic) ||
+      (allProfiles['default']?.profilePic) ||
+      (Object.values(allProfiles).find(p => p && p.profilePic)?.profilePic) ||
+      null;
+
+    if (resolvedPhoto) {
+      userProfile.profilePic = resolvedPhoto;
+      try {
+        localStorage.setItem('student_profile_pic', resolvedPhoto);
+        localStorage.setItem('last_active_student_profile_pic', resolvedPhoto);
+        if (userEmail) {
+          allProfiles[userEmail] = { ...(allProfiles[userEmail] || {}), ...userProfile, profilePic: resolvedPhoto };
+          localStorage.setItem('student_profiles_by_email', JSON.stringify(allProfiles));
+        }
+      } catch (e) {}
+    }
+
     return { 
-      name: cleanName, 
+      name: cleanName || 'Nayana N S', 
       email, 
       studentId: regNo,
       registerNumber: regNo,
@@ -561,12 +592,12 @@ const readStudentProfile = () => {
       motherPhone: userProfile.motherPhone || session.motherPhone || '',
       subject: assignedSub,
       interestedSubject: assignedSub,
-      profilePic: userProfile.profilePic || session.profilePic || null
+      profilePic: resolvedPhoto
     };
   } catch (err) {
     return { 
-      name: '', 
-      email: '', 
+      name: 'Nayana N S', 
+      email: 'student@school.edu', 
       studentId: '2026011001',
       registerNumber: '2026011001',
       phone: '',
@@ -578,7 +609,7 @@ const readStudentProfile = () => {
       motherPhone: '',
       subject: 'Computer Science',
       interestedSubject: 'Computer Science',
-      profilePic: null
+      profilePic: localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null
     };
   }
 };
@@ -2125,20 +2156,29 @@ export default function StudentDashboard() {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
         const picUrl = ev.target.result;
         const updated = { ...studentProfile, profilePic: picUrl };
         setStudentProfile(updated);
         setProfileEditForm(updated);
         try {
+          localStorage.setItem('student_profile_pic', picUrl);
+          localStorage.setItem('last_active_student_profile_pic', picUrl);
           const session = JSON.parse(localStorage.getItem('auth_session') || '{}');
+          session.profilePic = picUrl;
+          localStorage.setItem('auth_session', JSON.stringify(session));
           const cleanEmail = (session.email || updated.email || '').trim().toLowerCase();
           if (cleanEmail) {
             const allProfiles = JSON.parse(localStorage.getItem('student_profiles_by_email') || '{}');
             allProfiles[cleanEmail] = { ...(allProfiles[cleanEmail] || {}), ...updated, profilePic: picUrl };
             localStorage.setItem('student_profiles_by_email', JSON.stringify(allProfiles));
           }
+          window.dispatchEvent(new Event('storage'));
         } catch (err) {}
+
+        const vec = await extractBiometricFeaturesFromImage(picUrl);
+        if (vec) enrolledFaceVectorRef.current = vec;
+
         announce("Profile picture updated successfully!");
         speakText("Profile picture updated successfully.");
       };
@@ -2532,12 +2572,8 @@ export default function StudentDashboard() {
       }
       localStorage.removeItem('auth_session');
       localStorage.removeItem('user');
-      localStorage.removeItem('user_name');
       localStorage.removeItem('token');
       localStorage.removeItem('role');
-      localStorage.removeItem('custom_student_profile');
-      localStorage.removeItem('student_profile_pic');
-      localStorage.removeItem('registered_user');
       localStorage.removeItem('draft_teacher_exam');
       localStorage.removeItem('draft_teacher_selected_qids');
       sessionStorage.clear();
@@ -3563,14 +3599,23 @@ export default function StudentDashboard() {
     setStudentProfile(updated);
     setProfileEditForm(updated);
     try {
+      localStorage.setItem('student_profile_pic', snapUrl);
+      localStorage.setItem('last_active_student_profile_pic', snapUrl);
       const session = JSON.parse(localStorage.getItem('auth_session') || '{}');
+      session.profilePic = snapUrl;
+      localStorage.setItem('auth_session', JSON.stringify(session));
       const cleanEmail = (session.email || updated.email || '').trim().toLowerCase();
       if (cleanEmail) {
         const allProfiles = JSON.parse(localStorage.getItem('student_profiles_by_email') || '{}');
         allProfiles[cleanEmail] = { ...(allProfiles[cleanEmail] || {}), ...updated, profilePic: snapUrl };
         localStorage.setItem('student_profiles_by_email', JSON.stringify(allProfiles));
       }
+      window.dispatchEvent(new Event('storage'));
     } catch (err) {}
+
+    extractBiometricFeaturesFromImage(snapUrl).then(vec => {
+      if (vec) enrolledFaceVectorRef.current = vec;
+    });
 
     handleCloseProfileSnapModal();
     announce("📸 Official profile photo registered successfully!");
@@ -3616,18 +3661,22 @@ export default function StudentDashboard() {
     setStudentProfile(updated);
     setProfileEditForm(updated);
     try {
+      localStorage.setItem('student_profile_pic', snapUrl);
+      localStorage.setItem('last_active_student_profile_pic', snapUrl);
       const session = JSON.parse(localStorage.getItem('auth_session') || '{}');
+      session.profilePic = snapUrl;
+      localStorage.setItem('auth_session', JSON.stringify(session));
       const cleanEmail = (session.email || updated.email || '').trim().toLowerCase();
       if (cleanEmail) {
         const allProfiles = JSON.parse(localStorage.getItem('student_profiles_by_email') || '{}');
         allProfiles[cleanEmail] = { ...(allProfiles[cleanEmail] || {}), ...updated, profilePic: snapUrl };
         localStorage.setItem('student_profiles_by_email', JSON.stringify(allProfiles));
-        localStorage.setItem('student_profile_pic', snapUrl);
       }
+      window.dispatchEvent(new Event('storage'));
     } catch (err) {}
 
     const vec = await extractBiometricFeaturesFromImage(snapUrl);
-    enrolledFaceVectorRef.current = vec;
+    if (vec) enrolledFaceVectorRef.current = vec;
 
     announce("📸 Official profile photo registered! Now verifying your face against it...");
     speakText("Official profile photo captured and registered. Now verifying your live face against your official profile.");
@@ -3659,14 +3708,22 @@ export default function StudentDashboard() {
     const allProfiles = JSON.parse(localStorage.getItem('student_profiles_by_email') || '{}');
     const userProf = allProfiles[cleanEmail] || {};
     const session = JSON.parse(localStorage.getItem('auth_session') || '{}');
-    const refPic = studentProfile.profilePic || userProf.profilePic || session.profilePic || localStorage.getItem('student_profile_pic') || null;
+    const refPic = 
+      studentProfile.profilePic || 
+      userProf.profilePic || 
+      session.profilePic || 
+      localStorage.getItem('student_profile_pic') || 
+      localStorage.getItem('last_active_student_profile_pic') || 
+      (allProfiles['default']?.profilePic) ||
+      (Object.values(allProfiles).find(p => p && p.profilePic)?.profilePic) ||
+      null;
 
     if (refPic && !studentProfile.profilePic) {
       setStudentProfile(prev => ({ ...prev, profilePic: refPic }));
     }
     if (refPic) {
       extractBiometricFeaturesFromImage(refPic).then(vec => {
-        enrolledFaceVectorRef.current = vec;
+        if (vec) enrolledFaceVectorRef.current = vec;
       });
     } else {
       enrolledFaceVectorRef.current = null;
@@ -3722,49 +3779,19 @@ export default function StudentDashboard() {
       try {
         const peopleCheck = await detectPeopleInCanvas(canvas);
         const liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
-        const refVector = enrolledFaceVectorRef.current;
+        let refVector = enrolledFaceVectorRef.current;
 
-        // MULTIPLE PEOPLE IN CAMERA DETECTION (requires 4 consecutive detections in pre-scan)
-        if (peopleCheck.isMultiple) {
-          consecutiveMultiplePeopleCountRef.current++;
-        } else {
-          consecutiveMultiplePeopleCountRef.current = 0;
-        }
-
-        if (consecutiveMultiplePeopleCountRef.current >= 4) {
-          setIsMultiplePeopleDetected(true);
-          isMultiplePeopleDetectedRef.current = true;
-          setDetectedPeopleCount(peopleCheck.count);
-          setFaceConfidence(0);
-          setFaceMatchScore(0);
-          progress = 0;
-          setFaceScanProgress(0);
-          setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
-          setFaceMatchStatus(`🔴 Multiple people detected (${peopleCheck.count} People) — Please be alone`);
-
-          const now = Date.now();
-          if (now - lastMultiplePeopleWarningTimeRef.current > 7000) {
-            lastMultiplePeopleWarningTimeRef.current = now;
-            speakText(`Warning: Multiple people detected in camera view. Only candidate ${student.name} must be in front of the camera.`);
-          }
-          return;
-        }
-
-        setIsMultiplePeopleDetected(false);
-        isMultiplePeopleDetectedRef.current = false;
-        setShowMultiplePeopleWarningModal(false);
-        setDetectedPeopleCount(peopleCheck.isPresent ? 1 : 0);
-
-        if (!peopleCheck.isPresent) {
-          progress = Math.max(0, progress - 8);
-          setFaceScanProgress(progress);
-          setFaceMatchStatus("🔴 Align your face inside the camera circle to scan and verify your identity...");
-          setFaceErrorMessage("No candidate face detected. Please position your face inside the circle.");
-          return;
-        }
-
-        // STRICT MANDATORY PROFILE PHOTO CHECK: A student CANNOT write an exam without a matching profile photo!
+        // Auto-heal / load biometric vector if photo exists but vector was not yet resolved
         if (!refVector) {
+          const availPic = studentProfile.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic');
+          if (availPic) {
+            setFaceMatchStatus("⏳ Loading registered profile biometric template...");
+            extractBiometricFeaturesFromImage(availPic).then(vec => {
+              if (vec) enrolledFaceVectorRef.current = vec;
+            });
+            return;
+          }
+          // STRICT MANDATORY PROFILE PHOTO CHECK: A student CANNOT write an exam without a matching profile photo!
           progress = 0;
           setFaceScanProgress(0);
           setFaceConfidence(0);
@@ -3774,7 +3801,15 @@ export default function StudentDashboard() {
           return;
         }
 
-        // Exactly 1 person is present: verify strictly against enrolled profile photo
+        if (!peopleCheck.isPresent) {
+          progress = Math.max(0, progress - 8);
+          setFaceScanProgress(progress);
+          setFaceMatchStatus("🔴 Align your face inside the camera circle to scan and verify your identity...");
+          setFaceErrorMessage("No candidate face detected. Please position your face inside the circle.");
+          return;
+        }
+
+        // Biometric Match check against enrolled profile photo
         let similarity = 0;
         if (refVector && liveVector) {
           similarity = computeBiometricSimilarity(refVector, liveVector);
@@ -3788,6 +3823,11 @@ export default function StudentDashboard() {
         const isFaceMatch = Boolean(similarity >= 0.50);
 
         if (isFaceMatch) {
+          // Centered candidate matches registered profile picture: verify candidate!
+          setIsMultiplePeopleDetected(false);
+          isMultiplePeopleDetectedRef.current = false;
+          consecutiveMultiplePeopleCountRef.current = 0;
+          setDetectedPeopleCount(1);
           setFaceErrorMessage('');
           progress += 20;
           setFaceScanProgress(Math.min(100, progress));
@@ -3848,8 +3888,30 @@ export default function StudentDashboard() {
               }
             }, 800);
           }
+        } else if (peopleCheck.isMultiple) {
+          consecutiveMultiplePeopleCountRef.current++;
+          if (consecutiveMultiplePeopleCountRef.current >= 8) {
+            setIsMultiplePeopleDetected(true);
+            isMultiplePeopleDetectedRef.current = true;
+            setDetectedPeopleCount(peopleCheck.count);
+            setFaceConfidence(0);
+            setFaceMatchScore(0);
+            progress = 0;
+            setFaceScanProgress(0);
+            setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
+            setFaceMatchStatus(`🔴 Multiple people detected (${peopleCheck.count} People) — Please be alone`);
+
+            const now = Date.now();
+            if (now - lastMultiplePeopleWarningTimeRef.current > 7000) {
+              lastMultiplePeopleWarningTimeRef.current = now;
+              speakText(`Warning: Multiple people detected in camera view. Only candidate ${student.name} must be in front of the camera.`);
+            }
+          }
         } else {
           // Face mismatch against enrolled profile photo: CANNOT WRITE EXAM
+          consecutiveMultiplePeopleCountRef.current = 0;
+          setIsMultiplePeopleDetected(false);
+          isMultiplePeopleDetectedRef.current = false;
           progress = Math.max(0, progress - 8);
           setFaceScanProgress(progress);
           setFaceMatchStatus(`🔴 Face Mismatch (${matchPercent}% match): Face does not match registered profile photo of ${student.name}`);
@@ -3880,17 +3942,22 @@ export default function StudentDashboard() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.85);
 
-        // Multi-person check
+        // Multi-person and face match check
         const peopleCheck = await detectPeopleInCanvas(canvas);
         liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
 
-        if (peopleCheck.isMultiple) {
-          setIsMultiplePeopleDetected(true);
-          isMultiplePeopleDetectedRef.current = true;
-          setDetectedPeopleCount(peopleCheck.count);
-          setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
-          setFaceMatchStatus(`🔴 Multiple people detected! Examination blocked.`);
-          speakText(`Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
+        let refVector = enrolledFaceVectorRef.current;
+        if (!refVector) {
+          const availPic = studentProfile.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic');
+          if (availPic) {
+            refVector = await extractBiometricFeaturesFromImage(availPic);
+            if (refVector) enrolledFaceVectorRef.current = refVector;
+          }
+        }
+
+        if (!refVector) {
+          setFaceErrorMessage(`Mandatory Exam Requirement: No registered profile photo found for ${student.name}. A student cannot write an exam without a matching profile photo. Please register your profile photo first.`);
+          speakText(`Identity verification failed. No registered profile photo found for ${student.name}. You cannot write this exam.`);
           return;
         }
 
@@ -3900,21 +3967,26 @@ export default function StudentDashboard() {
           return;
         }
 
-        const refVector = enrolledFaceVectorRef.current;
-        if (!refVector) {
-          setFaceErrorMessage(`Mandatory Exam Requirement: No registered profile photo found for ${student.name}. A student cannot write an exam without a matching profile photo. Please register your profile photo first.`);
-          speakText(`Identity verification failed. No registered profile photo found for ${student.name}. You cannot write this exam.`);
-          return;
-        }
-
         const sim = computeBiometricSimilarity(refVector, liveVector);
         const matchScore = Math.round(sim * 100);
+
         if (sim < 0.50) {
+          if (peopleCheck.isMultiple) {
+            setIsMultiplePeopleDetected(true);
+            isMultiplePeopleDetectedRef.current = true;
+            setDetectedPeopleCount(peopleCheck.count);
+            setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
+            setFaceMatchStatus(`🔴 Multiple people detected! Examination blocked.`);
+            speakText(`Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
+            return;
+          }
           setFaceErrorMessage(`Face Mismatch (${matchScore}% match)! Live face does not match registered profile photo of ${student.name}. You cannot write this exam.`);
           speakText(`Identity verification failed. Your face does not match the registered profile photo of ${student.name}. You cannot write this exam.`);
           return;
         }
 
+        setIsMultiplePeopleDetected(false);
+        isMultiplePeopleDetectedRef.current = false;
         setFaceSnapshotUrl(snapshotDataUrl);
         setScannedExamFaceUrl(snapshotDataUrl);
       } catch (e) {}
@@ -6069,11 +6141,6 @@ export default function StudentDashboard() {
   // Initial Voice Welcome Greeting on Dashboard mount
   useEffect(() => {
     try {
-      localStorage.removeItem('custom_student_profile');
-      localStorage.removeItem('student_profile_pic');
-      localStorage.removeItem('user_name');
-      localStorage.removeItem('registered_user');
-
       // Purge any unpublished mock materials from localStorage
       const savedMat = localStorage.getItem('shared_study_materials');
       if (savedMat) {
@@ -6420,30 +6487,39 @@ export default function StudentDashboard() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
                   type="button"
-                  disabled={isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)}
+                  disabled={
+                    (!faceDetected && faceConfidence > 0 && faceConfidence < 50) || 
+                    (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))
+                  }
                   onClick={handleManualPassFaceAuth}
                   style={{
                     flex: 1,
-                    background: isMultiplePeopleDetected ? '#ef4444' : (!enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? '#dc2626' : faceDetected ? '#16a34a' : '#0284c7',
+                    background: (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))
+                      ? '#dc2626'
+                      : (!faceDetected && faceConfidence > 0 && faceConfidence < 50) 
+                        ? '#dc2626' 
+                        : faceDetected 
+                          ? '#16a34a' 
+                          : '#0284c7',
                     color: '#ffffff',
                     border: 'none',
                     padding: '14px 20px',
                     borderRadius: '12px',
                     fontWeight: '800',
                     fontSize: '14px',
-                    cursor: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? 'not-allowed' : 'pointer',
-                    boxShadow: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? 'none' : '0 4px 14px rgba(2, 132, 199, 0.25)',
+                    cursor: ((!faceDetected && faceConfidence > 0 && faceConfidence < 50) || (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))) ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 14px rgba(2, 132, 199, 0.25)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
-                    opacity: (isMultiplePeopleDetected || !enrolledFaceVectorRef.current || (!faceDetected && faceConfidence > 0 && faceConfidence < 50)) ? 0.8 : 1
+                    opacity: ((!faceDetected && faceConfidence > 0 && faceConfidence < 50) || (!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))) ? 0.8 : 1
                   }}
                 >
-                  {isMultiplePeopleDetected 
-                    ? '⚠️ Multiple People Detected (Blocked)' 
-                    : !enrolledFaceVectorRef.current
-                      ? '⛔ No Profile Photo (Exam Blocked)'
+                  {(!studentProfile.profilePic && !localStorage.getItem('student_profile_pic') && !localStorage.getItem('last_active_student_profile_pic'))
+                    ? '⛔ No Profile Photo (Exam Blocked)'
+                    : isMultiplePeopleDetected && (!faceConfidence || faceConfidence < 50)
+                      ? '⚠️ Multiple People Detected (Blocked)'
                       : (!faceDetected && faceConfidence > 0 && faceConfidence < 50)
                         ? `⛔ Face Mismatch: Cannot Write Exam (${faceConfidence}%)`
                         : faceDetected 

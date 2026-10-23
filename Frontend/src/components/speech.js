@@ -17,6 +17,50 @@ export {
   speakWithElevenLabs 
 };
 
+// Acoustic Character Voice Profiles for instant, distinct browser speech synthesis
+export const VOICE_PROFILES = {
+  // Adam: Deep & Professional Male
+  'pNInz6obpgDQGcFmaJgB': {
+    name: 'Adam',
+    gender: 'Male',
+    basePitch: 0.74,
+    baseRate: 0.88,
+    preferredVoices: ['David', 'Mark', 'Guy', 'George', 'James', 'Richard', 'Sean', 'Male', 'Natural']
+  },
+  // Antoni: Smooth & Well-spoken Male
+  'ErXwobaYiN019PkySvjV': {
+    name: 'Antoni',
+    gender: 'Male',
+    basePitch: 0.94,
+    baseRate: 0.90,
+    preferredVoices: ['David', 'Mark', 'Guy', 'George', 'James', 'Richard', 'Sean', 'Male']
+  },
+  // Bella: Soft & Friendly Female
+  'EXAVITQu4vr4xnSDxMaL': {
+    name: 'Bella',
+    gender: 'Female',
+    basePitch: 1.16,
+    baseRate: 0.86,
+    preferredVoices: ['Zira', 'Samantha', 'Jenny', 'Aria', 'Female']
+  },
+  // Domi: Energetic & Direct Female
+  'AZnzlk1XvdvUeBnXmlld': {
+    name: 'Domi',
+    gender: 'Female',
+    basePitch: 1.26,
+    baseRate: 1.02,
+    preferredVoices: ['Aria', 'Jenny', 'Zira', 'Samantha', 'Female']
+  },
+  // Rachel: Calm & Clear Female (Default)
+  '21m00Tcm4TlvDq8ikWAM': {
+    name: 'Rachel',
+    gender: 'Female',
+    basePitch: 1.0,
+    baseRate: 0.88,
+    preferredVoices: ['Jenny', 'Zira', 'Samantha', 'Aria', 'Female']
+  }
+};
+
 let activeUtterance = null;
 let synthesisSafetyTimer = null;
 let speechStartTimer = null;
@@ -135,25 +179,64 @@ export function speakBrowserSpeech(text, lang = 'en-US', options = {}) {
     window.speechSynthesis.resume();
   } catch (e) {}
 
+  const activeVoiceId = options.voiceId || localStorage.getItem('elevenlabs_voice_id') || '21m00Tcm4TlvDq8ikWAM';
+  const profile = VOICE_PROFILES[activeVoiceId] || VOICE_PROFILES['21m00Tcm4TlvDq8ikWAM'];
+
   const utterance = new SpeechSynthesisUtterance(cleanedText);
   utterance.lang = lang || 'en-US';
-  utterance.rate = options.rate !== undefined ? Math.min(1.2, Math.max(0.7, options.rate)) : 0.88;
-  utterance.pitch = options.pitch !== undefined ? options.pitch : 1.0;
+
+  const customRate = options.rate !== undefined ? options.rate : profile.baseRate;
+  utterance.rate = Math.min(1.3, Math.max(0.65, customRate));
+
+  const customPitch = options.pitch !== undefined ? options.pitch : profile.basePitch;
+  utterance.pitch = Math.min(2.0, Math.max(0.5, customPitch));
   utterance.volume = 1.0;
 
-  // STRICTLY EXCLUDE GOOGLE TTS VOICES
+  // STRICTLY EXCLUDE GOOGLE TTS VOICES and select matching gender voice
   let availableVoices = cachedNonGoogleVoices.length > 0 ? cachedNonGoogleVoices : refreshNonGoogleVoices();
 
   if (availableVoices.length > 0) {
-    const preferredVoice = 
-      availableVoices.find(v => (v.name.includes('Natural') || v.name.includes('Online')) && (v.lang.startsWith('en') || v.lang.includes('US'))) ||
-      availableVoices.find(v => (v.name.includes('Jenny') || v.name.includes('Zira') || v.name.includes('Samantha') || v.name.includes('Aria')) && v.lang.startsWith('en')) ||
-      availableVoices.find(v => (v.name.includes('David') || v.name.includes('Mark')) && v.lang.startsWith('en')) ||
-      availableVoices.find(v => v.lang.startsWith('en') || v.lang.includes('en-US')) ||
-      availableVoices[0];
+    let chosenVoice = null;
+    const isMale = profile.gender === 'Male';
 
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+    // 1. Try to find a voice that matches profile.preferredVoices
+    if (profile.preferredVoices && profile.preferredVoices.length > 0) {
+      for (const nameKeyword of profile.preferredVoices) {
+        chosenVoice = availableVoices.find(v => 
+          v.name.toLowerCase().includes(nameKeyword.toLowerCase()) && 
+          (v.lang.startsWith('en') || v.lang.includes('US'))
+        );
+        if (chosenVoice) break;
+      }
+    }
+
+    // 2. If not found by keyword, find by gender indicator
+    if (!chosenVoice) {
+      if (isMale) {
+        chosenVoice = availableVoices.find(v => {
+          const lower = v.name.toLowerCase();
+          return (lower.includes('david') || lower.includes('mark') || lower.includes('guy') || lower.includes('male') || lower.includes('george')) && v.lang.startsWith('en');
+        });
+      } else {
+        chosenVoice = availableVoices.find(v => {
+          const lower = v.name.toLowerCase();
+          return (lower.includes('jenny') || lower.includes('zira') || lower.includes('samantha') || lower.includes('aria') || lower.includes('female')) && v.lang.startsWith('en');
+        });
+      }
+    }
+
+    // 3. Fallback to any natural English voice
+    if (!chosenVoice) {
+      chosenVoice = 
+        availableVoices.find(v => (v.name.includes('Natural') || v.name.includes('Online')) && (v.lang.startsWith('en') || v.lang.includes('US'))) ||
+        availableVoices.find(v => (v.name.includes('Jenny') || v.name.includes('Zira') || v.name.includes('Samantha') || v.name.includes('Aria')) && v.lang.startsWith('en')) ||
+        availableVoices.find(v => (v.name.includes('David') || v.name.includes('Mark')) && v.lang.startsWith('en')) ||
+        availableVoices.find(v => v.lang.startsWith('en') || v.lang.includes('en-US')) ||
+        availableVoices[0];
+    }
+
+    if (chosenVoice) {
+      utterance.voice = chosenVoice;
     }
   }
 

@@ -127,12 +127,8 @@ export default function StudentLoginPage() {
       try {
         localStorage.removeItem('auth_session');
         localStorage.removeItem('user');
-        localStorage.removeItem('user_name');
         localStorage.removeItem('token');
         localStorage.removeItem('role');
-        localStorage.removeItem('custom_student_profile');
-        localStorage.removeItem('student_profile_pic');
-        localStorage.removeItem('registered_user');
       } catch (e) {}
       setEmail('');
       pendingEmailRef.current = '';
@@ -510,12 +506,11 @@ export default function StudentLoginPage() {
           setIsVerifyingLoginOtp(false);
           if (res && res.success) {
             const cleanName = formatSpokenName(res.user?.username || res.user?.name || targetEmail);
-            try {
-              localStorage.removeItem('custom_student_profile');
-              localStorage.removeItem('student_profile_pic');
-              localStorage.removeItem('user_name');
-              localStorage.removeItem('registered_user');
-            } catch (e) {}
+            const savedPic = res.user?.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null;
+            if (savedPic) {
+              localStorage.setItem('student_profile_pic', savedPic);
+              localStorage.setItem('last_active_student_profile_pic', savedPic);
+            }
             localStorage.setItem('auth_session', JSON.stringify({ 
               email: res.user?.email || targetEmail, 
               role: 'student', 
@@ -523,7 +518,8 @@ export default function StudentLoginPage() {
               phone: res.user?.phone || '',
               studentId: res.user?.studentId || res.user?.registerNumber || '',
               registerNumber: res.user?.registerNumber || res.user?.studentId || '',
-              course: res.user?.course || ''
+              course: res.user?.course || '',
+              profilePic: savedPic
             }));
             try {
               const cleanE = (res.user?.email || targetEmail).toLowerCase().trim();
@@ -748,12 +744,11 @@ export default function StudentLoginPage() {
       setIsVerifyingLoginOtp(false);
       if (res && res.success) {
         const cleanName = formatSpokenName(res.user?.username || res.user?.name || emailToUse);
-        try {
-          localStorage.removeItem('custom_student_profile');
-          localStorage.removeItem('student_profile_pic');
-          localStorage.removeItem('user_name');
-          localStorage.removeItem('registered_user');
-        } catch (e) {}
+        const savedPic = res.user?.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null;
+        if (savedPic) {
+          localStorage.setItem('student_profile_pic', savedPic);
+          localStorage.setItem('last_active_student_profile_pic', savedPic);
+        }
         localStorage.setItem('auth_session', JSON.stringify({ 
           email: res.user?.email || emailToUse, 
           role: 'student', 
@@ -761,7 +756,8 @@ export default function StudentLoginPage() {
           phone: res.user?.phone || '',
           studentId: res.user?.studentId || res.user?.registerNumber || '',
           registerNumber: res.user?.registerNumber || res.user?.studentId || '',
-          course: res.user?.course || ''
+          course: res.user?.course || '',
+          profilePic: savedPic
         }));
         try {
           const cleanE = (res.user?.email || emailToUse).toLowerCase().trim();
@@ -832,12 +828,11 @@ export default function StudentLoginPage() {
       });
       if (res && res.success) {
         const cleanName = formatSpokenName(res.user?.username || res.user?.name || email);
-        try {
-          localStorage.removeItem('custom_student_profile');
-          localStorage.removeItem('student_profile_pic');
-          localStorage.removeItem('user_name');
-          localStorage.removeItem('registered_user');
-        } catch (e) {}
+        const savedPic = res.user?.profilePic || savedProf.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null;
+        if (savedPic) {
+          localStorage.setItem('student_profile_pic', savedPic);
+          localStorage.setItem('last_active_student_profile_pic', savedPic);
+        }
         localStorage.setItem('auth_session', JSON.stringify({ 
           email: res.user?.email || email, 
           role: 'student', 
@@ -845,7 +840,8 @@ export default function StudentLoginPage() {
           phone: res.user?.phone || '',
           studentId: res.user?.studentId || res.user?.registerNumber || '',
           registerNumber: res.user?.registerNumber || res.user?.studentId || '',
-          course: res.user?.course || ''
+          course: res.user?.course || '',
+          profilePic: savedPic
         }));
         try {
           const cleanE = (res.user?.email || email).toLowerCase().trim();

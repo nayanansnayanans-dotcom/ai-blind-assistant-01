@@ -124,12 +124,8 @@ export default function RoleSelectionLoginPage() {
       try {
         localStorage.removeItem('auth_session');
         localStorage.removeItem('user');
-        localStorage.removeItem('user_name');
         localStorage.removeItem('token');
         localStorage.removeItem('role');
-        localStorage.removeItem('custom_student_profile');
-        localStorage.removeItem('student_profile_pic');
-        localStorage.removeItem('registered_user');
       } catch (e) {}
       setEmail('');
     }
@@ -631,18 +627,18 @@ export default function RoleSelectionLoginPage() {
       setIsVerifyingLoginOtp(false);
       if (res && res.success) {
         const cleanName = formatSpokenName(res.user?.username || res.user?.name || emailToUse);
-        try {
-          localStorage.removeItem('custom_student_profile');
-          localStorage.removeItem('student_profile_pic');
-          localStorage.removeItem('user_name');
-          localStorage.removeItem('registered_user');
-        } catch (e) {}
+        const savedPic = res.user?.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic') || null;
+        if (savedPic) {
+          localStorage.setItem('student_profile_pic', savedPic);
+          localStorage.setItem('last_active_student_profile_pic', savedPic);
+        }
         localStorage.setItem('auth_session', JSON.stringify({ 
           email: res.user?.email || emailToUse, 
           role: 'student', 
           name: cleanName,
           phone: res.user?.phone || '',
-          course: res.user?.course || ''
+          course: res.user?.course || '',
+          profilePic: savedPic
         }));
         
         speak("OTP verification successful! Welcome to VisionAssist AI. Redirecting to your Student Dashboard now.", () => {
