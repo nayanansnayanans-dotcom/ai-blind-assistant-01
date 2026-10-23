@@ -5,32 +5,18 @@ const Exam = require('../models/Exam');
 
 const isDbConnected = () => mongoose.connection.readyState === 1;
 
-const mockStudentExams = [
-  {
-    _id: 'mock-student-exam-1',
-    examTitle: 'Network Security & Web Assistive Systems',
-    subject: 'Computer Science',
-    date: '2026-10-15',
-    duration: '60',
-    instructions: 'Listen to each question narrated by voice assistant.',
-    status: 'Today',
-    questions: [
-      { questionNumber: 1, questionText: 'What is the primary purpose of HTTPS?', options: ['Encrypt communication', 'Speed up downloads', 'Compress pages', 'Styling'], correctAnswer: 'Encrypt communication', studentAnswer: '', status: 'Not Answered' },
-      { questionNumber: 2, questionText: 'Explain the difference between HTTP and HTTPS.', options: [], correctAnswer: 'HTTPS uses SSL/TLS encryption.', studentAnswer: '', status: 'Not Answered' }
-    ]
-  }
-];
+const mockStudentExams = [];
 
 // Get all student exams
 router.get('/', async (req, res) => {
   if (!isDbConnected()) {
-    return res.json(mockStudentExams);
+    return res.json([]);
   }
   try {
     const exams = await Exam.find().setOptions({ bufferCommands: false });
     res.json(exams);
   } catch (err) {
-    res.json(mockStudentExams);
+    res.json([]);
   }
 });
 

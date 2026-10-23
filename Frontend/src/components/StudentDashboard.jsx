@@ -2059,62 +2059,20 @@ const initialExams = [];
 
 const initialResults = [];
 
-const initialAnnouncements = [
-  { 
-    id: 'notif-1', 
-    type: 'Exam Starting', 
-    icon: '🔔', 
-    title: '🔔 Computer Networks exam starts in 30 minutes.', 
-    detail: 'Please check your exam workspace, microphone, and audio setup before 10:00 AM.', 
-    date: 'Just now', 
-    read: false 
-  },
-  { 
-    id: 'notif-2', 
-    type: 'New Exam', 
-    icon: '📝', 
-    title: '📝 New Exam Scheduled: Operating Systems Theory Assessment', 
-    detail: 'Your teacher scheduled a new theory exam for October 15, 2026. Duration: 60 minutes.', 
-    date: '10 mins ago', 
-    read: false 
-  },
-  { 
-    id: 'notif-3', 
-    type: 'Exam Reminder', 
-    icon: '⏰', 
-    title: '⏰ Exam Reminder: Physics Motion & Laws of Force', 
-    detail: 'Reminder: Physics Motion exam begins tomorrow at 10:00 AM. Extra time accommodations enabled.', 
-    date: '1 hour ago', 
-    read: false 
-  },
-  { 
-    id: 'notif-4', 
-    type: 'Result Published', 
-    icon: '📊', 
-    title: '📊 Exam Result Published: Computer Networks & Cyber Security', 
-    detail: 'Your score: 92/100 (Grade A+ Distinction). Teacher feedback: Exceptional speech fluency rating (96%).', 
-    date: 'Today', 
-    read: true 
-  },
-  { 
-    id: 'notif-5', 
-    type: 'Teacher Announcement', 
-    icon: '📢', 
-    title: '📢 Teacher Announcement: Extra 15 Mins Allocated for Exam', 
-    detail: 'Attention all candidates: An additional 15 minutes of accommodation time has been added by your teacher.', 
-    date: 'Yesterday', 
-    read: true 
-  },
-  { 
-    id: 'notif-6', 
-    type: 'Assistance Response', 
-    icon: '🚨', 
-    title: '🚨 Assistance Response: Emergency SOS Request Resolved', 
-    detail: 'Your teacher responded to your emergency assistance request: "Audio support is active."', 
-    date: 'Yesterday', 
-    read: true 
+const initialAnnouncements = [];
+
+export const isExamActiveNow = (exam) => {
+  if (!exam) return false;
+  const status = (exam.status || '').toLowerCase();
+  if (status === 'completed' || status === 'draft') return false;
+  if (status === 'active' || status === 'published') return true;
+  if (status === 'scheduled') {
+    if (!exam.date || exam.date === 'Upcoming') return true;
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (exam.date <= todayStr) return true;
   }
-];
+  return false;
+};
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
@@ -2527,7 +2485,21 @@ export default function StudentDashboard() {
 
   const [exams, setExams] = useState(initialExams);
   const [results, setResults] = useState(initialResults);
-  const [announcements, setAnnouncements] = useState(initialAnnouncements);
+  const [announcements, setAnnouncements] = useState(() => {
+    try {
+      const raw = localStorage.getItem('shared_notifications');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(n => {
+            const idStr = String(n.id || '');
+            return !idStr.startsWith('notif-1') && !idStr.startsWith('notif-2') && !idStr.startsWith('notif-3') && !idStr.startsWith('notif-4') && !idStr.startsWith('notif-5') && !idStr.startsWith('notif-6');
+          });
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [activePopupNotif, setActivePopupNotif] = useState(null);
   const seenNotifIdsRef = React.useRef(new Set());
 
@@ -2770,9 +2742,7 @@ export default function StudentDashboard() {
       return isSubjectMatching(ex.subject, activeSubject);
     });
 
-    if (matching.length > 0) return matching;
-    const preset = getSubjectDataBank(activeSubject);
-    return preset?.exams || [];
+    return matching;
   }, [exams, activeSubject, student.email, studentProfile.email, student.name, studentProfile.name]);
 
   const filteredStudyMaterials = useMemo(() => {
@@ -4448,8 +4418,10 @@ export default function StudentDashboard() {
       speakText(msg);
       return;
     }
-    if (exam.status === 'Scheduled') {
-      const msg = `${exam.title} is scheduled for ${formatDateForVoice(exam.date)}. It is not active yet.`;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isFuture = (exam.status === 'Scheduled') && exam.date && exam.date !== 'Upcoming' && exam.date > todayStr;
+    if (isFuture) {
+      const msg = `${exam.title} is scheduled for ${formatDateForVoice(exam.date)}. It will become active on that date.`;
       announce(msg);
       speakText(msg);
       return;
@@ -4948,7 +4920,20 @@ export default function StudentDashboard() {
         try {
           const parsed = JSON.parse(sharedExamsRaw);
           if (Array.isArray(parsed)) {
-            parsed.forEach((ex, idx) => {
+            const cleanSavedExams = parsed.filter(ex => {
+              const examId = String(ex._id || ex.id || '');
+              const titleStr = String(ex.title || ex.examTitle || '').toLowerCase();
+              if (examId === 'ex_1' || examId === 'ex_2' || examId === 'ex_3' || examId === 'ex_4') return false;
+              if (examId.startsWith('mock-') || examId.includes('bank-exam')) return false;
+              if (titleStr.includes('operating systems & deadlocks') || titleStr.includes('ai & machine learning foundations')) return false;
+              if (titleStr.includes('network security & web assistive systems') && examId.startsWith('mock-')) return false;
+              return true;
+            });
+            if (cleanSavedExams.length !== parsed.length) {
+              localStorage.setItem('shared_exams', JSON.stringify(cleanSavedExams));
+            }
+
+            cleanSavedExams.forEach((ex, idx) => {
               const examId = String(ex._id || ex.id || `teacher-exam-${idx}`);
               teacherMap.set(examId, {
                 id: examId,
@@ -4961,7 +4946,7 @@ export default function StudentDashboard() {
                 time: ex.time || ex.startTime || '10:00 AM',
                 duration: `${ex.duration || ex.durationMinutes || 60} min`,
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
-                status: ex.status || 'Active',
+                status: ex.status || 'Scheduled',
                 instructions: ex.instructions || 'Read all theory questions carefully.',
                 questions: (ex.questions || []).map((q, qIdx) => ({
                   id: qIdx + 1,
@@ -4982,6 +4967,11 @@ export default function StudentDashboard() {
           if (isMounted && Array.isArray(backendExams)) {
             backendExams.forEach((ex, idx) => {
               const examId = String(ex._id || ex.id || `teacher-exam-${idx}`);
+              const titleStr = String(ex.title || ex.examTitle || '').toLowerCase();
+              if (examId === 'ex_1' || examId === 'ex_2' || examId === 'ex_3' || examId === 'ex_4') return;
+              if (examId.startsWith('mock-') || examId.includes('bank-exam')) return;
+              if (titleStr.includes('operating systems & deadlocks') || titleStr.includes('ai & machine learning foundations')) return;
+
               teacherMap.set(examId, {
                 id: examId,
                 title: ex.title || ex.examTitle || 'Theory Assessment',
@@ -4993,7 +4983,7 @@ export default function StudentDashboard() {
                 time: ex.time || ex.startTime || '10:00 AM',
                 duration: `${ex.duration || ex.durationMinutes || 60} min`,
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
-                status: ex.status || 'Active',
+                status: ex.status || 'Scheduled',
                 instructions: ex.instructions || 'Read all theory questions carefully.',
                 questions: (ex.questions || []).map((q, qIdx) => ({
                   id: qIdx + 1,
@@ -5103,16 +5093,32 @@ export default function StudentDashboard() {
       if (sharedNotifRaw) {
         try {
           const parsedNotifs = JSON.parse(sharedNotifRaw);
-          if (Array.isArray(parsedNotifs) && parsedNotifs.length > 0) {
-            setAnnouncements(prev => {
-              const notifMap = new Map();
-              parsedNotifs.forEach(n => notifMap.set(String(n.id), n));
-              prev.forEach(p => { if (!notifMap.has(String(p.id))) notifMap.set(String(p.id), p); });
-              return Array.from(notifMap.values());
+          if (Array.isArray(parsedNotifs)) {
+            const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+            const studentName = (student.name || studentProfile.name || '').toLowerCase().trim();
+
+            const cleanNotifs = parsedNotifs.filter(n => {
+              const idStr = String(n.id || '');
+              if (idStr.startsWith('notif-1') || idStr.startsWith('notif-2') || idStr.startsWith('notif-3') ||
+                  idStr.startsWith('notif-4') || idStr.startsWith('notif-5') || idStr.startsWith('notif-6')) return false;
+              if (String(n.title || '').includes('Computer Networks exam starts in 30 minutes')) return false;
+              if (String(n.title || '').includes('Operating Systems Theory Assessment') && idStr.startsWith('notif-')) return false;
+
+              // Student target check
+              const tEmail = String(n.targetStudentEmail || '').toLowerCase().trim();
+              const tName = String(n.targetStudentName || '').toLowerCase().trim();
+              if (tEmail && studentEmail && tEmail !== studentEmail) return false;
+              if (tName && studentName && tName !== studentName) return false;
+              return true;
             });
 
+            setAnnouncements(cleanNotifs);
+            if (cleanNotifs.length !== parsedNotifs.length) {
+              localStorage.setItem('shared_notifications', JSON.stringify(cleanNotifs));
+            }
+
             // Detect new teacher update notifications and announce alert aloud
-            parsedNotifs.forEach(n => {
+            cleanNotifs.forEach(n => {
               const notifIdStr = String(n.id);
               if (!seenNotifIdsRef.current.has(notifIdStr)) {
                 seenNotifIdsRef.current.add(notifIdStr);
@@ -5122,6 +5128,8 @@ export default function StudentDashboard() {
             });
           }
         } catch (e) {}
+      } else {
+        setAnnouncements([]);
       }
 
       // 5. Sync Voice Broadcasts from Teacher
@@ -5763,7 +5771,7 @@ export default function StudentDashboard() {
     }
     if (transcript.includes('dashboard') || transcript.includes('home') || transcript.includes('read dashboard')) {
       setActiveTab('Dashboard');
-      speakText(`Opening Dashboard Home. Welcome ${student.name}. You have 2 upcoming exams and overall progress of ${overallProgress} percent.`);
+      speakText(`Opening Dashboard Home. Welcome ${student.name}. You have ${filteredExams.length} upcoming exam${filteredExams.length === 1 ? '' : 's'} and overall progress of ${overallProgress} percent.`);
     }
     else if (transcript.includes('start exam') || transcript.includes('take exam') || transcript.includes('begin exam') || transcript.includes('exam assistant') || transcript.includes('ai exam assistant') || transcript.includes('online exam')) {
       if (filteredExams && filteredExams.length > 0) {
@@ -7820,7 +7828,7 @@ export default function StudentDashboard() {
                 {/* Stat Cards (4 Cards) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                   <StatCard icon={<Calendar size={22} color="#0284c7" />} bg="#f0f9ff" border="#bae6fd" label="Upcoming Exams" value={filteredExams.length.toString()} action="View Schedule →" onClick={() => setActiveTab('My Exams')} />
-                  <StatCard icon={<FileText size={22} color="#16a34a" />} bg="#f0fdf4" border="#bbf7d0" label="Active Exams" value={filteredExams.filter(e => e.status === 'Active' || !e.status).length.toString()} action="Start Exam →" onClick={() => startExamHandler(filteredExams[0])} />
+                  <StatCard icon={<FileText size={22} color="#16a34a" />} bg="#f0fdf4" border="#bbf7d0" label="Active Exams" value={filteredExams.filter(e => isExamActiveNow(e)).length.toString()} action="Start Exam →" onClick={() => { const activeEx = filteredExams.find(e => isExamActiveNow(e)) || filteredExams[0]; if (activeEx) startExamHandler(activeEx); else speakText("No active exams right now."); }} />
                   <StatCard icon={<BarChart2 size={22} color="#9333ea" />} bg="#faf5ff" border="#e9d5ff" label="Completed Exams" value={filteredResults.length.toString()} action="View Results →" onClick={() => setActiveTab('Results & Performance')} />
                   <StatCard icon={<Award size={22} color="#ea580c" />} bg="#fff7ed" border="#ffedd5" label="Overall Progress" value={filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'} action="View Details →" onClick={() => setActiveTab('Results & Performance')} progress={filteredResults.length > 0 ? overallProgress : 0} />
                 </div>
@@ -7848,7 +7856,7 @@ export default function StudentDashboard() {
                       <span style={{ fontSize: '12px', color: '#6d28d9' }}>Speak clearly to start your exam</span>
                     </div>
                     <button 
-                      onClick={() => startExamHandler(filteredExams[0])}
+                      onClick={() => { const target = filteredExams.find(e => isExamActiveNow(e)) || filteredExams[0]; if (target) startExamHandler(target); else speakText("No exams scheduled."); }}
                       style={{ background: '#7c3aed', color: '#ffffff', border: 'none', padding: '12px 28px', borderRadius: '10px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)' }}
                     >
                       ▶ &nbsp; Start {activeSubject} Exam
@@ -7878,6 +7886,7 @@ export default function StudentDashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                        <th style={{ padding: '12px 8px' }}>Exam Title</th>
                         <th style={{ padding: '12px 8px' }}>Subject</th>
                         <th style={{ padding: '12px 8px' }}>Date</th>
                         <th style={{ padding: '12px 8px' }}>Time</th>
@@ -7889,7 +7898,15 @@ export default function StudentDashboard() {
                       {filteredExams.length > 0 ? (
                         filteredExams.map(ex => (
                           <tr key={ex.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '14px 8px', fontWeight: '700', color: '#0f172a' }}>{ex.subject}</td>
+                            <td style={{ padding: '14px 8px', fontWeight: '700', color: '#0f172a' }}>
+                              <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '14px' }}>{ex.title || 'Theory Assessment'}</div>
+                              {ex.targetStudentEmail && (
+                                <span style={{ display: 'inline-block', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '800', marginTop: '4px' }}>
+                                  🎯 Assigned for You
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '14px 8px', color: '#475569', fontWeight: '600' }}>{ex.subject}</td>
                             <td style={{ padding: '14px 8px', color: '#475569' }}>{formatDateForVoice(ex.date)}</td>
                             <td style={{ padding: '14px 8px', color: '#475569' }}>{ex.time}</td>
                             <td style={{ padding: '14px 8px', color: '#475569' }}>{ex.duration}</td>
@@ -7898,14 +7915,14 @@ export default function StudentDashboard() {
                                 onClick={() => startExamHandler(ex)}
                                 style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', fontWeight: '700', fontSize: '12px', cursor: 'pointer' }}
                               >
-                                View Details
+                                {isExamActiveNow(ex) ? 'Start Exam' : 'View Details'}
                               </button>
                             </td>
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                          <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
                             No upcoming {activeSubject} exams scheduled.
                           </td>
                         </tr>
@@ -7925,12 +7942,17 @@ export default function StudentDashboard() {
                     📢 Important Announcements
                   </h2>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {announcements.map(ann => (
-                      <div key={ann.id} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
-                        <b style={{ fontSize: '13px', color: '#0369a1', display: 'block' }}>• {ann.title}</b>
-                        <small style={{ fontSize: '11px', color: '#94a3b8' }}>{ann.date}</small>
-                      </div>
-                    ))}
+                    {announcements.length > 0 ? (
+                      announcements.map(ann => (
+                        <div key={ann.id} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                          <b style={{ fontSize: '13px', color: '#0369a1', display: 'block' }}>• {ann.title}</b>
+                          {ann.detail && <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#475569', lineHeight: '1.4' }}>{ann.detail}</p>}
+                          <small style={{ fontSize: '11px', color: '#94a3b8' }}>{ann.date}</small>
+                        </div>
+                      ))
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>No announcements at this time.</p>
+                    )}
                   </div>
                   <button onClick={() => setActiveTab('Notifications')} style={{ width: '100%', marginTop: '12px', background: 'none', border: 'none', color: '#0284c7', fontSize: '12px', fontWeight: '700', cursor: 'pointer', textAlign: 'center' }}>
                     View All →
@@ -10004,56 +10026,64 @@ export default function StudentDashboard() {
 
               {/* Notifications Cards Grid */}
               <div style={{ display: 'grid', gap: '14px' }}>
-                {announcements.map((ann, idx) => (
-                  <div 
-                    key={ann.id || idx} 
-                    style={{ 
-                      background: ann.title.includes('starts in 30 minutes') ? '#fffbeb' : '#ffffff', 
-                      border: ann.title.includes('starts in 30 minutes') ? '2px solid #f59e0b' : '1px solid #e2e8f0', 
-                      borderRadius: '16px', 
-                      padding: '20px', 
-                      display: 'flex', 
-                      justifyContent: 'space-between', 
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      gap: '12px',
-                      boxShadow: ann.title.includes('starts in 30 minutes') ? '0 4px 16px rgba(245, 158, 11, 0.15)' : 'none'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', flex: 1, minWidth: '260px' }}>
-                      <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#f0f9ff', display: 'grid', placeItems: 'center', fontSize: '20px', border: '1px solid #bae6fd', flexShrink: 0 }}>
-                        {ann.icon || '🔔'}
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                          <b style={{ fontSize: '16px', color: '#0f172a' }}>{ann.title}</b>
-                          {ann.type && (
-                            <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0284c7', padding: '2px 8px', borderRadius: '6px', fontWeight: '800' }}>
-                              {ann.type}
-                            </span>
+                {announcements.length > 0 ? (
+                  announcements.map((ann, idx) => (
+                    <div 
+                      key={ann.id || idx} 
+                      style={{ 
+                        background: (ann.title && ann.title.includes('starts in 30 minutes')) ? '#fffbeb' : '#ffffff', 
+                        border: (ann.title && ann.title.includes('starts in 30 minutes')) ? '2px solid #f59e0b' : '1px solid #e2e8f0', 
+                        borderRadius: '16px', 
+                        padding: '20px', 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '12px',
+                        boxShadow: (ann.title && ann.title.includes('starts in 30 minutes')) ? '0 4px 16px rgba(245, 158, 11, 0.15)' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', flex: 1, minWidth: '260px' }}>
+                        <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#f0f9ff', display: 'grid', placeItems: 'center', fontSize: '20px', border: '1px solid #bae6fd', flexShrink: 0 }}>
+                          {ann.icon || '🔔'}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                            <b style={{ fontSize: '16px', color: '#0f172a' }}>{ann.title}</b>
+                            {ann.type && (
+                              <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0284c7', padding: '2px 8px', borderRadius: '6px', fontWeight: '800' }}>
+                                {ann.type}
+                              </span>
+                            )}
+                          </div>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#475569', lineHeight: 1.5 }}>
+                            {ann.detail || ann.message}
+                          </p>
+                          {ann.date && (
+                            <small style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', display: 'block' }}>
+                              Received: {ann.date}
+                            </small>
                           )}
                         </div>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#475569', lineHeight: 1.5 }}>
-                          {ann.detail}
-                        </p>
-                        {ann.date && (
-                          <small style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', display: 'block' }}>
-                            Received: {ann.date}
-                          </small>
-                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          onClick={() => speakText(`Notification: ${ann.title}. ${ann.detail || ann.message || ''}`)} 
+                          style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Volume2 size={16} /> 🔊 Listen Audio
+                        </button>
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button 
-                        onClick={() => speakText(`Notification: ${ann.title}. ${ann.detail}`)} 
-                        style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <Volume2 size={16} /> 🔊 Listen Audio
-                      </button>
-                    </div>
+                  ))
+                ) : (
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                    <Bell size={48} color="#94a3b8" style={{ marginBottom: '12px' }} />
+                    <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>No Announcements</h3>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Your teacher has not published any announcements or alerts yet.</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}

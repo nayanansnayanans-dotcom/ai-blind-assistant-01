@@ -844,18 +844,30 @@ export default function TeacherDashboard() {
   // Sync Handlers for Schedule, Accessibility, and Exam Instructions
   const handleSaveSchedule = () => {
     const activeTitle = exam.title || 'Created Theory Assessment';
+    const assignedStu = exam.targetStudentEmail
+      ? [exam.targetStudentEmail]
+      : (Array.isArray(exam.assignedStudents) && exam.assignedStudents.length > 0 ? exam.assignedStudents : []);
+
     const updatedExam = {
       _id: editingExamId || `exam-${Date.now()}`,
       title: activeTitle,
       subject: exam.subject || 'Computer Science',
       duration: exam.duration || 60,
       durationMinutes: exam.duration || 60,
-      date: exam.date || 'Upcoming',
+      date: exam.date || new Date().toISOString().split('T')[0],
       time: exam.time || '10:00 AM',
-      status: 'Scheduled',
+      status: exam.status && exam.status !== 'Draft' ? exam.status : 'Scheduled',
       passMark: exam.passMark || 40,
       instructions: exam.instructions || 'Read all theory questions carefully.',
-      questions: exam.questions || []
+      targetStudentEmail: exam.targetStudentEmail || '',
+      targetStudentName: exam.targetStudentName || '',
+      assignedStudents: assignedStu,
+      creatorEmail: teacher.email || 'teacher@blindassist.edu',
+      teacherEmail: teacher.email || 'teacher@blindassist.edu',
+      teacherName: teacher.fullName || 'Teacher',
+      questions: (exam.questions && exam.questions.length > 0)
+        ? exam.questions
+        : questions.filter(q => selectedQuestionIds.includes(q.id))
     };
 
     const existingIndex = savedExams.findIndex(x => (x.title === activeTitle || x._id === editingExamId));
@@ -866,26 +878,39 @@ export default function TeacherDashboard() {
     } else {
       nextSaved = [updatedExam, ...savedExams];
     }
-    setSavedExams(nextSaved);
+    const cleanSaved = nextSaved.filter(x => {
+      const xId = String(x._id || x.id || '');
+      return !xId.startsWith('ex_') && !xId.startsWith('mock-');
+    });
+    setSavedExams(cleanSaved);
 
     try {
-      localStorage.setItem('shared_exams', JSON.stringify(nextSaved));
+      localStorage.setItem('shared_exams', JSON.stringify(cleanSaved));
       localStorage.setItem('draft_teacher_exam', JSON.stringify(updatedExam));
 
       const notifObj = {
         id: `notif_${Date.now()}_${Math.floor(Math.random()*1000)}`,
-        title: `📅 Exam Scheduled: ${activeTitle}`,
+        title: exam.targetStudentName 
+          ? `📅 Exam Scheduled for ${exam.targetStudentName}: ${activeTitle}`
+          : `📅 Exam Scheduled: ${activeTitle}`,
         detail: `Teacher scheduled ${activeTitle} on ${exam.date || 'Upcoming'} at ${exam.time || '10:00 AM'} (${exam.duration || 60} mins duration).`,
         date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         type: 'Exam Schedule',
+        targetStudentEmail: exam.targetStudentEmail || '',
+        targetStudentName: exam.targetStudentName || '',
         read: false
       };
       const existingRaw = localStorage.getItem('shared_notifications');
       const existing = existingRaw ? JSON.parse(existingRaw) : [];
-      localStorage.setItem('shared_notifications', JSON.stringify([notifObj, ...existing]));
+      const cleanExisting = Array.isArray(existing)
+        ? existing.filter(n => !String(n.id || '').startsWith('notif-1') && !String(n.id || '').startsWith('notif-2') && !String(n.id || '').startsWith('notif-3') && !String(n.id || '').startsWith('notif-4') && !String(n.id || '').startsWith('notif-5') && !String(n.id || '').startsWith('notif-6'))
+        : [];
+      localStorage.setItem('shared_notifications', JSON.stringify([notifObj, ...cleanExisting]));
 
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
+
+    createExam(updatedExam).catch(() => {});
 
     say(`Schedule and assignments saved for "${activeTitle}"! Connected live to Student Dashboard.`);
   };
@@ -1538,7 +1563,12 @@ export default function TeacherDashboard() {
         const raw = localStorage.getItem('shared_exams');
         const existing = raw ? JSON.parse(raw) : [];
         const otherTeachersExams = Array.isArray(existing)
-          ? existing.filter(e => (String(e.creatorEmail || e.teacherEmail || '').toLowerCase().trim()) !== teacherEmailKey)
+          ? existing.filter(e => {
+              const eId = String(e._id || e.id || '');
+              if (eId.startsWith('ex_') || eId.startsWith('mock-')) return false;
+              const cEmail = String(e.creatorEmail || e.teacherEmail || '').toLowerCase().trim();
+              return cEmail && cEmail !== teacherEmailKey;
+            })
           : [];
         localStorage.setItem('shared_exams', JSON.stringify([...savedExams, ...otherTeachersExams]));
       } catch (e) {}
@@ -1983,14 +2013,23 @@ export default function TeacherDashboard() {
         time: exam.time || '10:00 AM',
         status: exam.status || 'Active',
         instructions: exam.instructions || 'Read all theory questions carefully.',
+        targetStudentEmail: exam.targetStudentEmail || '',
+        targetStudentName: exam.targetStudentName || '',
+        assignedStudents: exam.targetStudentEmail ? [exam.targetStudentEmail] : (exam.assignedStudents || []),
+        creatorEmail: teacher.email || 'teacher@blindassist.edu',
+        teacherEmail: teacher.email || 'teacher@blindassist.edu',
         questions: formattedQuestions
       };
       nextSaved = [autoExam, ...savedExams];
     }
 
-    setSavedExams(nextSaved);
+    const cleanNextSaved = nextSaved.filter(x => {
+      const xId = String(x._id || x.id || '');
+      return !xId.startsWith('ex_') && !xId.startsWith('mock-');
+    });
+    setSavedExams(cleanNextSaved);
     try {
-      localStorage.setItem('shared_exams', JSON.stringify(nextSaved));
+      localStorage.setItem('shared_exams', JSON.stringify(cleanNextSaved));
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
   };

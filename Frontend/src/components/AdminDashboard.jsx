@@ -176,20 +176,25 @@ export default function AdminDashboard() {
   }, []);
 
   // 3. DATA STORE: EXAMS
-  const initialExams = [
-    { id: 'ex_1', title: 'Computer Networks Theory', subject: 'Computer Networks', date: new Date(Date.now() + 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), time: '10:00 AM', duration: '45 mins', studentsCount: 150, status: 'Scheduled' },
-    { id: 'ex_2', title: 'Operating Systems & Deadlocks', subject: 'Operating Systems', date: new Date(Date.now() + 2 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), time: '11:00 AM', duration: '60 mins', studentsCount: 120, status: 'Scheduled' },
-    { id: 'ex_3', title: 'Cyber Security & Cryptography', subject: 'Cyber Security', date: new Date(Date.now() + 3 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), time: '02:00 PM', duration: '30 mins', studentsCount: 100, status: 'Scheduled' },
-    { id: 'ex_4', title: 'AI & Machine Learning Foundations', subject: 'Artificial Intelligence', date: new Date(Date.now() + 5 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), time: '10:00 AM', duration: '45 mins', studentsCount: 95, status: 'Scheduled' }
-  ];
+  const initialExams = [];
 
   const [exams, setExams] = useState(() => {
-    const saved = localStorage.getItem('shared_exams');
-    return saved ? JSON.parse(saved) : initialExams;
+    try {
+      const saved = localStorage.getItem('shared_exams');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(x => !String(x.id || x._id || '').startsWith('ex_') && !String(x.id || x._id || '').startsWith('mock-'));
+        }
+      }
+    } catch (e) {}
+    return initialExams;
   });
 
   useEffect(() => {
-    localStorage.setItem('shared_exams', JSON.stringify(exams));
+    if (exams.length > 0) {
+      localStorage.setItem('shared_exams', JSON.stringify(exams));
+    }
   }, [exams]);
 
   // 5. DATA STORE: ANNOUNCEMENTS
