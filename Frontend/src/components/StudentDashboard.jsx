@@ -6809,13 +6809,14 @@ export default function StudentDashboard() {
     const trimmed = text.trim();
     const lower = trimmed.toLowerCase();
     const doneTriggers = [
-      'done answer', 'done answering', 'done', 'finished', 'complete',
-      "that's all", 'that is my answer', 'save and next', 'next question', 'done next'
+      'done answer', 'done answering', 'done next', "that's all", 'that is all',
+      'that is my answer', 'save and next', 'next question', 'done', 'finished',
+      'complete', 'completed', 'finish', 'stop'
     ];
     for (const trigger of doneTriggers) {
-      if (lower.endsWith(trigger) || lower === trigger) {
-        const regex = new RegExp(`\\s*${trigger}\\s*$`, 'i');
-        const cleanText = trimmed.replace(regex, '').trim();
+      if (lower === trigger || lower.endsWith(' ' + trigger) || new RegExp(`\\b${trigger}\\b`, 'i').test(lower)) {
+        const regex = new RegExp(`\\s*\\b${trigger}\\b\\s*`, 'gi');
+        const cleanText = trimmed.replace(regex, ' ').replace(/\s+/g, ' ').trim();
         return { isDone: true, cleanText, trigger };
       }
     }
@@ -6964,57 +6965,66 @@ export default function StudentDashboard() {
           pendingCommand = cleaned;
           setLiveVoiceTranscript(cleaned);
 
-          // Immediate detection of CLOSE or EXIT commands
           const lower = cleaned.toLowerCase();
-          const closeWords = ['close', 'exit', 'cancel', 'dismiss', 'close assistant', 'close voice assistant', 'close overlay', 'stop assistant'];
-          if (closeWords.some(w => lower === w || lower.startsWith(w + ' ') || lower.endsWith(' ' + w) || lower.includes('close'))) {
+
+          // Explicit close command only when whole utterance is close command
+          if (lower === 'close' || lower === 'close assistant' || lower === 'close overlay' || lower === 'close voice assistant' || lower === 'exit assistant' || lower === 'dismiss') {
             closeVoiceAssistant(true);
             return;
           }
 
-          const isNavTrigger = lower.includes('next question') || lower.includes('previous question') || lower.includes('repeat question') || lower === 'repeat' || lower === 'next' || lower === 'previous' || lower.includes('submit exam') || lower === 'submit' || lower.includes('save and next') || lower.includes('exit exam') || lower.includes('cancel exam') || lower.includes('quit exam') || lower.includes('leave exam');
+          // Navigation commands
+          const isNavTrigger = lower === 'next question' || lower === 'previous question' || lower === 'repeat question' || lower === 'repeat' || lower === 'next' || lower === 'previous' || lower === 'submit exam' || lower === 'submit viva' || lower === 'submit' || lower.includes('save and next') || lower.includes('exit exam');
+          if (isNavTrigger) {
+            closeVoiceAssistant(false);
+            executeCommand(cleaned);
+            return;
+          }
+
+          // Repeat answer command
+          if (/\b(repeat answer|repeat my answer|re-record|change answer|try again)\b/i.test(lower)) {
+            closeVoiceAssistant(false);
+            executeCommand('repeat answer');
+            return;
+          }
+
+          // Check if examinee said DONE to exit and save answer
           const { isDone, cleanText } = parseDoneTrigger(cleaned);
 
           if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam') && !examSubmitted) {
-            if (isNavTrigger) {
-              pendingCommand = '';
-              closeVoiceAssistant(false);
-              executeCommand(cleaned);
-              return;
-            }
-
-            const isOptionChoice = lower.startsWith('option') || lower.startsWith('select') || lower.startsWith('choice') || lower === 'a' || lower === 'b' || lower === 'c' || lower === 'd' || lower === '1' || lower === '2' || lower === '3' || lower === '4';
-            if (isOptionChoice || lower.includes('confirm') || lower.includes('change')) {
-              pendingCommand = '';
-              closeVoiceAssistant(false);
-              executeCommand(cleaned);
-              return;
-            }
-
             const cleanAns = cleanText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || cleanText;
-            setCurrentAnswerInput(cleanAns);
-            setStudentAnswers(prev => ({ ...prev, [`${currentExam.id}-${currentQIndex}`]: cleanAns }));
+            if (cleanAns) {
+              setCurrentAnswerInput(cleanAns);
+              currentAnswerInputRef.current = cleanAns;
+              setStudentAnswers(prev => ({ ...prev, [`${currentExam.id}-${currentQIndex}`]: cleanAns }));
+            }
 
             if (isDone) {
+              // User said DONE: exit voice assistant, save answer and read it back!
               closeVoiceAssistant(false);
-              announce(`Answer saved: "${cleanAns}". Moving to next question...`);
-              speakText(`Answer saved: "${cleanAns}". Moving to next question.`, () => {
-                handleSaveAndNext();
-              });
+              handleFinishExamAnswerDictation(cleanAns);
               return;
             }
+            // Continuous listening: DO NOT EXIT in the middle while candidate speaks!
+            return;
+          } else if (activeTab === 'AI Oral Viva Simulator') {
+            const cleanAns = cleanText.replace(/^(answer|my answer is|viva answer is)\s*/i, '').trim() || cleanText;
+            if (cleanAns) {
+              setVivaAnswerInput(cleanAns);
+              setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanAns }));
+              lastSpokenVivaAnswerRef.current = cleanAns;
+            }
 
-            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
-            voiceSilenceTimerRef.current = setTimeout(() => {
-              if (cleaned.length > 1 && pendingCommand && !voiceAssistantIsClosingRef.current) {
-                pendingCommand = '';
-                closeVoiceAssistant(false);
-                executeCommand(cleaned);
-              }
-            }, 1200);
+            if (isDone) {
+              // User said DONE in viva: exit voice assistant and read back answer!
+              closeVoiceAssistant(false);
+              stopVivaDictation(true);
+              return;
+            }
+            // Continuous listening: DO NOT EXIT in the middle!
+            return;
           } else {
-            if (isDone || isNavTrigger) {
-              pendingCommand = '';
+            if (isDone) {
               closeVoiceAssistant(false);
               executeCommand(cleanText || cleaned);
               return;
@@ -7022,12 +7032,11 @@ export default function StudentDashboard() {
 
             if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
             voiceSilenceTimerRef.current = setTimeout(() => {
-              if (cleaned.length > 1 && pendingCommand && !voiceAssistantIsClosingRef.current) {
-                pendingCommand = '';
+              if (cleaned.length > 1 && !voiceAssistantIsClosingRef.current) {
                 closeVoiceAssistant(false);
                 executeCommand(cleaned);
               }
-            }, 1200);
+            }, 3500);
           }
         };
 
@@ -7039,22 +7048,22 @@ export default function StudentDashboard() {
         };
 
         recognition.onend = () => {
-          activeVoiceRecognitionRef.current = null;
-          const isExamMode = currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam') && !examSubmitted;
-          if (pendingCommand && !voiceAssistantIsClosingRef.current) {
-            // Chrome ended the mic before the silence timer fired: run the command now
-            const cmd = pendingCommand;
-            pendingCommand = '';
-            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
-            closeVoiceAssistant(false);
-            executeCommand(cmd);
+          if (isVoiceListeningRef.current && !voiceAssistantIsClosingRef.current) {
+            // User has NOT said DONE yet: continuously keep listening without exiting!
+            try {
+              recognition.start();
+            } catch (err) {
+              setTimeout(() => {
+                if (isVoiceListeningRef.current && !voiceAssistantIsClosingRef.current) {
+                  try { recognition.start(); } catch (e) {}
+                }
+              }, 250);
+            }
             return;
           }
-          if (isVoiceListeningRef.current && !voiceAssistantIsClosingRef.current) {
-            setIsVoiceListening(false);
-            isVoiceListeningRef.current = false;
-            if (!isExamMode) speakText("I did not hear a command. Tap anywhere on the screen to try again.");
-          }
+          activeVoiceRecognitionRef.current = null;
+          setIsVoiceListening(false);
+          isVoiceListeningRef.current = false;
         };
 
         recognition.start();
@@ -8439,8 +8448,20 @@ export default function StudentDashboard() {
                   </div>
                 )}
 
-                {/* Direct Action Buttons: Repeat Answer & Next Question */}
+                {/* Direct Action Buttons: Finish Answering (Say DONE), Repeat Answer & Next Question */}
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      handleFinishExamAnswerDictation(currentAnswerInputRef.current || currentAnswerInput);
+                    }}
+                    style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Finish dictating your answer (or simply say DONE)"
+                  >
+                    ✓ Finish (Say "DONE")
+                  </button>
                   <button 
                     type="button"
                     onClick={(e) => { 
@@ -8545,8 +8566,20 @@ export default function StudentDashboard() {
                   </div>
                 )}
 
-                {/* Direct Action Buttons for Viva: Repeat Answer, Next Question, Repeat Question */}
+                {/* Direct Action Buttons for Viva: Finish Viva Answer (Say DONE), Repeat Answer, Next Question */}
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      stopVivaDictation(true);
+                    }}
+                    style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Finish viva response (or simply say DONE)"
+                  >
+                    ✓ Finish (Say "DONE")
+                  </button>
                   <button 
                     type="button"
                     onClick={(e) => { 
