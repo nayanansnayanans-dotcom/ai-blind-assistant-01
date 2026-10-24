@@ -2307,6 +2307,67 @@ export const isExamActiveNow = (exam) => {
   return false;
 };
 
+export const isExamSuccessfullyCompleted = (result) => {
+  if (!result) return false;
+
+  // Explicit termination, cancellation, disqualification, or exit flags
+  if (result.isTerminated || result.terminated || result.isDisqualified || result.disqualified || result.exited) {
+    return false;
+  }
+
+  const status = String(result.status || '').toLowerCase().trim();
+  const feedback = String(result.feedback || '').toLowerCase();
+
+  // If status indicates termination, disqualification, cancellation, exit, or abort
+  if (
+    status.includes('terminated') ||
+    status.includes('disqualif') ||
+    status.includes('exit') ||
+    status.includes('cancel') ||
+    status.includes('abort') ||
+    status.includes('abandon') ||
+    status.includes('draft')
+  ) {
+    return false;
+  }
+
+  // If feedback indicates proctor strike termination
+  if (feedback.includes('terminated by ai proctor') || feedback.includes('disqualified') || feedback.includes('proctoring violations recorded')) {
+    return false;
+  }
+
+  // An exam is considered completed if it has a legitimate submission status
+  const validCompletedTokens = [
+    'completed',
+    'submitted',
+    'pending correction',
+    'graded',
+    'evaluated',
+    'needs correction',
+    'pending review',
+    'passed',
+    'failed'
+  ];
+  const hasValidStatus = validCompletedTokens.some(token => status.includes(token));
+  if (!hasValidStatus && status !== '') {
+    return false;
+  }
+
+  // Validate that the student actually submitted answers or an evaluation took place
+  const answers = result.answers;
+  const hasAnswers = answers && typeof answers === 'object' && Object.keys(answers).length > 0;
+  const hasScore = Number(result.score || 0) > 0;
+  const hasSubmissionTimestamp = Boolean(result.submittedAt);
+  const isTeacherEvaluated = Boolean(result.evaluatedAt || (result.evaluatedBy && result.evaluatedBy !== 'Automated AI Proctor Security'));
+
+  // If it has 0 marks, no answers, and no submission timestamp or evaluation, it cannot be a completed exam
+  if (!hasAnswers && !hasScore && !hasSubmissionTimestamp && !isTeacherEvaluated) {
+    return false;
+  }
+
+  return true;
+};
+
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const [studentProfile, setStudentProfile] = useState(readStudentProfile);
@@ -2984,7 +3045,7 @@ export default function StudentDashboard() {
   }, [oralVivas, activeSubject]);
 
   const filteredResults = useMemo(() => {
-    return (results || []).filter(r => isSubjectMatching(r.subject, activeSubject));
+    return (results || []).filter(r => isSubjectMatching(r.subject, activeSubject) && isExamSuccessfullyCompleted(r));
   }, [results, activeSubject]);
 
   useEffect(() => {
@@ -4574,45 +4635,14 @@ export default function StudentDashboard() {
 
                 stopCameraForFaceAuth();
 
-                const exitMsg = `Exam terminated and exited. You were alerted 2 times. 3 proctoring violations recorded: ${violationExitDetail}. Submitting zero score and returning to dashboard now.`;
+                const exitMsg = `Exam session ended. You were alerted 2 times. 3 proctoring violations recorded: ${violationExitDetail}. Exiting exam session and returning to dashboard now.`;
                 announce("⛔ " + exitMsg);
                 speakText(exitMsg);
 
                 const termExamTitle = currentExam?.title || 'Examination';
                 try {
-                  const terminatedResult = {
-                    id: Date.now(),
-                    student: student.name,
-                    studentId: student.studentId || student.registerNumber || '2024001',
-                    studentEmail: student.email || 'student@school.edu',
-                    examId: currentExam?.id || 'exam',
-                    examName: termExamTitle,
-                    examTitle: termExamTitle,
-                    examLanguage: 'en',
-                    languageName: 'English',
-                    subject: currentExam?.subject || 'General',
-                    score: 0,
-                    total: 100,
-                    totalMarks: 100,
-                    percentage: 0,
-                    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                    submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    timeSpent: `${Math.max(1, Math.floor((5400 - examTimeRemaining) / 60))} mins`,
-                    feedback: `EXAM TERMINATED BY AI PROCTOR: Disqualified after 2 alerts. 3 proctoring violations recorded: ${violationExitDetail}.`,
-                    status: 'Terminated (AI Proctor Violation: 3 Strikes - Face Missing or Others Present)',
-                    evaluatedBy: 'Automated AI Proctor Security',
-                    teacherName: currentExam?.teacherName || 'Course Invigilator',
-                    teacherEmail: currentExam?.teacherEmail || '',
-                    questions: [],
-                    answers: studentAnswers
-                  };
-
-                  const existingCompleted = JSON.parse(localStorage.getItem('student_completed_results') || '[]');
-                  localStorage.setItem('student_completed_results', JSON.stringify([terminatedResult, ...existingCompleted]));
-
-                  const existingShared = JSON.parse(localStorage.getItem('shared_student_results') || '[]');
-                  localStorage.setItem('shared_student_results', JSON.stringify([terminatedResult, ...existingShared]));
-
+                  // Do NOT save as completed result in student_completed_results or shared_student_results!
+                  // Retain live logs strictly for teacher proctor invigilation audit
                   const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
                   const termLog = {
                     id: `log_${Date.now()}`,
@@ -4644,12 +4674,14 @@ export default function StudentDashboard() {
                   reason: `3 Proctoring Violations: ${violationExitDetail}`,
                   alert1Reason: violationTitle,
                   alert2Reason: violationTitle,
-                  details: `During this exam session, you received 2 warnings for proctoring violations (${violationExitDetail}). On the 3rd violation, as per strict automated proctoring rules, your exam was automatically terminated and submitted with a zero score. You have been returned to the dashboard.`
+                  details: `During this exam session, you received 2 warnings for proctoring violations (${violationExitDetail}). On the 3rd violation, as per strict automated proctoring rules, your exam session was automatically ended and closed without submission. You have been returned to the dashboard.`
                 });
 
                 setCurrentExam(null);
                 setExamSubmitted(false);
                 setIsExamActive(false);
+                setCurrentAnswerInput('');
+                setStudentAnswers({});
                 setActiveTab('Dashboard');
               }
             }
@@ -4664,6 +4696,40 @@ export default function StudentDashboard() {
       }
     };
   }, [currentExam, examSubmitted, student, examTimeRemaining, studentAnswers]);
+
+  // Cleanly exit an ongoing exam session without recording any completed exam results
+  const handleExitExamWithoutSubmitting = () => {
+    stopCameraForFaceAuth();
+    if (proctorScanIntervalRef.current) {
+      clearInterval(proctorScanIntervalRef.current);
+      proctorScanIntervalRef.current = null;
+    }
+    if (examSpeechRecognitionRef.current) {
+      try {
+        examSpeechRecognitionRef.current.abort();
+      } catch (e) {}
+      examSpeechRecognitionRef.current = null;
+    }
+    setIsDictatingExamAnswer(false);
+    setLiveExamAnswerTranscript('');
+    setFaceMismatchStrikeCount(0);
+    faceMismatchStrikeCountRef.current = 0;
+    consecutiveMismatchTicksRef.current = 0;
+    lastMismatchAlertTimeRef.current = 0;
+    setFaceMismatchActiveAlert(null);
+    setShowMultiplePeopleWarningModal(false);
+    setExamTerminationModal(null);
+    setCurrentExam(null);
+    setExamSubmitted(false);
+    setIsExamActive(false);
+    setCurrentAnswerInput('');
+    setStudentAnswers({});
+    setActiveTab('Dashboard');
+
+    const exitMsg = "Exam session exited. No answers were submitted, and this exam has not been marked as completed.";
+    announce(exitMsg);
+    speakText(exitMsg);
+  };
 
   // Start an Exam (Protected by Compulsory Face Verification)
   const startExamHandler = (exam) => {
@@ -4886,6 +4952,13 @@ export default function StudentDashboard() {
           try { recognition.stop(); } catch (e) {}
           setIsDictatingExamAnswer(false);
           handlePreviousQ();
+          return;
+        }
+
+        if (/\b(exit exam|cancel exam|quit exam|leave exam)\b/i.test(lowerCombined)) {
+          try { recognition.stop(); } catch (e) {}
+          setIsDictatingExamAnswer(false);
+          handleExitExamWithoutSubmitting();
           return;
         }
 
@@ -5293,7 +5366,12 @@ export default function StudentDashboard() {
         if (studentCompletedRaw) {
           const parsedUserCompleted = JSON.parse(studentCompletedRaw);
           if (Array.isArray(parsedUserCompleted)) {
-            userCompleted = parsedUserCompleted.filter(matchesStudent).map(r => {
+            // Automatically purge any terminated, exited, cancelled, or disqualified attempts
+            const validCompletedOnly = parsedUserCompleted.filter(r => isExamSuccessfullyCompleted(r));
+            if (validCompletedOnly.length !== parsedUserCompleted.length) {
+              localStorage.setItem('student_completed_results', JSON.stringify(validCompletedOnly));
+            }
+            userCompleted = validCompletedOnly.filter(matchesStudent).map(r => {
               const rawEval = (r.evaluatedBy || r.teacherName || r.teacher || '').trim();
               const cleanEval = (rawEval.toLowerCase() === 'prof. sharma' || rawEval.toLowerCase() === 'sharma') ? '' : rawEval;
               return {
@@ -5310,7 +5388,12 @@ export default function StudentDashboard() {
         if (sharedResultsRaw) {
           const parsed = JSON.parse(sharedResultsRaw);
           if (Array.isArray(parsed)) {
-            sharedForStudent = parsed
+            // Automatically purge any terminated, exited, cancelled, or disqualified attempts
+            const validSharedOnly = parsed.filter(r => isExamSuccessfullyCompleted(r));
+            if (validSharedOnly.length !== parsed.length) {
+              localStorage.setItem('shared_student_results', JSON.stringify(validSharedOnly));
+            }
+            sharedForStudent = validSharedOnly
               .filter(matchesStudent)
               .map((r, idx) => {
                 const rawEval = (r.evaluatedBy || r.teacherName || r.teacher || '').trim();
@@ -5340,7 +5423,7 @@ export default function StudentDashboard() {
           const existing = combinedMap.get(key) || {};
           combinedMap.set(key, { ...existing, ...r });
         });
-        setResults(Array.from(combinedMap.values()));
+        setResults(Array.from(combinedMap.values()).filter(r => isExamSuccessfullyCompleted(r)));
       } catch (e) {}
 
       // 4. Sync notifications & announcements posted by teacher
@@ -5791,6 +5874,12 @@ export default function StudentDashboard() {
     if (transcript.includes('submit exam') || transcript.includes('finish exam')) {
       handleSubmitExam();
       return;
+    }
+    if (transcript.includes('exit exam') || transcript.includes('cancel exam') || transcript.includes('quit exam') || transcript.includes('leave exam')) {
+      if (currentExam || isExamActive) {
+        handleExitExamWithoutSubmitting();
+        return;
+      }
     }
     if (transcript.includes('read question') || transcript.includes('repeat question') || transcript.includes('repeat') || transcript.includes('say question')) {
       if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || activeTab === 'Exams' || isExamActive)) {
@@ -6275,7 +6364,7 @@ export default function StudentDashboard() {
             return;
           }
 
-          const isNavTrigger = lower.includes('next question') || lower.includes('previous question') || lower.includes('repeat question') || lower === 'repeat' || lower === 'next' || lower === 'previous' || lower.includes('submit exam') || lower === 'submit' || lower.includes('save and next');
+          const isNavTrigger = lower.includes('next question') || lower.includes('previous question') || lower.includes('repeat question') || lower === 'repeat' || lower === 'next' || lower === 'previous' || lower.includes('submit exam') || lower === 'submit' || lower.includes('save and next') || lower.includes('exit exam') || lower.includes('cancel exam') || lower.includes('quit exam') || lower.includes('leave exam');
           const { isDone, cleanText } = parseDoneTrigger(cleaned);
 
           if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam') && !examSubmitted) {
@@ -8931,6 +9020,26 @@ export default function StudentDashboard() {
                       <div style={{ background: '#f0f9ff', padding: '8px 16px', borderRadius: '10px', border: '1px solid #bae6fd', fontWeight: 'bold', color: '#0284c7' }}>
                         ⏱ Time Remaining: {Math.floor(examTimeRemaining / 60)}m {examTimeRemaining % 60}s
                       </div>
+                      <button
+                        type="button"
+                        onClick={handleExitExamWithoutSubmitting}
+                        style={{
+                          background: '#fff1f2',
+                          color: '#e11d48',
+                          border: '1px solid #fecdd3',
+                          padding: '8px 14px',
+                          borderRadius: '10px',
+                          fontWeight: '800',
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                        title="Safely exit exam without submitting"
+                      >
+                        🚪 Exit Exam
+                      </button>
                     </div>
                   </div>
 
@@ -9464,7 +9573,27 @@ export default function StudentDashboard() {
                               <button type="button" onClick={handleSaveAndNext} style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
                                 Save & Next →
                               </button>
-                              <button type="button" onClick={handleSubmitExam} style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginLeft: 'auto' }}>
+                              <button
+                                type="button"
+                                onClick={handleExitExamWithoutSubmitting}
+                                style={{
+                                  background: '#fff1f2',
+                                  color: '#e11d48',
+                                  border: '1px solid #fecdd3',
+                                  padding: '12px 20px',
+                                  borderRadius: '10px',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  marginLeft: 'auto',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px'
+                                }}
+                                title="Exit exam without submitting"
+                              >
+                                🚪 Exit Exam
+                              </button>
+                              <button type="button" onClick={handleSubmitExam} style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginLeft: '12px' }}>
                                 Submit Exam ✓
                               </button>
                             </div>
@@ -10012,7 +10141,7 @@ export default function StudentDashboard() {
                 <div>
                   <h1 style={{ margin: '0 0 6px 0', fontSize: '22px', fontWeight: '800' }}>📊 Results & Performance Reports ({activeSubject})</h1>
                   <p style={{ margin: 0, fontSize: '13px', color: '#e0f2fe' }}>
-                    Overall Progress: <strong>{overallProgress}%</strong> • Completed Exams: <strong>{filteredResults.length}</strong>
+                    Overall Progress: <strong>{filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'}</strong> • Completed Exams: <strong>{filteredResults.length}</strong>
                   </p>
                 </div>
                 <button 
