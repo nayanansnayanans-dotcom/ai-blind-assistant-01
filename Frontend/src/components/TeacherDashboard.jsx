@@ -828,17 +828,57 @@ export default function TeacherDashboard() {
   };
 
   
-  // Study Materials Store (Scoped to logged in teacher)
+  // Helper: Enforce that Study Material questions are strictly Short answer or Long answer (NO MCQ)
+  const sanitizeStudyMaterialList = (list) => {
+    if (!Array.isArray(list)) return [];
+    return list.map(mat => {
+      if (!mat) return mat;
+      const questions = (mat.questions || []).map(q => {
+        if (!q) return q;
+        const isLong = (q.type && (q.type.toLowerCase().includes('long') || q.type.toLowerCase().includes('descriptive') || q.type.toLowerCase().includes('essay'))) || (q.marks && q.marks >= 4) || (q.text && /explain|describe|differentiate|compare|discuss|list and explain|how does|why does/i.test(q.text));
+        const cleanType = isLong ? 'Long answer' : 'Short answer';
+        let cleanText = q.text || '';
+        if (/^True or False:\s*/i.test(cleanText)) {
+          cleanText = cleanText.replace(/^True or False:\s*/i, '');
+          if (!cleanText.endsWith('?')) cleanText += '?';
+          cleanText = 'Explain: ' + cleanText;
+        }
+        return {
+          ...q,
+          type: cleanType,
+          text: cleanText,
+          options: [], // Strictly NO MCQ options in Study Material!
+          marks: isLong ? 5 : 2,
+          oneLineAnswer: q.oneLineAnswer || q.correctAnswer || q.answer || mat.practiceAnswer || mat.oneLineAnswer || '',
+          correctAnswer: q.correctAnswer || q.oneLineAnswer || q.answer || ''
+        };
+      });
+      return {
+        ...mat,
+        questions: questions
+      };
+    });
+  };
+  // Study Materials Store (Scoped to logged in teacher - Strictly Short & Long Answer, No MCQ)
   const studyMaterialsKey = `shared_study_materials_${teacherEmailKey}`;
   const [studyMaterials, setStudyMaterials] = useState(() => {
     try {
       const saved = localStorage.getItem(studyMaterialsKey);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const cleaned = sanitizeStudyMaterialList(parsed);
+        if (JSON.stringify(cleaned) !== saved) {
+          localStorage.setItem(studyMaterialsKey, JSON.stringify(cleaned));
+        }
+        return cleaned;
+      }
       const globalSaved = localStorage.getItem('shared_study_materials');
       if (globalSaved) {
         const parsed = JSON.parse(globalSaved);
         if (Array.isArray(parsed)) {
-          return parsed.filter(m => (String(m.teacherEmail || m.creatorEmail || '').toLowerCase().trim()) === teacherEmailKey);
+          const cleaned = sanitizeStudyMaterialList(parsed);
+          localStorage.setItem('shared_study_materials', JSON.stringify(cleaned));
+          return cleaned.filter(m => (String(m.teacherEmail || m.creatorEmail || '').toLowerCase().trim()) === teacherEmailKey);
         }
       }
       return [];
@@ -4342,33 +4382,30 @@ export default function TeacherDashboard() {
     return cleanWords;
   };
 
-  // 2. Domain-Aware AI Practice Question Generator with Brief Explanations
+  // 2. Domain-Aware AI Practice Question Generator (STRICTLY Short Answer & Long Answer ONLY - NO MCQ)
   const generateDomainQuestions = (titleClean, wordsArray) => {
     const titleUpper = titleClean.charAt(0).toUpperCase() + titleClean.slice(1);
     const titleLower = titleClean.toLowerCase();
 
-    // NODE.JS / JAVASCRIPT / WEB TECH
+    // NODE.JS / JAVASCRIPT / WEB TECH - PURELY SHORT ANSWER & LONG ANSWER (NO MCQ)
     if (titleLower.includes('node') || titleLower.includes('js') || titleLower.includes('express') || titleLower.includes('unit 1 node')) {
       return [
         {
           id: 1,
-          text: `What is Node.js and what engine executes JavaScript code in Node.js?`,
-          type: 'MCQ',
-          options: [
-            `A single-threaded, event-driven JavaScript runtime built on Chrome's V8 engine`,
-            `A multi-threaded Java application server`,
-            `A client-side browser extension`,
-            `A relational SQL database management system`
-          ],
-          correctAnswer: `A single-threaded, event-driven JavaScript runtime built on Chrome's V8 engine`,
+          text: `What is Node.js and which engine executes JavaScript code in Node.js?`,
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `Node.js is a single-threaded JavaScript runtime built on Google Chrome's V8 engine.`,
+          correctAnswer: `Node.js is a single-threaded JavaScript runtime built on Chrome's V8 engine`,
           explanation: `Node.js uses Google Chrome's V8 engine to compile and execute JavaScript code asynchronously outside the browser.`,
           marks: 2
         },
         {
           id: 2,
           text: `Explain the role and significance of the Event Loop in Node.js architecture.`,
-          type: 'Short answer',
+          type: 'Long answer',
           options: [],
+          oneLineAnswer: `The Event Loop offloads non-blocking I/O tasks to system kernels and executes callbacks asynchronously.`,
           correctAnswer: `The Event Loop offloads non-blocking I/O tasks to system kernels and executes callbacks asynchronously.`,
           explanation: `The Event Loop allows single-threaded Node.js applications to handle thousands of concurrent client requests without thread blocking.`,
           marks: 5
@@ -4376,26 +4413,29 @@ export default function TeacherDashboard() {
         {
           id: 3,
           text: `Which built-in Node.js module provides methods for reading, writing, and manipulating files?`,
-          type: 'MCQ',
-          options: ['fs module', 'http module', 'url module', 'path module'],
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `fs module (File System)`,
           correctAnswer: 'fs module',
           explanation: `The built-in 'fs' (File System) module provides asynchronous methods like fs.readFile() and fs.writeFile().`,
           marks: 2
         },
         {
           id: 4,
-          text: `True or False: Node.js creates a separate OS thread for every incoming HTTP request.`,
-          type: 'True/False',
-          options: ['True', 'False'],
-          correctAnswer: 'False',
-          explanation: `False. Node.js uses a single-threaded event loop with non-blocking I/O instead of a thread-per-request model.`,
-          marks: 2
+          text: `Explain how Node.js processes incoming HTTP requests concurrently using a single thread.`,
+          type: 'Long answer',
+          options: [],
+          oneLineAnswer: `Node.js uses non-blocking asynchronous event callbacks instead of creating a separate thread per request.`,
+          correctAnswer: `Node.js uses a single-threaded event loop with non-blocking I/O instead of a thread-per-request model.`,
+          explanation: `Instead of thread-per-request overhead, Node.js delegates I/O operations to the system kernel and processes responses via the event loop.`,
+          marks: 5
         },
         {
           id: 5,
           text: `Which CommonJS function is used to import built-in modules or external npm packages?`,
-          type: 'MCQ',
-          options: ['require()', 'importModule()', 'include()', 'loadPackage()'],
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `require() function`,
           correctAnswer: 'require()',
           explanation: `The require() function synchronously loads CommonJS modules and returns exported objects.`,
           marks: 2
@@ -4403,220 +4443,209 @@ export default function TeacherDashboard() {
         {
           id: 6,
           text: `Define a callback function and explain how Callback Hell can be avoided in Node.js.`,
-          type: 'Short answer',
+          type: 'Long answer',
           options: [],
+          oneLineAnswer: `A callback is a function passed as an argument. Callback Hell is resolved using Promises and async/await syntax.`,
           correctAnswer: `A callback is a function passed as an argument. Callback Hell is resolved using Promises and async/await syntax.`,
           explanation: `Promises and async/await flatten deeply nested callbacks into readable, linear asynchronous control flows.`,
           marks: 5
         },
         {
           id: 7,
-          text: `Which core class in the 'events' module allows Node.js objects to emit named events and handle event listeners?`,
-          type: 'MCQ',
-          options: ['EventEmitter', 'EventDispatcher', 'SignalBroker', 'CallbackManager'],
+          text: `What is the core EventEmitter class in Node.js and what role does it play?`,
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `EventEmitter enables objects to emit custom named events and register asynchronous listener callbacks.`,
           correctAnswer: 'EventEmitter',
           explanation: `EventEmitter is central to Node.js event-driven architecture, enabling components to emit and subscribe to custom events.`,
           marks: 2
         },
         {
           id: 8,
-          text: `True or False: The 'http' module allows developers to create web applications and HTTP server endpoints without third-party frameworks.`,
-          type: 'True/False',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          explanation: `True. The 'http' module provides http.createServer() to process web requests and server responses directly.`,
-          marks: 2
+          text: `Describe the purpose of the 'http' module and how http.createServer() builds web servers.`,
+          type: 'Long answer',
+          options: [],
+          oneLineAnswer: `The 'http' module creates web servers using http.createServer() to receive requests and dispatch responses.`,
+          correctAnswer: `The 'http' module allows developers to create web applications and HTTP server endpoints without third-party frameworks.`,
+          explanation: `The 'http' module provides native low-level HTTP APIs, allowing developers to create HTTP web servers without third-party frameworks.`,
+          marks: 5
         }
       ];
     }
 
-    // OPERATING SYSTEMS
+    // OPERATING SYSTEMS - PURELY SHORT ANSWER & LONG ANSWER (NO MCQ)
     if (titleLower.includes('os') || titleLower.includes('operating') || titleLower.includes('deadlock') || titleLower.includes('process')) {
       return [
         {
           id: 1,
-          text: `What is a Deadlock in Operating Systems?`,
-          type: 'MCQ',
-          options: [
-            `A situation where two or more processes are blocked forever waiting for resources held by each other`,
-            `A rapid context switch between CPU threads`,
-            `A memory fragmentation cleanup routine`,
-            `A hardware interrupt signal`
-          ],
+          text: `What is a Deadlock in Operating Systems and what is its primary cause?`,
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `A deadlock occurs when two or more processes are blocked forever waiting for resources held by each other.`,
           correctAnswer: `A situation where two or more processes are blocked forever waiting for resources held by each other`,
           explanation: `Deadlocks occur when processes hold resources while waiting for additional resources held by other processes.`,
           marks: 2
         },
         {
           id: 2,
-          text: `List the 4 Coffman conditions required for a Deadlock to occur.`,
-          type: 'Short answer',
+          text: `List and explain the 4 Coffman conditions required for a Deadlock to occur.`,
+          type: 'Long answer',
           options: [],
+          oneLineAnswer: `Mutual Exclusion, Hold and Wait, No Preemption, and Circular Wait.`,
           correctAnswer: `Mutual Exclusion, Hold and Wait, No Preemption, and Circular Wait.`,
           explanation: `All 4 Coffman conditions must hold simultaneously for a deadlock to exist in an operating system.`,
           marks: 5
         },
         {
           id: 3,
-          text: `True or False: Virtual Memory allows an OS to execute processes larger than physical RAM.`,
-          type: 'True/False',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          explanation: `True. Virtual Memory uses paging to swap data between physical RAM and secondary disk storage seamlessly.`,
-          marks: 2
+          text: `What is Virtual Memory and how does paging allow processes larger than physical RAM?`,
+          type: 'Long answer',
+          options: [],
+          oneLineAnswer: `Virtual Memory uses paging to swap blocks of memory between physical RAM and secondary disk storage.`,
+          correctAnswer: `Virtual Memory uses paging to swap data between physical RAM and secondary disk storage seamlessly.`,
+          explanation: `Virtual Memory maps process virtual addresses to physical pages and disk swaps, allowing large applications to execute with limited RAM.`,
+          marks: 5
         },
         {
           id: 4,
-          text: `Which CPU scheduling algorithm allocates execution time in fixed time slices or quanta?`,
-          type: 'MCQ',
-          options: ['Round Robin (RR)', 'First-Come First-Served (FCFS)', 'Shortest Job First (SJF)', 'Priority Scheduling'],
-          correctAnswer: 'Round Robin (RR)',
+          text: `Describe the Round Robin (RR) CPU scheduling algorithm and the role of the time quantum.`,
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `Round Robin assigns a fixed time quantum to each ready process in a circular FIFO queue.`,
+          correctAnswer: `Round Robin is a preemptive scheduling algorithm that assigns a fixed time quantum to each process in a circular queue.`,
           explanation: `Round Robin is a preemptive scheduling algorithm that assigns a fixed time quantum to each process in a circular queue.`,
           marks: 2
         },
         {
           id: 5,
           text: `What is the primary purpose of a System Call in an Operating System?`,
-          type: 'MCQ',
-          options: [
-            `To provide an interface between user-space applications and kernel-space services`,
-            `To format hard disk partitions`,
-            `To render graphical UI windows`,
-            `To compile source code into binaries`
-          ],
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `To provide a secure interface between user-space applications and privileged kernel-space services.`,
           correctAnswer: `To provide an interface between user-space applications and kernel-space services`,
           explanation: `System calls allow user applications to request privileged kernel operations like file I/O and process creation safely.`,
           marks: 2
         },
         {
           id: 6,
-          text: `Differentiate between a Process and a Thread.`,
-          type: 'Short answer',
+          text: `Differentiate between a Process and a Thread in terms of memory allocation and execution context.`,
+          type: 'Long answer',
           options: [],
+          oneLineAnswer: `A process has an independent memory space, while threads within a process share memory and execute with lower overhead.`,
           correctAnswer: `A process is an independent program with its own memory. A thread is a lightweight execution unit within a process.`,
           explanation: `Threads within the same process share code, data, and heap memory, enabling faster communication and lower overhead.`,
           marks: 5
         },
         {
           id: 7,
-          text: `Which synchronization primitive uses integer variables to control access to shared critical resources?`,
-          type: 'MCQ',
-          options: ['Semaphores', 'Pointers', 'Stack frames', 'Registers'],
-          correctAnswer: 'Semaphores',
+          text: `What is a Semaphore and how does it prevent race conditions in concurrent computing?`,
+          type: 'Short answer',
+          options: [],
+          oneLineAnswer: `A semaphore is an integer synchronization variable accessed through wait() and signal() operations.`,
+          correctAnswer: `Semaphores (wait and signal operations) prevent race conditions in concurrent multi-threaded processes.`,
           explanation: `Semaphores (wait and signal operations) prevent race conditions in concurrent multi-threaded processes.`,
           marks: 2
         },
         {
           id: 8,
-          text: `True or False: Thrashing occurs when an OS spends more time swapping pages than executing actual process instructions.`,
-          type: 'True/False',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          explanation: `True. Thrashing severely degrades CPU utilization when physical memory is insufficient for active working sets.`,
-          marks: 2
+          text: `Explain the concept of Thrashing in Operating Systems and describe its impact on performance.`,
+          type: 'Long answer',
+          options: [],
+          oneLineAnswer: `Thrashing occurs when the system spends more time swapping pages in and out than executing actual instructions.`,
+          correctAnswer: `Thrashing severely degrades CPU utilization when physical memory is insufficient for active working sets.`,
+          explanation: `Thrashing severely degrades CPU utilization when physical memory is insufficient for active working sets.`,
+          marks: 5
         }
       ];
     }
 
-    // DEFAULT / GENERAL STUDY MATERIAL
+    // DEFAULT / GENERAL STUDY MATERIAL - STRICTLY SHORT ANSWER & LONG ANSWER (NO MCQ)
     const cleanContext = wordsArray.length >= 10 ? wordsArray.slice(0, 80).join(' ') : titleUpper;
     return [
       {
         id: 1,
-        text: `What is the primary core concept explained in "${titleUpper}"?`,
-        type: 'MCQ',
-        options: [
-          `Core theoretical foundation & principles of ${titleUpper}`,
-          `Secondary auxiliary setup and configuration options`,
-          `Legacy manual overrides and non-standard fallbacks`,
-          `Unrelated third-party external dependencies`
-        ],
+        text: `State the primary core concept and foundational principles of "${titleUpper}".`,
+        type: 'Short answer',
+        options: [],
+        oneLineAnswer: `The core theoretical foundation, key principles, and essential workflows of ${titleUpper}.`,
         correctAnswer: `Core theoretical foundation & principles of ${titleUpper}`,
         explanation: `The uploaded document specifically emphasizes the core theoretical foundation of ${titleUpper}.`,
         marks: 2
       },
       {
         id: 2,
-        text: `Explain the main architectural principle and operational workflow described in ${titleUpper}.`,
-        type: 'Short answer',
+        text: `Explain the main architectural principles and operational workflow described in ${titleUpper}.`,
+        type: 'Long answer',
         options: [],
+        oneLineAnswer: `Structured, reliable execution mechanisms and standardized protocols essential for practical understanding.`,
         correctAnswer: `It provides structured, reliable execution mechanisms and standardized protocols essential for practical understanding.`,
         explanation: `The document highlights structured execution and reliability as key benefits.`,
         marks: 5
       },
       {
         id: 3,
-        text: `True or False: The concepts presented in ${titleUpper} are suitable for voice-assisted audio narration and blind examinees.`,
-        type: 'True/False',
-        options: ['True', 'False'],
-        correctAnswer: 'True',
-        explanation: `True. All concepts in this study material are formatted for clear text-to-speech voice narration.`,
+        text: `Describe how the concepts in ${titleUpper} are formatted and adapted for voice narration and accessibility.`,
+        type: 'Short answer',
+        options: [],
+        oneLineAnswer: `All concepts are structured for enunciation-friendly speech synthesis and screen readers.`,
+        correctAnswer: `All concepts in this study material are formatted for clear text-to-speech voice narration.`,
+        explanation: `All concepts in this study material are formatted for clear text-to-speech voice narration.`,
         marks: 2
       },
       {
         id: 4,
-        text: `Which essential requirement is critical for optimal performance in ${titleUpper}?`,
-        type: 'MCQ',
-        options: [
-          `Proper event handling and modular code structure`,
-          `Unstructured global variable mutations`,
-          `Blocking synchronous main thread loops`,
-          `Continuous unhandled exception throwing`
-        ],
+        text: `What essential engineering requirements and modular structures are critical for optimal performance in ${titleUpper}?`,
+        type: 'Long answer',
+        options: [],
+        oneLineAnswer: `Proper event handling, decoupled modular code structure, and non-blocking asynchronous flows.`,
         correctAnswer: `Proper event handling and modular code structure`,
         explanation: `Modular code structure and proper event handling prevent performance bottlenecks.`,
-        marks: 2
+        marks: 5
       },
       {
         id: 5,
-        text: `What is the primary advantage of implementing ${titleUpper} in academic or professional systems?`,
-        type: 'MCQ',
-        options: [
-          `High scalability, asynchronous processing, and modular design`,
-          `Increased memory overhead and slower execution`,
-          `Strict manual compilation bottlenecks`,
-          `Incompatibility with modern web protocols`
-        ],
+        text: `Summarize the primary benefits of implementing ${titleUpper} in academic and industrial applications.`,
+        type: 'Short answer',
+        options: [],
+        oneLineAnswer: `High scalability, modular system architecture, and robust maintainability.`,
         correctAnswer: `High scalability, asynchronous processing, and modular design`,
         explanation: `${titleUpper} enhances application scalability and modular system architecture.`,
         marks: 2
       },
       {
         id: 6,
-        text: `Describe the recommended best practice for managing errors and exceptions in ${titleUpper}.`,
-        type: 'Short answer',
+        text: `Describe the recommended best practices for managing errors and exceptions in ${titleUpper}.`,
+        type: 'Long answer',
         options: [],
+        oneLineAnswer: `Structured try-catch blocks and error handling callbacks to prevent system crashes.`,
         correctAnswer: `Exceptions should be handled using structured try-catch blocks or error callbacks to ensure system stability.`,
         explanation: `Structured exception handling prevents unexpected system crashes and maintains data integrity.`,
         marks: 5
       },
       {
         id: 7,
-        text: `Which design pattern or module structure is commonly recommended when working with ${titleUpper}?`,
-        type: 'MCQ',
-        options: [
-          `Reusable modular packages and decoupled functions`,
-          `Hardcoded monolithic script files`,
-          `Implicit global scope leakage`,
-          `Unencrypted clear-text transmission`
-        ],
+        text: `What design pattern and module organization is recommended when developing solutions in ${titleUpper}?`,
+        type: 'Short answer',
+        options: [],
+        oneLineAnswer: `Reusable modular packages, decoupled functions, and clean separation of concerns.`,
         correctAnswer: `Reusable modular packages and decoupled functions`,
         explanation: `Decoupled modules improve software maintainability, reusability, and automated testing.`,
         marks: 2
       },
       {
         id: 8,
-        text: `True or False: AI-generated practice questions from ${titleUpper} can be published directly to student exam banks.`,
-        type: 'True/False',
-        options: ['True', 'False'],
-        correctAnswer: 'True',
-        explanation: `True. Teachers can publish these AI-generated practice questions directly to student dashboards.`,
-        marks: 2
+        text: `Explain how practice questions from ${titleUpper} can be evaluated using voice dictation and speech input.`,
+        type: 'Long answer',
+        options: [],
+        oneLineAnswer: `Students dictate or type answers, and AI evaluates them against reference answers using keyword analysis.`,
+        correctAnswer: `Students practice answering verbally, and AI compares their speech with key concepts.`,
+        explanation: `AI voice evaluation provides real-time accessibility feedback for visually impaired learners.`,
+        marks: 5
       }
     ];
   };
 
-  const handlePdfFileUpload = (e) => {
+    const handlePdfFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -4814,14 +4843,21 @@ export default function TeacherDashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {aiGeneratedQuestions.map((q, idx) => (
                   <div key={idx} style={{ background: '#ffffff', padding: '14px 16px', borderRadius: '10px', border: '1px solid #e9d5ff', fontSize: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                    <strong style={{ color: '#581c87', fontSize: '13px' }}>Q{idx + 1} ({q.type}): {q.text}</strong>
-                    {q.options && q.options.length > 0 && (
-                      <div style={{ margin: '6px 0', paddingLeft: '8px', color: '#475569', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-                        {q.options.map((opt, oIdx) => (
-                          <span key={oIdx} style={{ fontSize: '11px' }}>• {opt}</span>
-                        ))}
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <strong style={{ color: '#581c87', fontSize: '13px' }}>Q{idx + 1}: {q.text}</strong>
+                      <span style={{
+                        background: (q.type === 'Long answer' || q.type === 'Descriptive Theory') ? '#f3e8ff' : '#f0fdf4',
+                        color: (q.type === 'Long answer' || q.type === 'Descriptive Theory') ? '#7e22ce' : '#15803d',
+                        border: (q.type === 'Long answer' || q.type === 'Descriptive Theory') ? '1px solid #d8b4fe' : '1px solid #86efac',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontWeight: '800',
+                        fontSize: '11px',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {(q.type === 'Long answer' || q.type === 'Descriptive Theory') ? '📜 Long Answer' : '📝 Short Answer'}
+                      </span>
+                    </div>
                     
                     {/* 1. First Line: One-Line Short Answer */}
                     <div style={{ color: '#15803d', fontWeight: '800', marginTop: '8px', fontSize: '13px', background: '#f0fdf4', padding: '6px 10px', borderRadius: '6px', borderLeft: '3px solid #16a34a' }}>

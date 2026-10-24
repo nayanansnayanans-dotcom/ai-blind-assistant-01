@@ -2929,7 +2929,38 @@ export default function StudentDashboard() {
     if (v && v.length > 0) setBuiltinVoices(v);
   }, []);
 
-  // Study Materials state
+  // Helper: Enforce that Study Material questions are strictly Short answer or Long answer (NO MCQ)
+  const sanitizeStudyMaterialList = (list) => {
+    if (!Array.isArray(list)) return [];
+    return list.map(mat => {
+      if (!mat) return mat;
+      const questions = (mat.questions || []).map(q => {
+        if (!q) return q;
+        const isLong = (q.type && (q.type.toLowerCase().includes('long') || q.type.toLowerCase().includes('descriptive') || q.type.toLowerCase().includes('essay'))) || (q.marks && q.marks >= 4) || (q.text && /explain|describe|differentiate|compare|discuss|list and explain|how does|why does/i.test(q.text));
+        const cleanType = isLong ? 'Long answer' : 'Short answer';
+        let cleanText = q.text || '';
+        if (/^True or False:\s*/i.test(cleanText)) {
+          cleanText = cleanText.replace(/^True or False:\s*/i, '');
+          if (!cleanText.endsWith('?')) cleanText += '?';
+          cleanText = 'Explain: ' + cleanText;
+        }
+        return {
+          ...q,
+          type: cleanType,
+          text: cleanText,
+          options: [], // Strictly NO MCQ options in Study Material!
+          marks: isLong ? 5 : 2,
+          oneLineAnswer: q.oneLineAnswer || q.correctAnswer || q.answer || mat.practiceAnswer || mat.oneLineAnswer || '',
+          correctAnswer: q.correctAnswer || q.oneLineAnswer || q.answer || ''
+        };
+      });
+      return {
+        ...mat,
+        questions: questions
+      };
+    });
+  };
+  // Study Materials state (Strictly Short Answer or Long Answer, NO MCQ)
   const defaultStudyMaterials = [];
 
   const [studyMaterials, setStudyMaterials] = useState(() => {
@@ -2945,10 +2976,9 @@ export default function StudentDashboard() {
           !(m.id === 2 && m.title === 'OS Deadlocks Audio Lecture & Voice Notes') &&
           !(m.id === 3 && m.title === 'Cyber Security Phishing Defense Book')
         );
-        if (parsed.length !== filtered.length) {
-          localStorage.setItem('shared_study_materials', JSON.stringify(filtered));
-        }
-        return filtered;
+        const cleaned = sanitizeStudyMaterialList(filtered);
+        localStorage.setItem('shared_study_materials', JSON.stringify(cleaned));
+        return cleaned;
       }
       return [];
     } catch {
@@ -3568,7 +3598,9 @@ export default function StudentDashboard() {
     const ansText = currentQ.oneLineAnswer || currentQ.correctAnswer || currentQ.practiceAnswer || targetMat.practiceAnswer || targetMat.detail || 'Review lesson concepts with voice narration.';
     const expText = getDetailedLongExplanation(targetMat.title, qText, currentQ.explanation || targetMat.textContent);
 
-    const fullMsg = `Question ${targetIdx + 1} of ${questionsList.length}. ${qText}. One-line short answer: ${ansText}. Detailed long answer explanation: ${expText}. Would you like to repeat, go to next question, previous question, or start voice dictation? Say REPEAT, NEXT QUESTION, PREVIOUS QUESTION, or DICTATE.`;
+    const isLongQ = (currentQ.type === 'Long answer' || currentQ.type === 'Descriptive Theory');
+    const qTypeSpeech = isLongQ ? 'Long answer question' : 'Short answer question';
+    const fullMsg = `Question ${targetIdx + 1} of ${questionsList.length}, ${qTypeSpeech}. ${qText}. One-line short answer: ${ansText}. Detailed long answer explanation: ${expText}. Would you like to repeat, go to next question, previous question, or start voice dictation? Say REPEAT, NEXT QUESTION, PREVIOUS QUESTION, or DICTATE.`;
 
     announce(`🔊 Reading Question ${targetIdx + 1} of ${questionsList.length} for ${targetMat.title}`);
     speakText(fullMsg, () => {
@@ -3858,7 +3890,8 @@ export default function StudentDashboard() {
               !(m.id === 2 && m.title === 'OS Deadlocks Audio Lecture & Voice Notes') &&
               !(m.id === 3 && m.title === 'Cyber Security Phishing Defense Book')
             );
-            setStudyMaterials(filtered);
+            const cleaned = sanitizeStudyMaterialList(filtered);
+            setStudyMaterials(cleaned);
           }
         }
         const rawV = localStorage.getItem('shared_oral_vivas');
@@ -6778,10 +6811,9 @@ export default function StudentDashboard() {
             !(m.id === 2 && m.title === 'OS Deadlocks Audio Lecture & Voice Notes') &&
             !(m.id === 3 && m.title === 'Cyber Security Phishing Defense Book')
           );
-          if (cleanedM.length !== parsedM.length) {
-            localStorage.setItem('shared_study_materials', JSON.stringify(cleanedM));
-            setStudyMaterials(cleanedM);
-          }
+          const strictlyNoMcq = sanitizeStudyMaterialList(cleanedM);
+          localStorage.setItem('shared_study_materials', JSON.stringify(strictlyNoMcq));
+          setStudyMaterials(strictlyNoMcq);
         }
       }
     } catch (e) {}
@@ -10758,15 +10790,26 @@ export default function StudentDashboard() {
                       <h3 style={{ fontSize: '16px', color: '#1e1b4b', margin: 0, fontWeight: '700' }}>
                         {currentQ.text || currentQ.question || activePracticeMat.practiceQuestion || `Explain the core concepts of ${activePracticeMat.title}.`}
                       </h3>
-                      {currentQ.options && currentQ.options.length > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
-                          {currentQ.options.map((opt, oIdx) => (
-                            <div key={oIdx} style={{ background: '#f8fafc', padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#334155', fontWeight: '600' }}>
-                              {opt}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      {/* Strictly Short Answer or Long Answer - No MCQ Options */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                        <span style={{
+                          background: (currentQ.type === 'Long answer' || currentQ.type === 'Descriptive Theory') ? '#f3e8ff' : '#f0fdf4',
+                          border: (currentQ.type === 'Long answer' || currentQ.type === 'Descriptive Theory') ? '1px solid #d8b4fe' : '1px solid #86efac',
+                          color: (currentQ.type === 'Long answer' || currentQ.type === 'Descriptive Theory') ? '#7e22ce' : '#15803d',
+                          padding: '4px 12px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '800',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
+                          {(currentQ.type === 'Long answer' || currentQ.type === 'Descriptive Theory') ? '📜 Long Answer Question' : '📝 Short Answer Question'}
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>
+                          (Answer by Voice Dictation or Text • No MCQ Options)
+                        </span>
+                      </div>
                     </div>
 
                     {/* Teacher's Reference Answer & Audio Explanation Box (Accessible for Blind Students) */}
