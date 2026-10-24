@@ -1383,6 +1383,9 @@ export default function TeacherDashboard() {
         detail: `Teacher published AI Oral Viva exam for ${vivaObj.subject} (${vivaObj.group}). Spoken practice & AI auto-evaluation active on Student Dashboard.`,
         date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         type: 'Oral Viva',
+        icon: '🎙️',
+        targetStudentEmail: vivaObj.targetStudentEmail || '',
+        targetStudentName: vivaObj.targetStudentName || '',
         read: false
       };
       const existingRaw = localStorage.getItem('shared_notifications');
@@ -1455,6 +1458,9 @@ export default function TeacherDashboard() {
         detail: `Your teacher evaluated your viva! Score: ${scoreNum}/10 (${gradeStatus}). Feedback: "${feedback}"`,
         date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         type: 'Oral Viva',
+        icon: '🎓',
+        targetStudentEmail: sub.studentEmail || '',
+        targetStudentName: sub.studentName || sub.student || '',
         read: false
       };
       const existingNotifsRaw = localStorage.getItem('shared_notifications');

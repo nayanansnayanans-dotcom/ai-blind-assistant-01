@@ -5850,9 +5850,38 @@ export default function StudentDashboard() {
 
       // 4. Sync notifications & announcements posted by teacher
       const sharedNotifRaw = localStorage.getItem('shared_notifications');
+      let parsedNotifsList = [];
       if (sharedNotifRaw) {
         try {
-          const parsedNotifs = JSON.parse(sharedNotifRaw);
+          const p = JSON.parse(sharedNotifRaw);
+          if (Array.isArray(p)) parsedNotifsList = p;
+        } catch (e) {}
+      }
+
+      // Synthesize notifications for active oral vivas
+      if (Array.isArray(savedOralVivas) && savedOralVivas.length > 0) {
+        savedOralVivas.forEach(v => {
+          const vivaNotifId = `viva_notif_${v.id || v.title}`;
+          const exists = parsedNotifsList.some(n => String(n.id) === vivaNotifId || (n.title && n.title.includes(v.title)));
+          if (!exists) {
+            parsedNotifsList.unshift({
+              id: vivaNotifId,
+              title: `🎙️ Active Oral Viva: ${v.title}`,
+              detail: `Teacher published an oral viva examination for ${v.subject || activeSubject} (${v.questions?.length || 1} questions). Spoken practice and teacher evaluation active.`,
+              date: v.date || 'Today',
+              type: 'Oral Viva',
+              icon: '🎙️',
+              read: false,
+              targetStudentEmail: v.targetStudentEmail || '',
+              targetStudentName: v.targetStudentName || ''
+            });
+          }
+        });
+      }
+
+      if (parsedNotifsList.length > 0) {
+        try {
+          const parsedNotifs = parsedNotifsList;
           if (Array.isArray(parsedNotifs)) {
             const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
             const studentName = (student.name || studentProfile.name || '').toLowerCase().trim();
@@ -6318,7 +6347,11 @@ export default function StudentDashboard() {
         return;
       }
     }
-    if (transcript.includes('read question') || transcript.includes('repeat question') || transcript.includes('say question') || (transcript === 'repeat' && !currentAnswerInput)) {
+    if (transcript.includes('read question') || transcript.includes('repeat question') || transcript.includes('say question') || (transcript === 'repeat' && !currentAnswerInput && !vivaAnswerInput)) {
+      if (activeTab === 'AI Oral Viva Simulator') {
+        handleRepeatVivaQuestion();
+        return;
+      }
       if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || activeTab === 'Exams' || isExamActive)) {
         handleReadExamQuestionStepByStep(currentQIndex);
         return;
@@ -6492,15 +6525,26 @@ export default function StudentDashboard() {
         }
       }
 
-      if (transcript.includes('repeat question') || transcript === 'repeat' || transcript.includes('read question') || transcript.includes('listen question')) {
+      if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || (transcript === 'repeat' && vivaAnswerInput)) {
+        setVivaAnswerInput('');
+        setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: '' }));
+        lastSpokenVivaAnswerRef.current = '';
+        speakText("Clearing previous answer. Please speak your answer again now.", () => {
+          setTimeout(() => {
+            startVivaDictation(false);
+          }, 300);
+        });
+        return;
+      }
+      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say question') || transcript.includes('what is the question') || (transcript === 'repeat' && !vivaAnswerInput)) {
         handleRepeatVivaQuestion();
         return;
       }
-      if (transcript.includes('next question') || transcript === 'next' || transcript.includes('next q')) {
+      if (transcript.includes('next question') || transcript === 'next' || transcript.includes('next q') || transcript.includes('proceed') || transcript.includes('save and next')) {
         handleNextVivaQuestion();
         return;
       }
-      if (transcript.includes('previous question') || transcript === 'previous' || transcript === 'back' || transcript.includes('prev question')) {
+      if (transcript.includes('previous question') || transcript === 'previous' || transcript === 'back' || transcript.includes('prev question') || transcript.includes('go back')) {
         handlePrevVivaQuestion();
         return;
       }
@@ -6521,7 +6565,16 @@ export default function StudentDashboard() {
       setVivaAnswerInput(cleanViva);
       setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanViva }));
       lastSpokenVivaAnswerRef.current = cleanViva;
-      speakText(`You said: ${cleanViva}. Answer recorded. You can say repeat question, next question, or submit viva.`);
+
+      const isLastVivaQ = activeVivaQIdx >= currentVivaQList.length - 1;
+      const promptViva = isLastVivaQ
+        ? `You answered: "${cleanViva}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
+        : `You answered: "${cleanViva}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
+      speakText(promptViva, () => {
+        setTimeout(() => {
+          startVivaDictation(false);
+        }, 400);
+      });
       return;
     }
 
@@ -6908,9 +6961,11 @@ export default function StudentDashboard() {
       }, 300);
     };
 
-    const promptText = (currentExam && activeTab === 'AI Exam Assistant')
+    const promptText = (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam'))
       ? "Listening for your answer. Speak freely or say DONE when finished, or say CLOSE to exit."
-      : "Listening. What help can I do for you? Say your command, or say speak all features, or tell me your interested subject.";
+      : (activeTab === 'AI Oral Viva Simulator')
+        ? "Listening for your viva answer. Speak your answer now, and say DONE when finished, or say Repeat Question."
+        : "Listening. What help can I do for you? Say your command, or say speak all features, or tell me your interested subject.";
 
     const promptSpeechLang = 'en-US';
 
@@ -7040,11 +7095,19 @@ export default function StudentDashboard() {
     if (speakBack && cleanText) {
       setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanText }));
       lastSpokenVivaAnswerRef.current = cleanText;
-      speakText(`You said: ${cleanText}. Answer recorded. You can say repeat question, next question, or submit viva.`);
+      const isLastVivaQ = activeVivaQIdx >= currentVivaQList.length - 1;
+      const promptText = isLastVivaQ
+        ? `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
+        : `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
+      speakText(promptText, () => {
+        setTimeout(() => {
+          startVivaDictation(false);
+        }, 400);
+      });
     }
   };
 
-  const startVivaDictation = () => {
+  const startVivaDictation = (speakPrompt = true) => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       speakText("Speech recognition is not supported in this browser. Please type your answer.");
@@ -7060,9 +7123,7 @@ export default function StudentDashboard() {
     setIsVivaDictating(true);
     cancelSpeech();
 
-    speakText("Listening for your viva answer. Speak your answer now, and say DONE when you are finished.");
-
-    setTimeout(() => {
+    const doStartRec = () => {
       if (!isVivaDictatingRef.current) return;
       try {
         const rec = new SpeechRecognition();
@@ -7083,7 +7144,66 @@ export default function StudentDashboard() {
           }
           const cleaned = currentTranscript.trim();
           setLiveVoiceTranscript(cleaned);
+          const lower = cleaned.toLowerCase();
 
+          // 1. Repeat Answer Command
+          if (/\b(repeat answer|repeat my answer|re-record|change answer|try again)\b/i.test(lower) || (lower === 'repeat' && vivaAnswerInput)) {
+            isVivaDictatingRef.current = false;
+            setIsVivaDictating(false);
+            try { rec.stop(); } catch (err) {}
+            vivaRecognitionRef.current = null;
+            setVivaAnswerInput('');
+            setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: '' }));
+            lastSpokenVivaAnswerRef.current = '';
+            speakText("Clearing previous answer. Please speak your answer again now.", () => {
+              setTimeout(() => {
+                startVivaDictation(false);
+              }, 300);
+            });
+            return;
+          }
+
+          // 2. Repeat Question Command
+          if (/\b(repeat question|read question|say question|what is the question|read the question)\b/i.test(lower) || (lower === 'repeat' && !vivaAnswerInput)) {
+            isVivaDictatingRef.current = false;
+            setIsVivaDictating(false);
+            try { rec.stop(); } catch (err) {}
+            vivaRecognitionRef.current = null;
+            handleRepeatVivaQuestion();
+            return;
+          }
+
+          // 3. Next Question Command
+          if (/\b(next question|next q|go to next|proceed|save and next)\b/i.test(lower) || lower === 'next') {
+            isVivaDictatingRef.current = false;
+            setIsVivaDictating(false);
+            try { rec.stop(); } catch (err) {}
+            vivaRecognitionRef.current = null;
+            handleNextVivaQuestion();
+            return;
+          }
+
+          // 4. Previous Question Command
+          if (/\b(previous question|prev question|go back|back)\b/i.test(lower) || lower === 'previous') {
+            isVivaDictatingRef.current = false;
+            setIsVivaDictating(false);
+            try { rec.stop(); } catch (err) {}
+            vivaRecognitionRef.current = null;
+            handlePrevVivaQuestion();
+            return;
+          }
+
+          // 5. Submit Viva Exam Command
+          if (/\b(submit viva|submit exam|finish viva|finish exam)\b/i.test(lower) || lower === 'submit') {
+            isVivaDictatingRef.current = false;
+            setIsVivaDictating(false);
+            try { rec.stop(); } catch (err) {}
+            vivaRecognitionRef.current = null;
+            handleSubmitVivaExam();
+            return;
+          }
+
+          // 6. Dictation done check
           const { isDone, cleanText } = parseDoneTrigger(cleaned);
           setVivaAnswerInput(cleanText);
 
@@ -7096,7 +7216,16 @@ export default function StudentDashboard() {
             setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanText }));
             lastSpokenVivaAnswerRef.current = cleanText;
 
-            speakText(`You said: ${cleanText}. Answer recorded. You can say repeat question, next question, or submit viva.`);
+            const isLastVivaQ = activeVivaQIdx >= currentVivaQList.length - 1;
+            const promptText = isLastVivaQ
+              ? `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
+              : `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
+
+            speakText(promptText, () => {
+              setTimeout(() => {
+                startVivaDictation(false);
+              }, 400);
+            });
           }
         };
 
@@ -7105,7 +7234,6 @@ export default function StudentDashboard() {
         };
 
         rec.onend = () => {
-          // Continuous loop: keep listening until the student says DONE
           if (isVivaDictatingRef.current) {
             try {
               rec.start();
@@ -7123,7 +7251,14 @@ export default function StudentDashboard() {
       } catch (err) {
         console.error('Failed to start speech recognition for viva:', err);
       }
-    }, 1200);
+    };
+
+    if (speakPrompt) {
+      speakText("Listening for your viva answer. Speak your answer now, and say DONE when you are finished.");
+      setTimeout(doStartRec, 1200);
+    } else {
+      doStartRec();
+    }
   };
 
   const handleAnswerBoxFocusOrClick = () => {
@@ -7155,8 +7290,12 @@ export default function StudentDashboard() {
 
   const handleRepeatVivaQuestion = () => {
     if (!currentVivaQ) return;
-    const msg = `Question ${activeVivaQIdx + 1} of ${currentVivaQList.length}: ${currentVivaQ.text}. Tap the answer box to speak your answer.`;
-    speakText(msg);
+    const msg = `Question ${activeVivaQIdx + 1} of ${currentVivaQList.length}: ${currentVivaQ.text}. Please speak your answer.`;
+    speakText(msg, () => {
+      setTimeout(() => {
+        startVivaDictation(false);
+      }, 300);
+    });
   };
 
   const handleNextVivaQuestion = () => {
@@ -7181,10 +7320,15 @@ export default function StudentDashboard() {
       lastSpokenVivaAnswerRef.current = existingNextAns;
       setVivaFeedback(null);
       const nextQ = currentVivaQList[nextIdx];
-      const msg = `Moving to Question ${nextIdx + 1} of ${currentVivaQList.length}: ${nextQ.text}. ${existingNextAns ? 'Your recorded answer is: ' + existingNextAns : 'Tap the answer box to speak your answer.'}`;
-      speakText(msg);
+      const prefix = currentAns ? 'Answer saved. ' : '';
+      const msg = `${prefix}Moving to Question ${nextIdx + 1} of ${currentVivaQList.length}: ${nextQ.text}. ${existingNextAns ? 'Your recorded answer is: ' + existingNextAns : 'Please speak your answer.'}`;
+      speakText(msg, () => {
+        setTimeout(() => {
+          startVivaDictation(false);
+        }, 300);
+      });
     } else {
-      speakText(`You are on the last question of this viva exam. Click Submit Viva Exam to complete your assessment.`);
+      speakText(`You are on the last question of this viva exam. Say 'Submit Viva' or click Submit Viva Exam to complete your assessment.`);
     }
   };
 
@@ -9239,10 +9383,11 @@ export default function StudentDashboard() {
                   </div>
                 </div>
 
-                {/* Stat Cards (4 Cards) */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+                {/* Stat Cards (5 Cards) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px' }}>
                   <StatCard icon={<Calendar size={22} color="#0284c7" />} bg="#f0f9ff" border="#bae6fd" label="Upcoming Exams" value={filteredExams.length.toString()} action="View Schedule →" onClick={() => setActiveTab('My Exams')} />
                   <StatCard icon={<FileText size={22} color="#16a34a" />} bg="#f0fdf4" border="#bbf7d0" label="Active Exams" value={filteredExams.filter(e => isExamActiveNow(e)).length.toString()} action="Start Exam →" onClick={() => { const activeEx = filteredExams.find(e => isExamActiveNow(e)); if (activeEx) startExamHandler(activeEx); else speakText("No active exams right now. Please check back when your teacher assigns an assessment."); }} />
+                  <StatCard icon={<Sparkles size={22} color="#0284c7" />} bg="#f0fdf4" border="#86efac" label="Oral Vivas" value={filteredOralVivas.length.toString()} action="Start Viva →" onClick={() => { setActiveTab('AI Oral Viva Simulator'); speakText(`Opening Oral Viva Simulator. You have ${filteredOralVivas.length} active oral vivas.`); }} />
                   <StatCard icon={<BarChart2 size={22} color="#9333ea" />} bg="#faf5ff" border="#e9d5ff" label="Completed Exams" value={filteredResults.length.toString()} action="View Results →" onClick={() => setActiveTab('Results & Performance')} />
                   <StatCard icon={<Award size={22} color="#ea580c" />} bg="#fff7ed" border="#ffedd5" label="Overall Progress" value={filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'} action="View Details →" onClick={() => setActiveTab('Results & Performance')} progress={filteredResults.length > 0 ? overallProgress : 0} />
                 </div>
@@ -9283,6 +9428,64 @@ export default function StudentDashboard() {
                     <ActionBadge icon="🎙️" title="Answer by Voice" sub="(Speech-to-Text)" onClick={triggerVoiceCommand} />
                     <ActionBadge icon="🔄" title="Repeat Question" sub="(Say 'Repeat')" onClick={() => speakText("You can say repeat anytime during an active exam.")} />
                     <ActionBadge icon="📑" title="Next / Previous" sub="(Say 'Next' or 'Previous')" onClick={() => speakText("Voice navigation for question controls active.")} />
+                  </div>
+                </div>
+
+                {/* AI Oral Viva Simulator Center Card / Box on Dashboard */}
+                <div style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', border: '1.5px solid #86efac', borderRadius: '20px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#16a34a', display: 'grid', placeItems: 'center' }}>
+                        <Sparkles size={24} color="#ffffff" />
+                      </div>
+                      <div>
+                        <h2 style={{ margin: 0, fontSize: '18px', color: '#14532d', fontWeight: '800' }}>AI Oral Viva Simulator ({activeSubject})</h2>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#166534' }}>
+                          {filteredOralVivas.length > 0 
+                            ? `${filteredOralVivas.length} teacher-published oral viva ready for ${activeSubject}. Answer with your voice and receive manual teacher evaluation.`
+                            : `No oral viva scheduled for ${activeSubject} right now. Teacher scheduled vivas will appear here.`}
+                        </p>
+                      </div>
+                    </div>
+                    {filteredOralVivas.length > 0 && (
+                      <span style={{ background: '#16a34a', color: '#ffffff', padding: '6px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800' }}>
+                        ● Active Viva Available
+                      </span>
+                    )}
+                  </div>
+
+                  {filteredOralVivas.length > 0 && (
+                    <div style={{ background: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '14px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '6px', fontWeight: '800', textTransform: 'uppercase' }}>
+                          {filteredOralVivas[0].subject || activeSubject} Oral Viva
+                        </span>
+                        <h3 style={{ margin: '6px 0 2px 0', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>
+                          {filteredOralVivas[0].title || `${activeSubject} Oral Assessment`}
+                        </h3>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                          {filteredOralVivas[0].questions?.length || 1} Question(s) • Spoken response with Teacher evaluation
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('AI Oral Viva Simulator');
+                          speakText(`Opening ${filteredOralVivas[0].title || 'Oral Viva'}. Starting viva questions.`);
+                        }}
+                        style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)' }}
+                      >
+                        🎙️ Launch Oral Viva →
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Viva Quick Badges */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                    <ActionBadge icon="🔊" title="Read Viva Q" sub="(Voice Assistant)" onClick={() => { setActiveTab('AI Oral Viva Simulator'); speakText("Tap Repeat Question anytime to hear question."); }} />
+                    <ActionBadge icon="🎙️" title="Answer by Voice" sub="(Say 'DONE')" onClick={() => { setActiveTab('AI Oral Viva Simulator'); startVivaDictation(); }} />
+                    <ActionBadge icon="🔄" title="Repeat / Next Q" sub="(Voice Nav)" onClick={() => { setActiveTab('AI Oral Viva Simulator'); speakText("Say Next Question or Repeat to navigate viva."); }} />
+                    <ActionBadge icon="💾" title="Submit to Teacher" sub="(Teacher Evaluation)" onClick={() => { setActiveTab('AI Oral Viva Simulator'); speakText("Your viva submission will be reviewed and scored by your teacher."); }} />
                   </div>
                 </div>
 
@@ -11918,6 +12121,7 @@ export default function StudentDashboard() {
                 <span style={{ fontSize: '12px', fontWeight: '800', color: '#64748b', marginRight: '8px' }}>NOTIFICATION TYPES:</span>
                 {[
                   { label: '🔔 Exam Starting', bg: '#fef3c7', color: '#b45309' },
+                  { label: '🎙️ Oral Viva', bg: '#dcfce7', color: '#15803d' },
                   { label: '📝 New Exam', bg: '#e0f2fe', color: '#0369a1' },
                   { label: '⏰ Exam Reminder', bg: '#ffedd5', color: '#c2410c' },
                   { label: '📊 Result Published', bg: '#dcfce7', color: '#15803d' },
@@ -11963,9 +12167,22 @@ export default function StudentDashboard() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                             <b style={{ fontSize: '16px', color: '#0f172a' }}>{ann.title}</b>
                             {ann.type && (
-                              <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0284c7', padding: '2px 8px', borderRadius: '6px', fontWeight: '800' }}>
+                              <span style={{ fontSize: '11px', background: ann.type === 'Oral Viva' ? '#dcfce7' : '#e0f2fe', color: ann.type === 'Oral Viva' ? '#15803d' : '#0284c7', padding: '2px 8px', borderRadius: '6px', fontWeight: '800' }}>
                                 {ann.type}
                               </span>
+                            )}
+                            {ann.type === 'Oral Viva' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab('AI Oral Viva Simulator');
+                                  speakText("Opening AI Oral Viva Simulator.");
+                                }}
+                                style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                              >
+                                🎙️ Open Viva →
+                              </button>
                             )}
                           </div>
                           <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#475569', lineHeight: 1.5 }}>
