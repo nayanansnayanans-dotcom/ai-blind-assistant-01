@@ -1030,7 +1030,7 @@ export default function TeacherDashboard() {
           if (!s) return false;
           if (s.student === 'Nayana N S' && String(s.response || s.spokenResponse || '').includes('Deadlock requires 4 conditions')) return false;
           const sEmail = String(s.teacherEmail || '').toLowerCase().trim();
-          return Boolean(tEmail && sEmail && tEmail === sEmail);
+          return !tEmail || !sEmail || sEmail === tEmail || tEmail === 'teacher@blindassist.edu';
         }) : [];
       }
       return [];
@@ -1041,13 +1041,16 @@ export default function TeacherDashboard() {
 
   const [newViva, setNewViva] = useState({
     title: '',
-    subject: selectedTeacherSubject !== 'ALL' ? selectedTeacherSubject : 'Python Programming',
+    subject: selectedTeacherSubject !== 'ALL' ? selectedTeacherSubject : 'Computer Science',
+    targetStudentEmail: '',
+    targetStudentName: '',
     group: 'All Blind Students',
     questionText: '',
     keywords: '',
     expectedAnswer: ''
   });
 
+  const [vivaEvaluationDrafts, setVivaEvaluationDrafts] = useState({});
   const [vivaQuestions, setVivaQuestions] = useState([]);
 
   const handleAddQuestionToViva = () => {
@@ -1315,8 +1318,11 @@ export default function TeacherDashboard() {
       title: newViva.title.trim(),
       subject: newViva.subject,
       group: newViva.group,
-      teacherEmail: teacher.email || '',
-      teacherName: teacher.fullName || '',
+      targetStudentEmail: newViva.targetStudentEmail || '',
+      targetStudentName: newViva.targetStudentName || '',
+      teacherEmail: teacher.email || 'teacher@blindassist.edu',
+      teacherName: teacher.name || teacher.fullName || 'Teacher',
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       questionsCount: allQs.length,
       questions: allQs,
       status: 'Active'
@@ -1328,7 +1334,8 @@ export default function TeacherDashboard() {
       const allSavedRaw = localStorage.getItem('shared_oral_vivas');
       const allSaved = allSavedRaw ? JSON.parse(allSavedRaw) : [];
       const others = Array.isArray(allSaved) ? allSaved.filter(v => v.teacherEmail && v.teacherEmail !== teacher.email && v.id !== vivaObj.id) : [];
-      localStorage.setItem('shared_oral_vivas', JSON.stringify([vivaObj, ...oralVivaList, ...others]));
+      const cleanVivaList = deduplicateExamsList([vivaObj, ...oralVivaList, ...others]);
+      localStorage.setItem('shared_oral_vivas', JSON.stringify(cleanVivaList));
 
       const notifObj = {
         id: `notif_${Date.now()}_${Math.floor(Math.random()*1000)}`,
@@ -1358,6 +1365,79 @@ export default function TeacherDashboard() {
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
     say('Oral Viva exam deleted.');
+  };
+
+  const handleSaveVivaEvaluation = (subId) => {
+    const sub = vivaSubmissions.find(s => s.id === subId);
+    if (!sub) return;
+    const draft = vivaEvaluationDrafts[subId] || {};
+    const scoreVal = draft.score !== undefined ? draft.score : (sub.teacherScore !== undefined && sub.teacherScore !== null ? sub.teacherScore : 8);
+    const scoreNum = Number(scoreVal);
+    if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 10) {
+      return say('Please enter a valid score between 0 and 10.');
+    }
+    const gradeStatus = draft.gradeStatus || sub.gradeStatus || (scoreNum >= 5 ? 'Pass' : 'Needs Improvement');
+    const feedback = (draft.feedback !== undefined ? draft.feedback : (sub.teacherFeedback || '')).trim() || (scoreNum >= 8 ? 'Outstanding oral performance and technical clarity.' : 'Good attempt. Continue practicing core technical definitions.');
+
+    const updated = vivaSubmissions.map(s => {
+      if (s.id === subId) {
+        return {
+          ...s,
+          status: 'Evaluated',
+          teacherScore: scoreNum,
+          gradeStatus,
+          teacherFeedback: feedback,
+          evaluatedBy: teacher.name || teacher.fullName || teacher.email || 'Teacher',
+          evaluatedAt: new Date().toISOString()
+        };
+      }
+      return s;
+    });
+
+    setVivaSubmissions(updated);
+    try {
+      const rawAll = localStorage.getItem('shared_viva_submissions');
+      const allSubs = rawAll ? JSON.parse(rawAll) : [];
+      const merged = Array.isArray(allSubs) && allSubs.length > 0 ? allSubs.map(s => s.id === subId ? {
+        ...s,
+        status: 'Evaluated',
+        teacherScore: scoreNum,
+        gradeStatus,
+        teacherFeedback: feedback,
+        evaluatedBy: teacher.name || teacher.fullName || teacher.email || 'Teacher',
+        evaluatedAt: new Date().toISOString()
+      } : s) : updated;
+      localStorage.setItem('shared_viva_submissions', JSON.stringify(merged));
+
+      const notifObj = {
+        id: `notif_${Date.now()}`,
+        title: `🎓 Viva Evaluated: ${sub.vivaTitle || sub.subject}`,
+        detail: `Your teacher evaluated your viva! Score: ${scoreNum}/10 (${gradeStatus}). Feedback: "${feedback}"`,
+        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        type: 'Oral Viva',
+        read: false
+      };
+      const existingNotifsRaw = localStorage.getItem('shared_notifications');
+      const existingNotifs = existingNotifsRaw ? JSON.parse(existingNotifsRaw) : [];
+      localStorage.setItem('shared_notifications', JSON.stringify([notifObj, ...existingNotifs]));
+
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    say(`Viva evaluation saved and published for ${sub.studentName || sub.student}! Score: ${scoreNum}/10.`);
+  };
+
+  const handleDeleteVivaSubmission = (subId) => {
+    const updated = vivaSubmissions.filter(s => s.id !== subId);
+    setVivaSubmissions(updated);
+    try {
+      const rawAll = localStorage.getItem('shared_viva_submissions');
+      const allSubs = rawAll ? JSON.parse(rawAll) : [];
+      const filtered = Array.isArray(allSubs) ? allSubs.filter(s => s.id !== subId) : updated;
+      localStorage.setItem('shared_viva_submissions', JSON.stringify(filtered));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+    say('Viva submission deleted.');
   };
   
   // Live Monitor & Student Requests
@@ -1574,6 +1654,41 @@ export default function TeacherDashboard() {
 
       // 5. Sync registered student subjects live
       loadRegisteredStudents();
+
+      // 6. Sync viva submissions from students live
+      const vivaSubRaw = localStorage.getItem('shared_viva_submissions');
+      if (vivaSubRaw) {
+        try {
+          const parsed = JSON.parse(vivaSubRaw);
+          if (Array.isArray(parsed)) {
+            const valid = parsed.filter(s => {
+              if (!s) return false;
+              const sEmail = String(s.teacherEmail || '').toLowerCase().trim();
+              return !teacherEmailKey || !sEmail || sEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu';
+            });
+            setVivaSubmissions(valid);
+          }
+        } catch (e) {}
+      }
+
+      // 7. Sync oral viva exams
+      const rawOralV = localStorage.getItem('shared_oral_vivas');
+      if (rawOralV) {
+        try {
+          const parsed = JSON.parse(rawOralV);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter(v => {
+              if (!v) return false;
+              if (v.id === 1 || v.id === 2) return false;
+              if (String(v.title || '').includes('Operating Systems & Process Management Oral Viva')) return false;
+              if (String(v.title || '').includes('Computer Science & Operating Systems Oral Viva')) return false;
+              const vEmail = String(v.teacherEmail || v.creatorEmail || '').toLowerCase().trim();
+              return !teacherEmailKey || !vEmail || vEmail === teacherEmailKey;
+            });
+            setOralVivaList(filtered);
+          }
+        } catch (e) {}
+      }
     };
 
     const handleSosEvent = (e) => {
@@ -1762,7 +1877,7 @@ export default function TeacherDashboard() {
       teacherFeedback: overallFeedbackInput.trim() || 'Exam corrected by teacher.',
       evaluatedBy: teacher.fullName && teacher.fullName !== 'Teacher' ? teacher.fullName : 'Course Instructor',
       teacherName: teacher.fullName && teacher.fullName !== 'Teacher' ? teacher.fullName : 'Course Instructor',
-      teacherEmail: teacher.email || '',
+      teacherEmail: teacher.email || 'teacher@blindassist.edu',
       evaluatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       questions: correctionQuestions
     };
@@ -5376,6 +5491,74 @@ export default function TeacherDashboard() {
             </Field>
           )}
 
+                    <Field label="Target Student (Select a particular student or choose All Students)">
+            <select
+              value={newViva.targetStudentEmail || 'all'}
+              onChange={e => {
+                const val = e.target.value;
+                if (!val || val === 'all') {
+                  setNewViva(prev => ({ ...prev, targetStudentEmail: '', targetStudentName: '' }));
+                } else {
+                  const stu = registeredStudents.find(s => s.email === val);
+                  setNewViva(prev => ({ 
+                    ...prev, 
+                    targetStudentEmail: val, 
+                    targetStudentName: stu ? (stu.username || stu.name || val) : val,
+                    subject: (stu && (stu.interestedSubject || stu.subject)) ? (stu.interestedSubject || stu.subject) : prev.subject
+                  }));
+                }
+              }}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: newViva.targetStudentEmail ? '2px solid #9333ea' : '1px solid #cbd5e1',
+                background: newViva.targetStudentEmail ? '#faf5ff' : '#ffffff',
+                color: newViva.targetStudentEmail ? '#7e22ce' : '#0f172a',
+                fontWeight: '700',
+                fontSize: '13px',
+                cursor: 'pointer',
+                width: '100%',
+                marginBottom: '10px'
+              }}
+            >
+              <option value="all">🌐 All Students studying this subject (General Viva)</option>
+              {registeredStudents.length > 0 && (
+                <optgroup label="👤 Registered Students (Select particular student)">
+                  {registeredStudents.map(stu => {
+                    const sub = stu.interestedSubject || stu.subject || 'Computer Science';
+                    return (
+                      <option key={stu.email || stu._id} value={stu.email}>
+                        👤 {stu.username || stu.name} — ({stu.email}) • Subject: {sub}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+            </select>
+          </Field>
+          {newViva.targetStudentEmail && (
+            <div style={{
+              background: '#faf5ff',
+              border: '1px solid #c084fc',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span style={{ fontSize: '12px', color: '#7e22ce', fontWeight: '800' }}>
+                🎯 Target Student: {newViva.targetStudentName || newViva.targetStudentEmail} ({newViva.subject})
+              </span>
+              <button
+                type="button"
+                onClick={() => setNewViva(prev => ({ ...prev, targetStudentEmail: '', targetStudentName: '' }))}
+                style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+              >
+                ✕ Switch to All Students
+              </button>
+            </div>
+          )}
           <Field label="Target Class / Student Group">
             <select value={newViva.group} onChange={e => setNewViva({ ...newViva, group: e.target.value })}>
               <option value="All Blind Students">All Blind Students</option>
@@ -5484,29 +5667,182 @@ export default function TeacherDashboard() {
                   </p>
                 </div>
               ) : (
-                filteredVivaSubmissions.map((sub, sIdx) => (
-                  <div key={sub.id || sIdx} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <b style={{ color: '#14532d', fontSize: '14px' }}>{sub.student || sub.studentName}</b>
-                      <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-                        Score: {sub.score || '9/10'} ({sub.percentage || 90}%)
-                      </span>
+                filteredVivaSubmissions.map((sub, sIdx) => {
+                  const subId = sub.id || `viva_sub_${sIdx}`;
+                  const isEvaluated = sub.status === 'Evaluated' || (sub.teacherScore !== undefined && sub.teacherScore !== null);
+                  const draft = vivaEvaluationDrafts[subId] || {};
+                  const currentScore = draft.score !== undefined ? draft.score : (sub.teacherScore !== undefined && sub.teacherScore !== null ? sub.teacherScore : '');
+                  const currentGrade = draft.gradeStatus || sub.gradeStatus || 'Pass';
+                  const currentFeedback = draft.feedback !== undefined ? draft.feedback : (sub.teacherFeedback || '');
+                  const questionsList = sub.questions || [
+                    { questionNum: 1, questionText: sub.vivaTitle || 'Oral Viva Question', studentAnswer: sub.response || sub.spokenResponse || sub.transcript || 'No response recorded' }
+                  ];
+
+                  return (
+                    <div 
+                      key={subId} 
+                      style={{ 
+                        background: isEvaluated ? '#f0fdf4' : '#fffbeb', 
+                        border: isEvaluated ? '1.5px solid #86efac' : '2px solid #fde68a', 
+                        padding: '18px', 
+                        borderRadius: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        boxShadow: isEvaluated ? '0 2px 8px rgba(22, 163, 74, 0.08)' : '0 4px 12px rgba(245, 158, 11, 0.12)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '18px' }}>👤</span>
+                            <b style={{ color: '#0f172a', fontSize: '15px' }}>{sub.studentName || sub.student || 'Registered Student'}</b>
+                            {sub.studentEmail && (
+                              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>({sub.studentEmail})</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#0284c7', fontWeight: '700', marginTop: '2px' }}>
+                            📚 {sub.vivaTitle || sub.subject || 'Oral Viva'} • <span style={{ color: '#64748b' }}>Submitted: {sub.date || 'Today'} {sub.time ? `at ${sub.time}` : ''}</span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ 
+                            fontSize: '11px', 
+                            background: isEvaluated ? '#dcfce7' : '#fef3c7', 
+                            color: isEvaluated ? '#15803d' : '#b45309', 
+                            border: `1px solid ${isEvaluated ? '#86efac' : '#fde68a'}`,
+                            padding: '4px 10px', 
+                            borderRadius: '8px', 
+                            fontWeight: '800' 
+                          }}>
+                            {isEvaluated ? `✓ Evaluated (${sub.teacherScore}/10 · ${sub.gradeStatus || 'Pass'})` : '⏳ Pending Teacher Evaluation'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteVivaSubmission(sub.id)}
+                            style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '16px', cursor: 'pointer', fontWeight: 'bold' }}
+                            title="Delete this submission"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Question by Question Review */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <b style={{ fontSize: '12px', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Candidate's Spoken Responses ({questionsList.length} Qs):
+                        </b>
+                        {questionsList.map((q, qIdx) => (
+                          <div key={qIdx} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+                              <strong style={{ fontSize: '13px', color: '#0f172a' }}>
+                                Q{q.questionNum || qIdx + 1}: {q.questionText || q.text || 'Viva question'}
+                              </strong>
+                              <button
+                                type="button"
+                                onClick={() => speak(`Student ${sub.studentName || 'candidate'}'s answer for question ${q.questionNum || qIdx + 1}: ${q.studentAnswer || 'No response recorded'}`)}
+                                style={{ background: '#eff6ff', color: '#0284c7', border: '1px solid #bfdbfe', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                🔊 Listen
+                              </button>
+                            </div>
+                            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '6px', fontSize: '12px', color: '#1e293b', fontStyle: 'italic', borderLeft: '3px solid #0284c7' }}>
+                              "{q.studentAnswer || q.answer || 'No spoken answer recorded.'}"
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Teacher Evaluation & Grading Form */}
+                      <div style={{ background: '#ffffff', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '14px', marginTop: '4px' }}>
+                        <b style={{ fontSize: '13px', color: '#7e22ce', display: 'block', marginBottom: '10px' }}>
+                          ✍️ Teacher Evaluation & Marks Entry:
+                        </b>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                          <div>
+                            <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', display: 'block', marginBottom: '4px' }}>
+                              Teacher Score (0 to 10):
+                            </label>
+                            <input 
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.5"
+                              placeholder="e.g. 8.5"
+                              value={currentScore}
+                              onChange={e => setVivaEvaluationDrafts(prev => ({
+                                ...prev,
+                                [subId]: { ...(prev[subId] || {}), score: e.target.value }
+                              }))}
+                              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: '800', fontSize: '13px', boxSizing: 'border-box' }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', display: 'block', marginBottom: '4px' }}>
+                              Result / Status:
+                            </label>
+                            <select
+                              value={currentGrade}
+                              onChange={e => setVivaEvaluationDrafts(prev => ({
+                                ...prev,
+                                [subId]: { ...(prev[subId] || {}), gradeStatus: e.target.value }
+                              }))}
+                              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontWeight: '700', fontSize: '12px', boxSizing: 'border-box', background: '#ffffff' }}
+                            >
+                              <option value="Pass">Pass</option>
+                              <option value="Distinction">Distinction</option>
+                              <option value="Good Effort">Good Effort</option>
+                              <option value="Needs Improvement">Needs Improvement</option>
+                              <option value="Fail">Fail</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '11px', fontWeight: '800', color: '#475569', display: 'block', marginBottom: '4px' }}>
+                            Teacher Feedback & Guidance for Candidate:
+                          </label>
+                          <textarea
+                            rows={2}
+                            placeholder="Enter verbal feedback for the student (e.g. Excellent explanation of GIL and multithreading behavior!)..."
+                            value={currentFeedback}
+                            onChange={e => setVivaEvaluationDrafts(prev => ({
+                              ...prev,
+                              [subId]: { ...(prev[subId] || {}), feedback: e.target.value }
+                            }))}
+                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box', outline: 'none' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveVivaEvaluation(sub.id)}
+                            style={{ 
+                              background: '#16a34a', 
+                              color: '#ffffff', 
+                              border: 'none', 
+                              padding: '10px 18px', 
+                              borderRadius: '8px', 
+                              fontWeight: '800', 
+                              fontSize: '12px', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)'
+                            }}
+                          >
+                            💾 {isEvaluated ? 'Update Evaluation & Publish to Student' : 'Submit Evaluation to Student'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <small style={{ color: '#166534' }}>{sub.subject || sub.vivaTitle || 'Viva Assessment'} · Speech Fluency: {sub.fluency || '95%'}</small>
-                    <p style={{ margin: '6px 0', fontSize: '12px', color: '#14532d', fontStyle: 'italic', background: '#ffffff', padding: '8px', borderRadius: '6px' }}>
-                      "{sub.response || sub.spokenResponse || sub.transcript || 'Spoken response recorded.'}"
-                    </p>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button style={{ fontSize: '11px', padding: '4px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }} onClick={() => speak(`Student ${sub.student || sub.studentName} spoken viva response: ${sub.response || sub.transcript}`)}>
-                        🔊 Replay Spoken Audio
-                      </button>
-                      <button style={{ fontSize: '11px', padding: '4px 10px', background: '#ffffff', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: '6px', cursor: 'pointer' }} onClick={() => say(`Approved viva score for ${sub.student || sub.studentName}`)}>
-                        ✓ Approve Grade
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
+                  );
+                }))}
             </div>
           </aside>
         </div>

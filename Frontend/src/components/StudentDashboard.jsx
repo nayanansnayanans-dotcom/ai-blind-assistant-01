@@ -2393,6 +2393,15 @@ export const deduplicateExamsList = (examList) => {
   return Array.from(map.values());
 };
 
+export const isTeacherPublishedOralViva = (v) => {
+  if (!v || !v.title) return false;
+  if (v.id === 1 || v.id === 2 || v.id === 'viva-cs-1' || v.id === 'viva-cs-2') return false;
+  const titleStr = String(v.title || '').toLowerCase();
+  if (titleStr.includes('operating systems & process management')) return false;
+  if (titleStr.includes('computer science & operating systems oral viva')) return false;
+  return Boolean(v.teacherEmail || v.creatorEmail || (String(v.id || '').startsWith('viva_') && v.status === 'Active'));
+};
+
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const [studentProfile, setStudentProfile] = useState(readStudentProfile);
@@ -2998,11 +3007,7 @@ export default function StudentDashboard() {
       const saved = localStorage.getItem('shared_oral_vivas');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const filtered = Array.isArray(parsed) ? parsed.filter(v => 
-          !(v.id === 1 && String(v.title).includes('Operating Systems')) &&
-          !(v.id === 2 && String(v.title).includes('Computer Networks')) &&
-          !(v.title === 'Operating Systems & Process Management Oral Viva')
-        ) : [];
+        const filtered = Array.isArray(parsed) ? parsed.filter(isTeacherPublishedOralViva) : [];
         if (filtered.length !== (parsed ? parsed.length : 0)) {
           localStorage.setItem('shared_oral_vivas', JSON.stringify(filtered));
         }
@@ -3016,11 +3021,7 @@ export default function StudentDashboard() {
       const saved = localStorage.getItem('shared_oral_vivas');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const filtered = Array.isArray(parsed) ? parsed.filter(v => 
-          !(v.id === 1 && String(v.title).includes('Operating Systems')) &&
-          !(v.id === 2 && String(v.title).includes('Computer Networks')) &&
-          !(v.title === 'Operating Systems & Process Management Oral Viva')
-        ) : [];
+        const filtered = Array.isArray(parsed) ? parsed.filter(isTeacherPublishedOralViva) : [];
         if (filtered.length > 0) return filtered[0].title || filtered[0].subject || '';
       }
     } catch (e) {}
@@ -3033,6 +3034,14 @@ export default function StudentDashboard() {
   const [isVivaDictating, setIsVivaDictating] = useState(false);
   const [isVivaSubmitted, setIsVivaSubmitted] = useState(false);
   const [vivaOverallResult, setVivaOverallResult] = useState(null);
+  const [vivaSubmissionsList, setVivaSubmissionsList] = useState(() => {
+    try {
+      const raw = localStorage.getItem('shared_viva_submissions');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
   const isVivaDictatingRef = useRef(false);
   const vivaRecognitionRef = useRef(null);
   const lastSpokenVivaAnswerRef = useRef('');
@@ -3083,11 +3092,24 @@ export default function StudentDashboard() {
   }, [studyMaterials, activeSubject]);
 
   const filteredOralVivas = useMemo(() => {
-    const matching = (Array.isArray(oralVivas) ? oralVivas : []).filter(v => isSubjectMatching(v.subject || v.title, activeSubject));
-    if (matching.length > 0) return matching;
-    const preset = getSubjectDataBank(activeSubject);
-    return preset?.oralVivas || [];
-  }, [oralVivas, activeSubject]);
+    const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+    const studentName = (student.name || studentProfile.name || '').toLowerCase().trim();
+
+    const matching = (Array.isArray(oralVivas) ? oralVivas : []).filter(v => {
+      if (!isTeacherPublishedOralViva(v)) return false;
+      if (!isSubjectMatching(v.subject || v.title, activeSubject)) return false;
+      
+      const targetEmail = String(v.targetStudentEmail || '').toLowerCase().trim();
+      const targetName = String(v.targetStudentName || '').toLowerCase().trim();
+      if (targetEmail && targetEmail !== 'all' && targetEmail !== studentEmail && (!targetName || targetName !== studentName)) {
+        return false;
+      }
+      return true;
+    });
+
+    // Strictly return only teacher-published matching vivas; if none, return empty array!
+    return matching;
+  }, [oralVivas, activeSubject, student.email, studentProfile.email, student.name, studentProfile.name]);
 
   const filteredResults = useMemo(() => {
     return (results || []).filter(r => isSubjectMatching(r.subject, activeSubject) && isExamSuccessfullyCompleted(r));
@@ -3102,8 +3124,37 @@ export default function StudentDashboard() {
         setVivaFeedback(null);
         setVivaAnswerInput('');
       }
+    } else {
+      setVivaSubject('');
     }
   }, [filteredOralVivas, vivaSubject]);
+
+  // Sync Student's Viva Submissions & Teacher Evaluations
+  useEffect(() => {
+    const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+    if (!studentEmail || !Array.isArray(vivaSubmissionsList) || vivaSubmissionsList.length === 0) {
+      return;
+    }
+
+    const matched = vivaSubmissionsList.find(s => {
+      if (!s) return false;
+      const sEmail = String(s.studentEmail || '').toLowerCase().trim();
+      if (sEmail !== studentEmail) return false;
+      const matchTopic = vivaSubject && (s.vivaTitle === vivaSubject || s.vivaId === vivaSubject);
+      const matchSubject = activeSubject && isSubjectMatching(s.subject, activeSubject);
+      return matchTopic || matchSubject;
+    });
+
+    if (matched) {
+      setVivaOverallResult(prev => {
+        if (prev && prev.status === 'Pending Teacher Evaluation' && matched.status === 'Evaluated') {
+          speakText(`Your oral viva for ${matched.subject || activeSubject} has been evaluated by your teacher! You received a score of ${matched.teacherScore} out of 10. Teacher feedback: ${matched.teacherFeedback || 'Good job'}.`);
+        }
+        return matched;
+      });
+      setIsVivaSubmitted(true);
+    }
+  }, [vivaSubmissionsList, vivaSubject, activeSubject, student.email, studentProfile.email]);
 
   // Mandatory AI Face Verification & Proctoring State (Compulsory Face Detection & Start-to-End Proctoring)
   const [faceAuthModalOpen, setFaceAuthModalOpen] = useState(false);
@@ -3805,18 +3856,21 @@ export default function StudentDashboard() {
         if (rawV) {
           const parsedV = JSON.parse(rawV);
           if (Array.isArray(parsedV)) {
-            const filtered = parsedV.filter(v => 
-              !(v.id === 1 && String(v.title).includes('Operating Systems')) &&
-              !(v.id === 2 && String(v.title).includes('Computer Networks')) &&
-              !(v.title === 'Operating Systems & Process Management Oral Viva')
-            );
+            const filtered = parsedV.filter(isTeacherPublishedOralViva);
             setOralVivas(filtered);
             setVivaSubject(prev => {
-              if (!prev || prev === 'Operating Systems' || !filtered.some(v => v.title === prev || v.subject === prev || String(v.id) === prev)) {
+              if (!prev || !filtered.some(v => v.title === prev || v.subject === prev || String(v.id) === prev)) {
                 return filtered.length > 0 ? (filtered[0].title || filtered[0].subject) : '';
               }
               return prev;
             });
+          }
+        }
+        const rawVivaSubs = localStorage.getItem('shared_viva_submissions');
+        if (rawVivaSubs) {
+          const parsedSubs = JSON.parse(rawVivaSubs);
+          if (Array.isArray(parsedSubs)) {
+            setVivaSubmissionsList(parsedSubs);
           }
         }
       } catch (e) {}
@@ -5397,7 +5451,7 @@ export default function StudentDashboard() {
         if (sharedOralVivasRaw) {
           const parsedVivas = JSON.parse(sharedOralVivasRaw);
           if (Array.isArray(parsedVivas)) {
-            setOralVivas(parsedVivas);
+            setOralVivas(parsedVivas.filter(isTeacherPublishedOralViva));
           }
         }
       } catch (e) {}
@@ -5590,18 +5644,21 @@ export default function StudentDashboard() {
         if (sharedOralVivasRaw) {
           const parsedVivas = JSON.parse(sharedOralVivasRaw);
           if (Array.isArray(parsedVivas)) {
-            const filtered = parsedVivas.filter(v => 
-              !(v.id === 1 && String(v.title).includes('Operating Systems')) &&
-              !(v.id === 2 && String(v.title).includes('Computer Networks')) &&
-              !(v.title === 'Operating Systems & Process Management Oral Viva')
-            );
+            const filtered = parsedVivas.filter(isTeacherPublishedOralViva);
             setOralVivas(filtered);
             setVivaSubject(prev => {
-              if (!prev || prev === 'Operating Systems' || !filtered.some(v => v.title === prev || v.subject === prev || String(v.id) === prev)) {
+              if (!prev || !filtered.some(v => v.title === prev || v.subject === prev || String(v.id) === prev)) {
                 return filtered.length > 0 ? (filtered[0].title || filtered[0].subject) : '';
               }
               return prev;
             });
+          }
+        }
+        const rawVivaSubs = localStorage.getItem('shared_viva_submissions');
+        if (rawVivaSubs) {
+          const parsedSubs = JSON.parse(rawVivaSubs);
+          if (Array.isArray(parsedSubs)) {
+            setVivaSubmissionsList(parsedSubs);
           }
         }
       } catch (e) {}
@@ -6852,47 +6909,75 @@ export default function StudentDashboard() {
     };
     setVivaAnswersRecord(updatedAnswers);
 
-    let totalScore = 0;
-    const questionResults = currentVivaQList.map((q, idx) => {
-      const ans = (updatedAnswers[idx] || '').trim().toLowerCase();
-      const matched = (q.keywords || []).filter(kw => ans.includes(kw.toLowerCase()));
-      let qScore = 0;
-      if (ans.length > 0) {
-        qScore = Math.min(10, Math.max(5, Math.round(matched.length * 2.5 + 4)));
-      }
-      totalScore += qScore;
-      return {
-        questionNum: idx + 1,
-        questionText: q.text,
-        studentAnswer: updatedAnswers[idx] || 'No answer submitted',
-        score: qScore,
-        keywordsFound: matched,
-        feedback: qScore >= 8 ? 'Outstanding oral explanation with key domain terms' : qScore >= 5 ? 'Satisfactory oral response' : 'No response provided'
-      };
-    });
+    // User requirement: Say the answer entered upon completion and do not evaluate (evaluated by teacher)
+    const ansToSpeak = currentAns || updatedAnswers[activeVivaQIdx] || updatedAnswers[0] || 'No answer entered';
+    speakText(`You entered: ${ansToSpeak}. Your viva exam has been successfully submitted to your teacher for manual evaluation.`);
 
-    const maxScore = currentVivaQList.length * 10;
-    const averageScore = Math.round((totalScore / (currentVivaQList.length || 1)) * 10) / 10;
-    const percentage = Math.round((totalScore / (maxScore || 1)) * 100);
-    const passed = percentage >= 50;
+    const currentViva = (filteredOralVivas && filteredOralVivas.length > 0)
+      ? (filteredOralVivas.find(v => v.title === vivaSubject || v.subject === vivaSubject || String(v.id) === vivaSubject) || filteredOralVivas[0])
+      : { title: vivaSubject || `${activeSubject} Oral Viva`, subject: activeSubject };
 
-    const summary = {
-      totalScore,
-      maxScore,
-      averageScore,
-      percentage,
-      passed,
-      topic: vivaSubject,
+    const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+    const studentName = student.name || studentProfile.name || 'Student';
+
+    const submissionObj = {
+      id: `viva_sub_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      vivaId: currentViva.id || `viva_${Date.now()}`,
+      vivaTitle: currentViva.title || vivaSubject || `${activeSubject} Oral Viva`,
+      subject: currentViva.subject || activeSubject,
+      student: studentName,
+      studentName: studentName,
+      studentEmail: studentEmail,
+      teacherEmail: (currentViva.teacherEmail || currentViva.creatorEmail || '').toLowerCase().trim(),
+      teacherName: currentViva.teacherName || 'Teacher',
+      submittedAt: new Date().toISOString(),
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      questionResults
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'Pending Teacher Evaluation',
+      response: ansToSpeak,
+      spokenResponse: ansToSpeak,
+      questions: currentVivaQList.map((q, idx) => ({
+        questionNum: idx + 1,
+        questionId: q.id,
+        questionText: q.text,
+        studentAnswer: (updatedAnswers[idx] || '').trim() || 'No answer submitted',
+        expectedAnswer: q.answer || q.expectedAnswer || '',
+        keywords: q.keywords || []
+      })),
+      totalQuestions: currentVivaQList.length,
+      teacherScore: null,
+      gradeStatus: 'Pending Evaluation',
+      teacherFeedback: '',
+      evaluatedAt: null
     };
 
-    setVivaOverallResult(summary);
-    setIsVivaSubmitted(true);
+    try {
+      const rawSubs = localStorage.getItem('shared_viva_submissions');
+      const existingSubs = rawSubs ? JSON.parse(rawSubs) : [];
+      const otherSubs = Array.isArray(existingSubs) ? existingSubs.filter(s => 
+        !(s && s.studentEmail === studentEmail && (s.vivaTitle === submissionObj.vivaTitle || s.vivaId === submissionObj.vivaId || s.subject === submissionObj.subject))
+      ) : [];
+      const nextSubs = [submissionObj, ...otherSubs];
+      localStorage.setItem('shared_viva_submissions', JSON.stringify(nextSubs));
+      setVivaSubmissionsList(nextSubs);
 
-    const answeredCount = Object.keys(updatedAnswers).filter(k => updatedAnswers[k]?.trim()).length;
-    const spokenResult = `Oral Viva Exam submitted successfully! You answered ${answeredCount} of ${currentVivaQList.length} questions. Your average score is ${averageScore} out of 10, ${percentage} percent. ${passed ? 'Congratulations, you passed the oral viva exam!' : 'Good practice attempt. Review the material and try again.'}`;
-    speakText(spokenResult);
+      const notifObj = {
+        id: `notif_${Date.now()}`,
+        title: `🎙️ New Viva Submission: ${studentName}`,
+        detail: `${studentName} has submitted oral viva for ${submissionObj.subject} (${submissionObj.vivaTitle}). Awaiting your manual evaluation.`,
+        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        type: 'Oral Viva',
+        read: false
+      };
+      const rawNotifs = localStorage.getItem('shared_notifications');
+      const existingNotifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+      localStorage.setItem('shared_notifications', JSON.stringify([notifObj, ...existingNotifs]));
+
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    setVivaOverallResult(submissionObj);
+    setIsVivaSubmitted(true);
   };
 
   const handleRestartViva = () => {
@@ -6903,30 +6988,28 @@ export default function StudentDashboard() {
     setVivaAnswersRecord({});
     setVivaFeedback(null);
     lastSpokenVivaAnswerRef.current = '';
+
+    try {
+      const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+      const rawSubs = localStorage.getItem('shared_viva_submissions');
+      if (rawSubs) {
+        const parsed = JSON.parse(rawSubs);
+        const filtered = Array.isArray(parsed) ? parsed.filter(s => 
+          !(s && s.studentEmail === studentEmail && (s.vivaTitle === vivaSubject || s.subject === activeSubject))
+        ) : [];
+        localStorage.setItem('shared_viva_submissions', JSON.stringify(filtered));
+        setVivaSubmissionsList(filtered);
+        window.dispatchEvent(new Event('storage'));
+      }
+    } catch (e) {}
+
     const firstQ = currentVivaQList[0];
-    const msg = `Restarting viva exam for ${vivaSubject}. Question 1 of ${currentVivaQList.length}: ${firstQ?.text || ''}. Tap the answer box to speak your answer.`;
+    const msg = `Restarting viva exam for ${vivaSubject || activeSubject}. Question 1 of ${currentVivaQList.length}: ${firstQ?.text || ''}. Tap the answer box to speak your answer.`;
     speakText(msg);
   };
 
   const handleEvaluateViva = () => {
-    if (!vivaAnswerInput.trim()) {
-      speakText("Please dictate or type your oral viva answer before evaluating.");
-      return;
-    }
-
-    const answerLower = vivaAnswerInput.toLowerCase();
-    const matched = (currentVivaQ.keywords || []).filter(kw => answerLower.includes(kw));
-    const score = Math.min(10, Math.max(5, matched.length * 2.5 + 4));
-    
-    const evalResult = {
-      score: Math.round(score),
-      keywordsFound: matched,
-      missedKeywords: (currentVivaQ.keywords || []).filter(kw => !answerLower.includes(kw)),
-      feedbackMsg: score >= 8 ? 'Outstanding oral viva response! Excellent domain knowledge.' : 'Good attempt. Consider explaining additional key technical terms.'
-    };
-
-    setVivaFeedback(evalResult);
-    speakText(`Viva Score: ${evalResult.score} out of 10. ${evalResult.feedbackMsg}`);
+    speakText("Oral viva exams are evaluated manually by your teacher. Tap the answer box to speak your answer, and click Submit Viva Exam when you are finished.");
   };
 
   const handleEvaluatePractice = () => {
@@ -9762,52 +9845,101 @@ export default function StudentDashboard() {
                     <div style={{ background: '#ffffff', border: '2px solid #86efac', borderRadius: '20px', padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px', boxShadow: '0 8px 24px rgba(22, 163, 74, 0.12)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '20px' }}>
                         <div>
-                          <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '4px 12px', borderRadius: '12px', fontWeight: '800' }}>
-                            🎉 Oral Viva Assessment Complete
+                          <span style={{ 
+                            fontSize: '12px', 
+                            background: vivaOverallResult.status === 'Evaluated' ? '#dcfce7' : '#fef3c7', 
+                            color: vivaOverallResult.status === 'Evaluated' ? '#15803d' : '#b45309', 
+                            border: `1px solid ${vivaOverallResult.status === 'Evaluated' ? '#86efac' : '#fde68a'}`,
+                            padding: '4px 12px', 
+                            borderRadius: '12px', 
+                            fontWeight: '800' 
+                          }}>
+                            {vivaOverallResult.status === 'Evaluated' ? '✓ Oral Viva Evaluated by Teacher' : '⏳ Submitted — Awaiting Teacher Evaluation'}
                           </span>
                           <h2 style={{ margin: '8px 0 4px 0', fontSize: '24px', color: '#0f172a', fontWeight: '900' }}>
-                            {vivaOverallResult.topic}
+                            {vivaOverallResult.vivaTitle || vivaOverallResult.topic || `${activeSubject} Oral Viva`}
                           </h2>
                           <small style={{ color: '#64748b', fontSize: '13px' }}>
-                            Completed on {vivaOverallResult.date} • {vivaOverallResult.questionResults.length} Questions Evaluated
+                            Submitted on {vivaOverallResult.date || 'Today'} {vivaOverallResult.time ? `at ${vivaOverallResult.time}` : ''} • {(vivaOverallResult.questions || vivaOverallResult.questionResults || []).length} Question{((vivaOverallResult.questions || vivaOverallResult.questionResults || []).length) > 1 ? 's' : ''} Submitted
                           </small>
                         </div>
-                        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                          <div style={{ background: vivaOverallResult.passed ? '#f0fdf4' : '#fff7ed', border: `2px solid ${vivaOverallResult.passed ? '#22c55e' : '#f97316'}`, padding: '12px 20px', borderRadius: '16px', textAlign: 'center' }}>
-                            <span style={{ fontSize: '11px', fontWeight: '800', color: vivaOverallResult.passed ? '#15803d' : '#c2410c', textTransform: 'uppercase' }}>Average Score</span>
-                            <div style={{ fontSize: '28px', fontWeight: '900', color: vivaOverallResult.passed ? '#166534' : '#9a3412' }}>
-                              {vivaOverallResult.averageScore} <span style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>/ 10</span>
+                        {vivaOverallResult.status === 'Evaluated' ? (
+                          <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div style={{ background: '#f0fdf4', border: '2px solid #22c55e', padding: '12px 20px', borderRadius: '16px', textAlign: 'center' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase' }}>Teacher Score</span>
+                              <div style={{ fontSize: '28px', fontWeight: '900', color: '#166534' }}>
+                                {vivaOverallResult.teacherScore !== undefined && vivaOverallResult.teacherScore !== null ? vivaOverallResult.teacherScore : '—'} <span style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>/ 10</span>
+                              </div>
+                              <span style={{ fontSize: '12px', fontWeight: '800', color: '#15803d' }}>
+                                {vivaOverallResult.gradeStatus || 'Evaluated'}
+                              </span>
                             </div>
-                            <span style={{ fontSize: '12px', fontWeight: '800', color: vivaOverallResult.passed ? '#15803d' : '#ea580c' }}>
-                              {vivaOverallResult.percentage}% • {vivaOverallResult.passed ? 'PASSED' : 'NEEDS PRACTICE'}
+                          </div>
+                        ) : (
+                          <div style={{ background: '#fffbeb', border: '2px solid #fde68a', padding: '12px 20px', borderRadius: '16px', textAlign: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Evaluation Status</span>
+                            <div style={{ fontSize: '18px', fontWeight: '900', color: '#92400e', marginTop: '4px' }}>
+                              ⏳ Pending Review
+                            </div>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: '#b45309' }}>
+                              Teacher will evaluate
                             </span>
                           </div>
-                        </div>
+                        )}
                       </div>
+
+                      {/* Notice Banner */}
+                      {vivaOverallResult.status === 'Evaluated' ? (
+                        <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '14px', padding: '16px 20px' }}>
+                          <b style={{ color: '#166534', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                            👨‍🏫 Teacher Evaluation & Remarks:
+                          </b>
+                          <p style={{ margin: 0, fontSize: '14px', color: '#14532d', fontStyle: 'italic', lineHeight: 1.5 }}>
+                            "{vivaOverallResult.teacherFeedback || 'Good effort and clear understanding of core concepts.'}"
+                          </p>
+                          <small style={{ color: '#15803d', fontSize: '11px', display: 'block', marginTop: '6px' }}>
+                            Graded by {vivaOverallResult.evaluatedBy || 'Teacher'}
+                          </small>
+                        </div>
+                      ) : (
+                        <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '14px', padding: '16px 20px' }}>
+                          <b style={{ color: '#0369a1', fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                            📋 Awaiting Manual Evaluation by Teacher
+                          </b>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+                            Your oral viva answers have been securely recorded and sent to your teacher's dashboard. No computer auto-grading is performed; your teacher will review your responses and assign your score and feedback.
+                          </p>
+                        </div>
+                      )}
 
                       {/* Question by Question Breakdown */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>Questions & Oral Responses Breakdown:</h3>
-                        {vivaOverallResult.questionResults.map((qr) => (
-                          <div key={qr.questionNum} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>Your Submitted Answers:</h3>
+                        {(vivaOverallResult.questions || vivaOverallResult.questionResults || []).map((qr, qIdx) => (
+                          <div key={qIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                              <b style={{ fontSize: '14px', color: '#0369a1' }}>Question {qr.questionNum}: {qr.questionText}</b>
-                              <span style={{ background: qr.score >= 8 ? '#dcfce7' : qr.score >= 5 ? '#fef3c7' : '#fee2e2', color: qr.score >= 8 ? '#15803d' : qr.score >= 5 ? '#b45309' : '#b91c1c', padding: '3px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', whiteSpace: 'nowrap' }}>
-                                Score: {qr.score} / 10
+                              <b style={{ fontSize: '14px', color: '#0369a1' }}>Question {qr.questionNum || qIdx + 1}: {qr.questionText || qr.text}</b>
+                              <span style={{ 
+                                background: vivaOverallResult.status === 'Evaluated' ? '#dcfce7' : '#fef3c7', 
+                                color: vivaOverallResult.status === 'Evaluated' ? '#15803d' : '#b45309', 
+                                padding: '3px 10px', 
+                                borderRadius: '8px', 
+                                fontSize: '12px', 
+                                fontWeight: '800', 
+                                whiteSpace: 'nowrap' 
+                              }}>
+                                {vivaOverallResult.status === 'Evaluated' ? '✓ Graded' : '⏳ Pending Grade'}
                               </span>
                             </div>
                             <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#334155' }}>
                               <b style={{ color: '#0f172a' }}>Your Answer: </b>
-                              <span>{qr.studentAnswer}</span>
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: '600' }}>
-                              {qr.feedback} {qr.keywordsFound?.length > 0 && `(Key terms: ${qr.keywordsFound.join(', ')})`}
+                              <span>{qr.studentAnswer || qr.answer || 'No answer submitted'}</span>
                             </div>
                           </div>
                         ))}
                       </div>
 
-                      {/* Submit Actions / Restart */}
+                      {/* Action Buttons */}
                       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
                         <button
                           type="button"
@@ -9820,28 +9952,19 @@ export default function StudentDashboard() {
                         <button
                           type="button"
                           onClick={() => {
-                            const summaryText = `Viva Exam summary for ${vivaOverallResult.topic}. Your average score is ${vivaOverallResult.averageScore} out of 10, ${vivaOverallResult.percentage} percent. ${vivaOverallResult.passed ? 'You passed.' : 'Needs practice.'}`;
-                            speakText(summaryText);
+                            if (vivaOverallResult.status === 'Evaluated') {
+                              const summaryText = `Your oral viva has been evaluated by your teacher. You received a score of ${vivaOverallResult.teacherScore} out of 10. Teacher remarks: ${vivaOverallResult.teacherFeedback || 'Good job'}.`;
+                              speakText(summaryText);
+                            } else {
+                              const ansList = (vivaOverallResult.questions || []).map(q => `For question ${q.questionNum}: you entered: ${q.studentAnswer}`).join('. ');
+                              const summaryText = `Your viva has been submitted to your teacher for manual evaluation. ${ansList}`;
+                              speakText(summaryText);
+                            }
                           }}
-                          onMouseEnter={() => speakHover("Read Viva Score Summary Aloud button")}
+                          onMouseEnter={() => speakHover("Read Submission Summary Aloud button")}
                           style={{ background: '#f0fdf4', color: '#166534', border: '1.5px solid #bbf7d0', padding: '12px 20px', borderRadius: '12px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                         >
-                          <Volume2 size={16} /> 🔊 Read Score Summary Aloud
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsVivaSubmitted(false);
-                            setVivaOverallResult(null);
-                            setVivaQIndex(0);
-                            setVivaAnswerInput('');
-                            setVivaAnswersRecord({});
-                            setVivaFeedback(null);
-                          }}
-                          onMouseEnter={() => speakHover("Select Another Topic button")}
-                          style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', padding: '12px 20px', borderRadius: '12px', fontWeight: '800', fontSize: '14px', cursor: 'pointer' }}
-                        >
-                          📋 Practice Another Viva
+                          <Volume2 size={16} /> 🔊 {vivaOverallResult.status === 'Evaluated' ? 'Read Teacher Evaluation Aloud' : 'Read My Submitted Answers Aloud'}
                         </button>
                       </div>
                     </div>
@@ -10066,33 +10189,11 @@ export default function StudentDashboard() {
                           </button>
                         )}
 
-                        {/* Single Question Instant Evaluator */}
-                        <button 
-                          type="button"
-                          onClick={handleEvaluateViva}
-                          onMouseEnter={() => speakHover("Evaluate Response button. Get instant score and keyword feedback on your answer.")}
-                          style={{ 
-                            background: '#f0fdf4', 
-                            color: '#166534', 
-                            border: '1.5px solid #bbf7d0', 
-                            padding: '14px 20px', 
-                            borderRadius: '12px', 
-                            fontWeight: '800', 
-                            fontSize: '14px', 
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}
-                        >
-                          ✨ Evaluate Answer
-                        </button>
-
                         {/* Submit Viva Exam Button */}
                         <button 
                           type="button"
                           onClick={handleSubmitVivaExam}
-                          onMouseEnter={() => speakHover("Submit Oral Viva button. Complete your viva exam and calculate your overall score.")}
+                          onMouseEnter={() => speakHover("Submit Oral Viva button. Complete your viva exam and send your answers to your teacher for grading.")}
                           style={{ 
                             background: '#16a34a', 
                             color: '#ffffff', 
@@ -10115,22 +10216,6 @@ export default function StudentDashboard() {
                           )}
                         </button>
                       </div>
-
-                      {/* Viva Feedback Evaluation Card */}
-                      {vivaFeedback && (
-                        <div style={{ background: '#f0fdf4', border: '2px solid #bbf7d0', padding: '20px', borderRadius: '16px', marginTop: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#166534' }}>Viva Score: {vivaFeedback.score} / 10</h4>
-                            <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '12px', fontWeight: '800' }}>
-                              {vivaFeedback.score >= 8 ? '🎉 Outstanding' : '👍 Pass'}
-                            </span>
-                          </div>
-                          <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#166534', fontWeight: '600' }}>{vivaFeedback.feedbackMsg}</p>
-                          <div style={{ fontSize: '12px', color: '#15803d' }}>
-                            Key Terms Covered: <strong>{(vivaFeedback.keywordsFound || []).join(', ') || 'General explanation'}</strong>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </>
