@@ -166,6 +166,15 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
     }
     const mouthEdgeEnergy = mouthPixelCount > 0 ? (mouthEdgeSum / mouthPixelCount) : 0;
 
+    // 4. Horizontal Yaw / Profile Balance (Columns 0, 1 vs Columns 4, 5)
+    let leftHalfLum = 0;
+    let rightHalfLum = 0;
+    for (let zy = 0; zy < 6; zy++) {
+      for (let zx = 0; zx < 2; zx++) leftHalfLum += grid[zy * 6 + zx];
+      for (let zx = 4; zx < 6; zx++) rightHalfLum += grid[zy * 6 + zx];
+    }
+    const yawBalance = (leftHalfLum - rightHalfLum) / Math.max(0.01, leftHalfLum + rightHalfLum);
+
     return {
       grid,
       eyeEdgeEnergy,
@@ -173,6 +182,7 @@ export const extractBiometricFeaturesFromCanvas = (canvas, explicitBox = null) =
       faceAspect,
       meanCb,
       meanCr,
+      yawBalance,
       isFaceCrop: true
     };
   } catch (e) {
@@ -4343,6 +4353,10 @@ export default function StudentDashboard() {
         if (scannedExamFaceVectorsRef.current.center && liveVector) {
           centerSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.center, liveVector);
         }
+        let leftSim = 0;
+        if (scannedExamFaceVectorsRef.current.left && liveVector) {
+          leftSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.left, liveVector);
+        }
 
         const matchPercent = Math.min(99, Math.round(similarity * 100));
         setFaceConfidence(matchPercent);
@@ -4355,11 +4369,34 @@ export default function StudentDashboard() {
           // Profile photo is frontal: require strong correlation
           isStageMatch = Boolean(similarity >= 0.40);
         } else if (currentStage === 'left') {
-          // Turned left: matches either profile photo or the just-captured center angle
-          isStageMatch = Boolean(similarity >= 0.28 || centerSim >= 0.38);
+          // Turned left: Candidate MUST rotate head to left profile!
+          // If centerSim is high (>= 0.86), candidate is still looking straight at center!
+          const isStillLookingCenter = centerSim >= 0.86;
+          const isCandidateMatch = (similarity >= 0.22 || (centerSim >= 0.30 && centerSim < 0.86));
+          if (isStillLookingCenter) {
+            stageStableTicksRef.current = 0;
+            setFaceErrorMessage("⚠️ Turn your head to the LEFT 👈. Currently looking center.");
+            setFaceMatchStatus("👈 Step 2: Please turn your face slightly to the left...");
+          } else if (isCandidateMatch) {
+            isStageMatch = true;
+          }
         } else if (currentStage === 'right') {
-          // Turned right: matches either profile photo or center angle
-          isStageMatch = Boolean(similarity >= 0.28 || centerSim >= 0.38);
+          // Turned right: Candidate MUST rotate head to right profile!
+          // If centerSim >= 0.86 (looking center) or leftSim >= 0.86 (looking left), reject!
+          const isStillLookingCenter = centerSim >= 0.86;
+          const isStillLookingLeft = leftSim >= 0.86;
+          const isCandidateMatch = (similarity >= 0.22 || (centerSim >= 0.30 && centerSim < 0.86));
+          if (isStillLookingCenter) {
+            stageStableTicksRef.current = 0;
+            setFaceErrorMessage("⚠️ Turn your head to the RIGHT 👉. Please turn away from center.");
+            setFaceMatchStatus("👉 Step 3: Please turn your face slightly to the right...");
+          } else if (isStillLookingLeft) {
+            stageStableTicksRef.current = 0;
+            setFaceErrorMessage("⚠️ Turn your head to the RIGHT 👉. Left profile is already locked.");
+            setFaceMatchStatus("👉 Step 3: Please turn your face slightly to the right...");
+          } else if (isCandidateMatch) {
+            isStageMatch = true;
+          }
         }
 
         if (isStageMatch) {
@@ -4465,14 +4502,12 @@ export default function StudentDashboard() {
 
               const successMsg = `Multi-angle biometric scan complete. Center, left, and right verified for ${student.name}. Entering exam now.`;
               announce(successMsg);
-              speakText(successMsg);
-
-              setTimeout(() => {
+              speakText(successMsg, () => {
                 setFaceAuthModalOpen(false);
                 if (pendingExamToStart) {
                   launchActualExam(pendingExamToStart);
                 }
-              }, 900);
+              });
             }
           }
         } else if (matchPercent >= 32) {
@@ -4563,6 +4598,15 @@ export default function StudentDashboard() {
       setFaceMatchScore(Math.max(matchScore, 50));
 
       const activeStage = scanStageRef.current;
+      let centerSim = 0;
+      if (scannedExamFaceVectorsRef.current.center && liveVector) {
+        centerSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.center, liveVector);
+      }
+      let leftSim = 0;
+      if (scannedExamFaceVectorsRef.current.left && liveVector) {
+        leftSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.left, liveVector);
+      }
+
       if (activeStage === 'center') {
         scannedExamFaceVectorsRef.current.center = liveVector;
         scannedExamFaceVectorRef.current = liveVector;
@@ -4579,6 +4623,16 @@ export default function StudentDashboard() {
         announce("Center angle locked. Now turn your face slightly to the left.");
         speakText("Center angle locked. Now turn your face slightly to the left.");
       } else if (activeStage === 'left') {
+        // Candidate must have turned left, not still looking center!
+        if (centerSim >= 0.86) {
+          const warningMsg = "Please turn your face to the left to capture your left profile. Your face is still looking straight at center.";
+          setFaceErrorMessage("⚠️ Turn face to the LEFT 👈. Center face is already locked for Step 1. Please turn your head.");
+          setFaceMatchStatus("👈 Turn your face to the left to lock Step 2.");
+          announce(warningMsg);
+          speakText(warningMsg);
+          return;
+        }
+
         scannedExamFaceVectorsRef.current.left = liveVector;
         scannedAnglesStateRef.current.left = true;
         setScannedAnglesState(prev => ({ ...prev, left: true }));
@@ -4591,7 +4645,24 @@ export default function StudentDashboard() {
         announce("Left angle locked. Now turn your face slightly to the right.");
         speakText("Left angle locked. Now turn your face slightly to the right.");
       } else {
-        // Right or finalize
+        // Step 3: Candidate must have turned right, not still looking center or left!
+        if (centerSim >= 0.86) {
+          const warningMsg = "Please turn your face to the right to capture your right profile. Your face is still looking straight at center.";
+          setFaceErrorMessage("⚠️ Turn face to the RIGHT 👉. Center face is already locked for Step 1. Please turn your head.");
+          setFaceMatchStatus("👉 Turn your face to the right to lock Step 3.");
+          announce(warningMsg);
+          speakText(warningMsg);
+          return;
+        }
+        if (leftSim >= 0.86) {
+          const warningMsg = "Please turn your face to the right to capture your right profile. Your face is still turned to the left.";
+          setFaceErrorMessage("⚠️ Turn face to the RIGHT 👉. Left angle is already locked for Step 2. Please turn right.");
+          setFaceMatchStatus("👉 Turn your face to the right to lock Step 3.");
+          announce(warningMsg);
+          speakText(warningMsg);
+          return;
+        }
+
         scannedExamFaceVectorsRef.current.right = liveVector;
         scannedAnglesStateRef.current.right = true;
         setScannedAnglesState(prev => ({ ...prev, right: true }));
@@ -4642,14 +4713,12 @@ export default function StudentDashboard() {
 
         const msg = `Multi-angle face scan confirmed for candidate ${student.name}. Biometric identity locked across center, left, and right angles. Entering exam now.`;
         announce(msg);
-        speakText(msg);
-
-        setTimeout(() => {
+        speakText(msg, () => {
           setFaceAuthModalOpen(false);
           if (pendingExamToStart) {
             launchActualExam(pendingExamToStart);
           }
-        }, 800);
+        });
       }
     } catch (e) {
       console.warn("Manual face pass error:", e);
@@ -5153,7 +5222,7 @@ export default function StudentDashboard() {
     hasAnnouncedExamTabRef.current = true;
     
     const instructions = String(exam.instructions || exam.description || "Read and answer each question carefully using voice navigation.").trim();
-    const startMsg = `Face Identity Verified. Welcome to ${exam.title}. Exam instructions: ${instructions}. Total ${exam.questions ? exam.questions.length : 0} questions. Let us begin.`;
+    const startMsg = `Welcome to ${exam.title}. Exam instructions: ${instructions}. Total ${exam.questions ? exam.questions.length : 0} questions. Let us begin.`;
     handleReadExamQuestionStepByStep(0, startMsg);
   };
 
@@ -5188,24 +5257,14 @@ export default function StudentDashboard() {
       announce(`✅ Recorded Answer: "${clean}"`);
       const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
       const promptText = isLastQ
-        ? `You answered: "${clean}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
-        : `You answered: "${clean}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
-      speakText(promptText, () => {
-        if (!isOtherPersonDetected && isScannedStudentWritingRef.current) {
-          setTimeout(() => {
-            handleStartExamAnswerDictation();
-          }, 400);
-        }
-      });
+        ? `You answered: "${clean}". Would you like to repeat your answer, or proceed to submit exam? Tap Repeat Answer or tap Submit Exam.`
+        : `You answered: "${clean}". Would you like to repeat your answer, or proceed to the next question? Tap Repeat Answer or tap Next Question.`;
+      // Speak the prompt asking student to repeat answer or proceed to next question
+      // Mic starts only when user taps Answer by Voice or Repeat Answer!
+      speakText(promptText);
     } else {
       announce("No speech detected for answer.");
-      speakText("No speech was detected. Please speak your answer now.", () => {
-        if (!isOtherPersonDetected && isScannedStudentWritingRef.current) {
-          setTimeout(() => {
-            handleStartExamAnswerDictation();
-          }, 400);
-        }
-      });
+      speakText("No speech was detected. Tap Answer by Voice to record your answer.");
     }
   };
 
@@ -5505,20 +5564,14 @@ export default function StudentDashboard() {
         const letter = String.fromCharCode(65 + idx);
         speech += `Option ${letter}: ${opt}. `;
       });
-      speech += `Please speak Option A, B, C, or D, or dictate your answer.`;
+      speech += `Tap Answer by Voice or select an option to answer.`;
     } else {
-      speech += `Please speak your answer.`;
+      speech += `Tap Answer by Voice or tap the answer box to speak your answer.`;
     }
 
     announce(`📖 Question ${qIdx + 1} of ${totalQ}: ${promptText}`);
-    speakText(speech, () => {
-      // Step by step: automatically activate listening for candidate's answer after question finishes reading!
-      if (!isOtherPersonDetected && isScannedStudentWritingRef.current) {
-        setTimeout(() => {
-          handleStartExamAnswerDictation();
-        }, 300);
-      }
-    });
+    // Listen ONLY when student taps: do not auto-start microphone!
+    speakText(speech);
   };
 
   // Exam navigation with synchronized answer persistence & voice feedback
@@ -6336,7 +6389,16 @@ export default function StudentDashboard() {
         return;
       }
     }
-    if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || (transcript === 'repeat' && currentAnswerInput)) {
+    if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || transcript.includes('re-answer') || (transcript === 'repeat' && currentAnswerInput) || (transcript === 'repeat' && vivaAnswerInput)) {
+      if (activeTab === 'AI Oral Viva Simulator') {
+        setVivaAnswerInput('');
+        speakText("Clearing previous viva answer. Please speak your answer again now.", () => {
+          setTimeout(() => {
+            handleStartVivaDictation();
+          }, 300);
+        });
+        return;
+      }
       if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || activeTab === 'Exams' || isExamActive)) {
         updateCurrentAnswer('');
         speakText("Clearing previous answer. Please speak your answer again now.", () => {
@@ -8277,40 +8339,257 @@ export default function StudentDashboard() {
               Voice Assistant Opened — Speak command or say "CLOSE" to exit
             </div>
             
-            {/* Live Real-time Speech Transcript Display */}
-            <div style={{ background: '#f0f9ff', border: '2px dashed #0284c7', padding: '24px 20px', borderRadius: '20px', margin: '16px 0 24px 0', minHeight: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <p style={{ margin: 0, fontSize: '18px', color: liveVoiceTranscript ? '#0f172a' : '#0369a1', fontWeight: '800', textAlign: 'center', lineHeight: 1.5 }}>
-                {liveVoiceTranscript ? `"${liveVoiceTranscript}"` : '🎙️ Voice Assistant is opened. Speak your command, or say "CLOSE" if you want to close.'}
-              </p>
-            </div>
+            {/* Smart Context-Aware Voice Assistant Display (Exam / Viva / Dashboard) */}
+            {currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive) ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '14px 0 20px 0' }}>
+                {/* Active Exam Question & Answer Card */}
+                <div style={{ background: '#f0fdf4', border: '2px solid #86efac', padding: '16px 20px', borderRadius: '16px', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '800', color: '#166534', textTransform: 'uppercase', background: '#dcfce7', padding: '3px 10px', borderRadius: '6px' }}>
+                      Exam in Progress: Q{currentQIndex + 1} of {currentExam.questions?.length || 0}
+                    </span>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: currentAnswerInput ? '#15803d' : '#b45309' }}>
+                      {currentAnswerInput ? '✓ Answer Recorded' : '○ Waiting for Answer'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                    <strong>Question:</strong> {currentExam.questions?.[currentQIndex]?.text || currentExam.questions?.[currentQIndex]?.questionText || ''}
+                  </p>
+                  {currentAnswerInput ? (
+                    <div style={{ background: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px 14px', marginBottom: '10px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '800', color: '#15803d', marginBottom: '4px' }}>
+                        ✓ You answered:
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', fontStyle: 'italic', lineHeight: 1.4 }}>
+                        "{currentAnswerInput}"
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 14px', marginBottom: '10px', color: '#92400e', fontSize: '13px', fontWeight: '600' }}>
+                      No answer recorded yet. Tap "Answer by Voice" below to speak your answer.
+                    </div>
+                  )}
 
-            {/* Quick Action Shortcuts (1-Tap Simulation) */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginBottom: '20px' }}>
-              <button 
-                onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('start exam'); }}
-                style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
-              >
-                🚀 Start Exam
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('results'); }}
-                style={{ background: '#16a34a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
-              >
-                📊 My Results
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('viva'); }}
-                style={{ background: '#9333ea', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
-              >
-                🎙️ Viva Practice
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('emergency'); }}
-                style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
-              >
-                🚨 Emergency SOS
-              </button>
-            </div>
+                  {/* Voice Assistant Confirmation Prompt (Photo 3 requirement) */}
+                  <div style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '800', color: '#0369a1' }}>
+                      {currentAnswerInput 
+                        ? 'Would you like to repeat your answer, or proceed to the next question?' 
+                        : 'Would you like to speak your answer now, or repeat the question?'}
+                    </p>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#0284c7' }}>
+                      {currentAnswerInput
+                        ? 'Say "REPEAT ANSWER" or say "NEXT QUESTION"'
+                        : 'Say "ANSWER", "READ QUESTION", or say "NEXT QUESTION"'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Speech Detected Transcript */}
+                {liveVoiceTranscript && (
+                  <div style={{ background: '#eff6ff', border: '1px dashed #3b82f6', padding: '10px 16px', borderRadius: '10px', textAlign: 'center' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#1d4ed8', display: 'block', marginBottom: '2px' }}>LIVE SPEECH RECOGNIZED:</span>
+                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>"{liveVoiceTranscript}"</span>
+                  </div>
+                )}
+
+                {/* Direct Action Buttons: Repeat Answer & Next Question */}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      updateCurrentAnswer('');
+                      speakText("Clearing previous answer. Please speak your answer again now.", () => {
+                        setTimeout(() => {
+                          handleStartExamAnswerDictation();
+                        }, 300);
+                      });
+                    }}
+                    style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🔄 Repeat Answer
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      handleSaveAndNext(); 
+                    }}
+                    style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    Next Question ➡️
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      handleReadExamQuestionStepByStep(currentQIndex); 
+                    }}
+                    style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    📖 Repeat Question
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      handleStartExamAnswerDictation(); 
+                    }}
+                    style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🎙️ Answer by Voice
+                  </button>
+                </div>
+              </div>
+            ) : (activeTab === 'AI Oral Viva Simulator') ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '14px 0 20px 0' }}>
+                {/* Active Oral Viva Q&A Card */}
+                <div style={{ background: '#faf5ff', border: '2px solid #d8b4fe', padding: '16px 20px', borderRadius: '16px', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '800', color: '#6b21a8', textTransform: 'uppercase', background: '#f3e8ff', padding: '3px 10px', borderRadius: '6px' }}>
+                      Oral Viva: Q{activeVivaQIdx + 1} of {currentVivaQList.length || 0}
+                    </span>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: vivaAnswerInput ? '#15803d' : '#b45309' }}>
+                      {vivaAnswerInput ? '✓ Viva Answer Recorded' : '○ Waiting for Answer'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                    <strong>Viva Question:</strong> {currentVivaQ?.text || ''}
+                  </p>
+                  {vivaAnswerInput ? (
+                    <div style={{ background: '#ffffff', border: '1px solid #e9d5ff', borderRadius: '10px', padding: '12px 14px', marginBottom: '10px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '800', color: '#7e22ce', marginBottom: '4px' }}>
+                        ✓ You answered:
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', fontStyle: 'italic', lineHeight: 1.4 }}>
+                        "{vivaAnswerInput}"
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 14px', marginBottom: '10px', color: '#92400e', fontSize: '13px', fontWeight: '600' }}>
+                      No viva answer spoken yet. Tap "Answer Viva" to speak.
+                    </div>
+                  )}
+
+                  {/* Voice Assistant Viva Confirmation Prompt */}
+                  <div style={{ background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '800', color: '#6b21a8' }}>
+                      {vivaAnswerInput 
+                        ? 'Would you like to repeat your answer, or proceed to the next viva question?' 
+                        : 'Would you like to speak your answer now, or repeat the viva question?'}
+                    </p>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#7e22ce' }}>
+                      {vivaAnswerInput
+                        ? 'Say "REPEAT ANSWER" or say "NEXT QUESTION"'
+                        : 'Say "ANSWER", "REPEAT QUESTION", or say "NEXT QUESTION"'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Speech Detected Transcript */}
+                {liveVoiceTranscript && (
+                  <div style={{ background: '#eff6ff', border: '1px dashed #3b82f6', padding: '10px 16px', borderRadius: '10px', textAlign: 'center' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#1d4ed8', display: 'block', marginBottom: '2px' }}>LIVE SPEECH RECOGNIZED:</span>
+                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>"{liveVoiceTranscript}"</span>
+                  </div>
+                )}
+
+                {/* Direct Action Buttons for Viva: Repeat Answer, Next Question, Repeat Question */}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      setVivaAnswerInput('');
+                      speakText("Clearing previous answer. Please speak your viva answer again now.", () => {
+                        setTimeout(() => {
+                          handleStartVivaDictation();
+                        }, 300);
+                      });
+                    }}
+                    style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🔄 Repeat Viva Answer
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      handleNextVivaQuestion(); 
+                    }}
+                    style={{ background: '#9333ea', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    Next Viva Question ➡️
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      handleRepeatVivaQuestion(); 
+                    }}
+                    style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    📖 Repeat Viva Question
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      handleStartVivaDictation(); 
+                    }}
+                    style={{ background: '#ede9fe', color: '#6b21a8', border: '1px solid #ddd6fe', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🎙️ Answer Viva by Voice
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Default Dashboard Live Speech Transcript */}
+                <div style={{ background: '#f0f9ff', border: '2px dashed #0284c7', padding: '24px 20px', borderRadius: '20px', margin: '16px 0 24px 0', minHeight: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <p style={{ margin: 0, fontSize: '18px', color: liveVoiceTranscript ? '#0f172a' : '#0369a1', fontWeight: '800', textAlign: 'center', lineHeight: 1.5 }}>
+                    {liveVoiceTranscript ? `"${liveVoiceTranscript}"` : '🎙️ Voice Assistant is opened. Speak your command, or say "CLOSE" if you want to close.'}
+                  </p>
+                </div>
+
+                {/* Quick Action Shortcuts (1-Tap Simulation) */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginBottom: '20px' }}>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('start exam'); }}
+                    style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+                  >
+                    🚀 Start Exam
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('results'); }}
+                    style={{ background: '#16a34a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+                  >
+                    📊 My Results
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('viva'); }}
+                    style={{ background: '#9333ea', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+                  >
+                    🎙️ Viva Practice
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('emergency'); }}
+                    style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+                  >
+                    🚨 Emergency SOS
+                  </button>
+                </div>
+              </>
+            )}
 
             {/* Manual Voice/Typed Input Fallback */}
             <form 
@@ -10230,8 +10509,18 @@ export default function StudentDashboard() {
 
                                   <textarea
                                     rows={5}
-                                    placeholder={(isOtherPersonDetected || !isScannedStudentWriting) ? `⚠️ Input Locked: Return to camera view as candidate ${student.name} to write...` : `Speak or type your answer here...`}
+                                    placeholder={(isOtherPersonDetected || !isScannedStudentWriting) ? `⚠️ Input Locked: Return to camera view as candidate ${student.name} to write...` : `Tap here or tap "Answer by Voice" to speak your answer...`}
                                     value={currentAnswerInput}
+                                    onClick={() => {
+                                      if (!isDictatingExamAnswer && !isOtherPersonDetected && isScannedStudentWritingRef.current) {
+                                        handleStartExamAnswerDictation();
+                                      }
+                                    }}
+                                    onFocus={() => {
+                                      if (!isDictatingExamAnswer && !isOtherPersonDetected && isScannedStudentWritingRef.current) {
+                                        handleStartExamAnswerDictation();
+                                      }
+                                    }}
                                     onChange={e => {
                                       if (isOtherPersonDetected || !isScannedStudentWriting) {
                                         announce("⚠️ Input locked: Unrecognized face detected.");
