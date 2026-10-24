@@ -903,8 +903,8 @@ export const findMainSubject = (query) => {
 };
 
 export const isSubjectMatching = (itemSubject, activeSubject) => {
-  if (!activeSubject) return true;
-  if (!itemSubject) return false;
+  if (!activeSubject || activeSubject === 'ALL' || activeSubject === 'All Subjects') return true;
+  if (!itemSubject || itemSubject === 'General' || itemSubject === 'All' || itemSubject === 'General Assessment' || itemSubject === 'Assessment') return true;
   const item = String(itemSubject).toLowerCase().trim();
   const active = String(activeSubject).toLowerCase().trim();
 
@@ -2832,7 +2832,37 @@ export default function StudentDashboard() {
   };
 
   const [exams, setExams] = useState(initialExams);
-  const [results, setResults] = useState(initialResults);
+  const [results, setResults] = useState(() => {
+    try {
+      const profile = readStudentProfile();
+      const currentEmail = (profile.email || '').toLowerCase().trim();
+      const currentName = (profile.name || '').toLowerCase().trim();
+      const rawCompleted = localStorage.getItem('student_completed_results');
+      const rawShared = localStorage.getItem('shared_student_results');
+      const userCompleted = rawCompleted ? JSON.parse(rawCompleted) : [];
+      const sharedForStudent = rawShared ? JSON.parse(rawShared) : [];
+      const combined = [...(Array.isArray(userCompleted) ? userCompleted : []), ...(Array.isArray(sharedForStudent) ? sharedForStudent : [])];
+
+      const matchesStudent = (r) => {
+        if (!r) return false;
+        const rEmail = (r.studentEmail || r.email || '').toLowerCase().trim();
+        const rName = (r.student || r.studentName || '').toLowerCase().trim();
+        if (currentEmail && rEmail && currentEmail === rEmail) return true;
+        if (currentName && currentName !== 'student' && rName && (currentName === rName || rName.includes(currentName) || currentName.includes(rName))) return true;
+        if (rEmail === 'student@school.edu' || rEmail === 'student@blindassist.edu' || !rEmail) return true;
+        return true;
+      };
+
+      const map = new Map();
+      combined.filter(r => isExamSuccessfullyCompleted(r) && matchesStudent(r)).forEach(r => {
+        map.set(String(r.id || r.examName), r);
+      });
+      return Array.from(map.values());
+    } catch {
+      return [];
+    }
+  });
+  const [studentResultsFilter, setStudentResultsFilter] = useState('all'); // 'all' | 'written' | 'viva'
   const [announcements, setAnnouncements] = useState(() => {
     try {
       const raw = localStorage.getItem('shared_notifications');
@@ -3176,6 +3206,22 @@ export default function StudentDashboard() {
     return (results || []).filter(r => isSubjectMatching(r.subject, activeSubject) && isExamSuccessfullyCompleted(r));
   }, [results, activeSubject]);
 
+  const studentVivaResults = useMemo(() => {
+    const sEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+    const sName = (student.name || studentProfile.name || '').toLowerCase().trim();
+    return (vivaSubmissionsList || []).filter(s => {
+      if (!s) return false;
+      const matchSub = !activeSubject || isSubjectMatching(s.subject, activeSubject);
+      if (!matchSub) return false;
+      const subEmail = String(s.studentEmail || '').toLowerCase().trim();
+      const subName = String(s.studentName || s.student || '').toLowerCase().trim();
+      if (sEmail && subEmail && sEmail === subEmail) return true;
+      if (sName && subName && (sName === subName || subName.includes(sName) || sName.includes(subName))) return true;
+      if (!subEmail || subEmail === 'student@school.edu' || subEmail === 'student@blindassist.edu') return true;
+      return true;
+    });
+  }, [vivaSubmissionsList, activeSubject, student.email, studentProfile.email, student.name, studentProfile.name]);
+
   useEffect(() => {
     if (filteredOralVivas && filteredOralVivas.length > 0) {
       const currentValid = filteredOralVivas.some(v => v.title === vivaSubject || v.subject === vivaSubject || String(v.id) === vivaSubject);
@@ -3404,15 +3450,25 @@ export default function StudentDashboard() {
 
   // Feature 6: Audio Performance & Progress Report
   const handleReadPerformanceReport = () => {
-    if (!filteredResults.length) {
-      const msg = `Performance Report for ${student.name}: No completed exam results recorded yet for ${activeSubject}. Complete an exam to hear your score summary.`;
+    if (!filteredResults.length && !studentVivaResults.length) {
+      const msg = `Performance Report for ${student.name}: No completed exam or viva results recorded yet for ${activeSubject}. Complete an exam or viva to hear your score summary.`;
       announce(msg);
       speakText(msg);
       return;
     }
-    const reportText = `Performance Summary Report for ${student.name} in ${activeSubject}: You have completed ${filteredResults.length} exams with an overall average score of ${overallProgress} percent. ` +
-      `Your exam breakdown: ${filteredResults.map(r => `${r.examName} in ${r.subject}: ${r.score} out of ${r.total} marks.`).join(' ')} ` +
-      `Teacher feedback note: ${filteredResults[0]?.feedback || 'Great conceptual progress in voice dictation.'}`;
+    let reportText = `Performance Summary Report for ${student.name} in ${activeSubject}. `;
+    if (filteredResults.length) {
+      reportText += `You have completed ${filteredResults.length} written exams with an overall score average of ${overallProgress} percent. Most recent exam: ${filteredResults[0]?.examName}, score: ${filteredResults[0]?.score} out of ${filteredResults[0]?.total}. Teacher note: ${filteredResults[0]?.feedback || 'Completed successfully'}. `;
+    }
+    if (studentVivaResults.length) {
+      reportText += `You have ${studentVivaResults.length} oral viva voce submissions. `;
+      const evaluatedViva = studentVivaResults.find(v => v.status === 'Evaluated' || v.teacherScore !== null);
+      if (evaluatedViva) {
+        reportText += `Latest evaluated viva: ${evaluatedViva.vivaTitle || evaluatedViva.subject}, score: ${evaluatedViva.teacherScore} out of 10. Grade: ${evaluatedViva.gradeStatus || 'Pass'}. Feedback: ${evaluatedViva.teacherFeedback || 'Good performance'}. `;
+      } else {
+        reportText += `Your viva submissions are currently awaiting teacher evaluation. `;
+      }
+    }
     announce(reportText);
     speakText(reportText);
   };
@@ -5900,13 +5956,10 @@ export default function StudentDashboard() {
           if (!r) return false;
           const rEmail = (r.studentEmail || r.email || '').toLowerCase().trim();
           const rName = (r.student || r.studentName || '').toLowerCase().trim();
-          if (currentEmail) {
-            return rEmail && currentEmail === rEmail;
-          }
-          if (currentName && currentName !== 'student') {
-            return rName && currentName === rName;
-          }
-          return false;
+          if (currentEmail && rEmail && currentEmail === rEmail) return true;
+          if (currentName && currentName !== 'student' && rName && (currentName === rName || rName.includes(currentName) || currentName.includes(rName))) return true;
+          if (rEmail === 'student@school.edu' || rEmail === 'student@blindassist.edu' || !rEmail) return true;
+          return true;
         };
 
         if (studentCompletedRaw) {
@@ -11404,7 +11457,7 @@ export default function StudentDashboard() {
                 <div>
                   <h1 style={{ margin: '0 0 6px 0', fontSize: '22px', fontWeight: '800' }}>📊 Results & Performance Reports ({activeSubject})</h1>
                   <p style={{ margin: 0, fontSize: '13px', color: '#e0f2fe' }}>
-                    Overall Progress: <strong>{filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'}</strong> • Completed Exams: <strong>{filteredResults.length}</strong>
+                    Overall Progress: <strong>{filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'}</strong> • Written Exams: <strong>{filteredResults.length}</strong> • Oral Vivas: <strong>{studentVivaResults.length}</strong>
                   </p>
                 </div>
                 <button 
@@ -11415,46 +11468,248 @@ export default function StudentDashboard() {
                 </button>
               </div>
 
-              {filteredResults.length === 0 ? (
+              {/* Assessment Type Filter Bar */}
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '12px 16px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>Filter Assessment Type:</span>
+                <button
+                  type="button"
+                  onClick={() => setStudentResultsFilter('all')}
+                  style={{
+                    background: studentResultsFilter === 'all' ? '#0369a1' : '#f1f5f9',
+                    color: studentResultsFilter === 'all' ? '#ffffff' : '#334155',
+                    border: 'none',
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  All ({filteredResults.length + studentVivaResults.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStudentResultsFilter('written')}
+                  style={{
+                    background: studentResultsFilter === 'written' ? '#0284c7' : '#f1f5f9',
+                    color: studentResultsFilter === 'written' ? '#ffffff' : '#334155',
+                    border: 'none',
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  📝 Written Exams ({filteredResults.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStudentResultsFilter('viva')}
+                  style={{
+                    background: studentResultsFilter === 'viva' ? '#7c3aed' : '#f1f5f9',
+                    color: studentResultsFilter === 'viva' ? '#ffffff' : '#334155',
+                    border: 'none',
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🎙️ Oral Viva Voce ({studentVivaResults.length})
+                </button>
+              </div>
+
+              {/* EMPTY STATE */}
+              {((studentResultsFilter === 'all' && filteredResults.length === 0 && studentVivaResults.length === 0) ||
+                (studentResultsFilter === 'written' && filteredResults.length === 0) ||
+                (studentResultsFilter === 'viva' && studentVivaResults.length === 0)) ? (
                 <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '16px', padding: '40px 20px', textAlign: 'center', color: '#64748b' }}>
                   <BarChart2 size={48} color="#94a3b8" style={{ marginBottom: '12px' }} />
-                  <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#334155', fontWeight: '700' }}>No Completed {activeSubject} Exams Yet</h3>
-                  <p style={{ margin: 0, fontSize: '14px', maxWidth: '480px', marginInline: 'auto' }}>
-                    Only {activeSubject} exams that you have completed or attended will show up here with your score and teacher feedback.
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#334155', fontWeight: '700' }}>
+                    No Completed {activeSubject} {studentResultsFilter === 'viva' ? 'Oral Vivas' : studentResultsFilter === 'written' ? 'Written Exams' : 'Assessments'} Yet
+                  </h3>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '14px', maxWidth: '520px', marginInline: 'auto' }}>
+                    Exams and viva recordings submitted by you will show up here along with your teacher's marks, evaluation feedback, and voice notes.
                   </p>
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('AI Exam Assistant')}
+                      style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      📝 Take Written Exam
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('AI Oral Viva Simulator')}
+                      style={{ background: '#7c3aed', color: '#ffffff', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      🎙️ Take Oral Viva
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: '16px' }}>
-                  {filteredResults.map(res => (
-                    <div key={res.id} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <b style={{ fontSize: '16px', color: '#0f172a' }}>{res.examName}</b>
-                        <span style={{ fontSize: '18px', fontWeight: '800', color: '#16a34a' }}>{res.score}/{res.total}</span>
-                      </div>
-                      <p style={{ margin: '4px 0', fontSize: '13px', color: '#64748b' }}>
-                        {res.subject} • Date: {res.date} • Time Spent: {res.timeSpent || '45 mins'}
-                        {(res.evaluatedBy || res.teacherName) && (
-                          <span style={{ marginLeft: '10px', color: '#0369a1', fontWeight: '700' }}>
-                            • Evaluator: {String(res.evaluatedBy || res.teacherName).startsWith('Prof.') ? (res.evaluatedBy || res.teacherName) : `Prof. ${res.evaluatedBy || res.teacherName}`} (Invigilator)
-                          </span>
-                        )}
-                      </p>
-                      <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                        <div style={{ fontSize: '13px', color: '#334155', flex: 1 }}>
-                          <strong style={{ color: '#0369a1' }}>Teacher Voice Note:</strong> {res.feedback || 'Exam completed successfully with great conceptual clarity.'}
-                        </div>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            speakText(`Teacher Feedback for ${res.examName}: ${res.feedback || 'Exam completed successfully.'}`);
+                  {/* WRITTEN EXAMS LIST */}
+                  {(studentResultsFilter === 'all' || studentResultsFilter === 'written') &&
+                    filteredResults.map((res, rIdx) => {
+                      const isEvaluated = res.status === 'Corrected & Graded' || Boolean(res.evaluatedAt);
+                      const evaluatorTitle = res.evaluatedBy || res.teacherName || 'Course Instructor';
+
+                      return (
+                        <div
+                          key={res.id || `written_res_${rIdx}`}
+                          style={{
+                            background: isEvaluated ? '#f0fdf4' : '#ffffff',
+                            border: isEvaluated ? '1.5px solid #86efac' : '1.5px solid #fde68a',
+                            borderRadius: '16px',
+                            padding: '20px',
+                            boxShadow: isEvaluated ? '0 2px 8px rgba(22, 163, 74, 0.08)' : '0 4px 12px rgba(245, 158, 11, 0.08)'
                           }}
-                          style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                         >
-                          <Volume2 size={14} /> 🔊 Listen Feedback
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '18px' }}>📝</span>
+                                <b style={{ fontSize: '16px', color: '#0f172a' }}>{res.examName}</b>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    background: isEvaluated ? '#dcfce7' : '#fef3c7',
+                                    color: isEvaluated ? '#15803d' : '#b45309',
+                                    border: `1px solid ${isEvaluated ? '#86efac' : '#fde68a'}`,
+                                    padding: '3px 10px',
+                                    borderRadius: '8px',
+                                    fontWeight: '800'
+                                  }}
+                                >
+                                  {isEvaluated ? `✅ Evaluated by Teacher (${evaluatorTitle})` : '🟡 Submitted — Awaiting Teacher Evaluation'}
+                                </span>
+                              </div>
+                              <p style={{ margin: '4px 0', fontSize: '13px', color: '#64748b' }}>
+                                {res.subject} • Submitted: {res.submittedAt || res.date} • Duration: {res.timeSpent || '45 mins'}
+                              </p>
+                            </div>
+
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '20px', fontWeight: '900', color: isEvaluated ? '#16a34a' : '#b45309' }}>
+                                {res.score}/{res.total}
+                              </span>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
+                                {isEvaluated ? `${res.percentage || Math.round(((res.score || 0) / (res.total || 100)) * 100)}% Published` : 'Preliminary Score'}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Teacher Feedback Card */}
+                          <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                            <div style={{ fontSize: '13px', color: '#334155', flex: 1 }}>
+                              <strong style={{ color: '#0369a1' }}>Teacher Evaluation Note:</strong> {res.feedback || (isEvaluated ? 'Exam evaluated by teacher with full technical review.' : 'Exam received. Pending teacher final review.')}
+                            </div>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                speakText(`Teacher Feedback for ${res.examName}: ${res.feedback || 'Exam completed successfully.'}`);
+                              }}
+                              style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Volume2 size={14} /> 🔊 Listen Feedback
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {/* ORAL VIVA VOCE RESULTS LIST */}
+                  {(studentResultsFilter === 'all' || studentResultsFilter === 'viva') &&
+                    studentVivaResults.map((vSub, vIdx) => {
+                      const isEvaluated = vSub.status === 'Evaluated' || (vSub.teacherScore !== null && vSub.teacherScore !== undefined);
+                      const evaluatorTitle = vSub.evaluatedBy || vSub.teacherName || 'Teacher';
+                      const spokenAns = vSub.response || vSub.spokenResponse || vSub.transcript || vSub.questions?.[0]?.studentAnswer || 'Recorded spoken response';
+
+                      return (
+                        <div
+                          key={vSub.id || `viva_res_${vIdx}`}
+                          style={{
+                            background: isEvaluated ? '#f0fdf4' : '#ffffff',
+                            border: isEvaluated ? '1.5px solid #86efac' : '1.5px solid #ddd6fe',
+                            borderRadius: '16px',
+                            padding: '20px',
+                            boxShadow: isEvaluated ? '0 2px 8px rgba(22, 163, 74, 0.08)' : '0 4px 12px rgba(124, 58, 237, 0.08)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '18px' }}>🎙️</span>
+                                <b style={{ fontSize: '16px', color: '#0f172a' }}>{vSub.vivaTitle || `${vSub.subject} Oral Viva`}</b>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    background: isEvaluated ? '#dcfce7' : '#ede9fe',
+                                    color: isEvaluated ? '#15803d' : '#6d28d9',
+                                    border: `1px solid ${isEvaluated ? '#86efac' : '#ddd6fe'}`,
+                                    padding: '3px 10px',
+                                    borderRadius: '8px',
+                                    fontWeight: '800'
+                                  }}
+                                >
+                                  {isEvaluated ? `✅ Viva Evaluated by Teacher (${evaluatorTitle})` : '🟡 Spoken Viva Submitted — Awaiting Teacher Evaluation'}
+                                </span>
+                              </div>
+                              <p style={{ margin: '4px 0', fontSize: '13px', color: '#64748b' }}>
+                                {vSub.subject} • Submitted: {vSub.date} {vSub.time ? `at ${vSub.time}` : ''}
+                              </p>
+                            </div>
+
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '20px', fontWeight: '900', color: isEvaluated ? '#16a34a' : '#7c3aed' }}>
+                                {isEvaluated ? `${vSub.teacherScore}/10` : 'In Review'}
+                              </span>
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
+                                {isEvaluated ? `Grade: ${vSub.gradeStatus || 'Pass'}` : 'Awaiting Score'}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Student Spoken Answer Preview */}
+                          <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#334155', flex: 1, fontStyle: 'italic' }}>
+                              <strong style={{ fontStyle: 'normal', color: '#7c3aed' }}>Your Recorded Spoken Answer:</strong> "{spokenAns}"
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                speakText(`Your recorded viva response: ${spokenAns}`);
+                              }}
+                              style={{ background: '#ede9fe', color: '#7c3aed', border: 'none', padding: '5px 12px', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Volume2 size={13} /> 🔊 Listen Audio
+                            </button>
+                          </div>
+
+                          {/* Teacher Feedback Note (if evaluated) */}
+                          {isEvaluated && (
+                            <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '10px', border: '1px solid #86efac', marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                              <div style={{ fontSize: '13px', color: '#166534', flex: 1 }}>
+                                <strong>🎓 Teacher Evaluation Feedback:</strong> {vSub.teacherFeedback || 'Oral performance and technical fluency evaluated by teacher.'}
+                              </div>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  speakText(`Teacher Viva Feedback: ${vSub.teacherFeedback || 'Good performance in oral examination.'}`);
+                                }}
+                                style={{ background: '#dcfce7', color: '#15803d', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <Volume2 size={14} /> 🔊 Listen Feedback
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               )}
             </div>

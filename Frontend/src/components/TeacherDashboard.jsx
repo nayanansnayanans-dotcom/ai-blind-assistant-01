@@ -209,6 +209,7 @@ export const filterRequestsForTeacher = (rawRequests, currentTeacher, currentExa
 
 const menuItems = [
   { id: 'Overview', icon: '📊', label: 'Overview' },
+  { id: 'Evaluations', icon: '✍️', label: 'Exam & Viva Evaluations' },
   { id: 'Create exam', icon: '📝', label: 'Create & edit exam' },
   { id: 'Question bank', icon: '📚', label: 'Question bank' },
   { id: 'Schedule & assign', icon: '📅', label: 'Schedule & assign' },
@@ -560,6 +561,11 @@ export default function TeacherDashboard() {
   const [activeCorrection, setActiveCorrection] = useState(null);
   const [correctionQuestions, setCorrectionQuestions] = useState([]);
   const [overallFeedbackInput, setOverallFeedbackInput] = useState('');
+
+  // Exam & Viva Evaluations Hub States
+  const [evaluationTab, setEvaluationTab] = useState('all'); // 'all' | 'written' | 'viva'
+  const [evaluationStatusFilter, setEvaluationStatusFilter] = useState('all'); // 'all' | 'pending' | 'evaluated'
+  const [evaluationSearchTerm, setEvaluationSearchTerm] = useState('');
 
   // Student Subjects & Preferences States
   const [registeredStudents, setRegisteredStudents] = useState([]);
@@ -2877,14 +2883,14 @@ export default function TeacherDashboard() {
             <button 
               className="ea-primary"
               style={{ background: '#2563eb', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
-              onClick={() => setPage('Results & analytics')}
+              onClick={() => { setPage('Evaluations'); setEvaluationTab('written'); }}
             >
               📝 Grade Written Exams ({pendingWrittenExams.length}) →
             </button>
             <button 
               className="ea-primary"
               style={{ background: '#7c3aed', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
-              onClick={() => setPage('viva')}
+              onClick={() => { setPage('Evaluations'); setEvaluationTab('viva'); }}
             >
               🎙️ Evaluate Oral Vivas ({pendingVivaSubs.length}) →
             </button>
@@ -6550,8 +6556,631 @@ export default function TeacherDashboard() {
     </div>
   );
 
+  // 19. Exam & Viva Evaluations Hub (Unified Dedicated Evaluation Feature)
+  const renderEvaluations = (() => {
+    // Filter written exams by search term & status
+    const filteredWrittenBySearch = filteredStudentResults.filter(r => {
+      if (!r) return false;
+      const sTerm = evaluationSearchTerm.toLowerCase().trim();
+      if (sTerm) {
+        const sName = String(r.student || r.studentName || '').toLowerCase();
+        const sEmail = String(r.studentEmail || '').toLowerCase();
+        const sTitle = String(r.examName || r.examTitle || '').toLowerCase();
+        const sId = String(r.studentId || '').toLowerCase();
+        if (!sName.includes(sTerm) && !sEmail.includes(sTerm) && !sTitle.includes(sTerm) && !sId.includes(sTerm)) {
+          return false;
+        }
+      }
+      const isPending = r.status === 'Pending Correction' || r.status === 'Submitted' || (!r.evaluatedAt && r.status !== 'Corrected & Graded');
+      if (evaluationStatusFilter === 'pending' && !isPending) return false;
+      if (evaluationStatusFilter === 'evaluated' && isPending) return false;
+      return true;
+    });
+
+    // Filter oral vivas by search term & status
+    const filteredVivaBySearch = filteredVivaSubmissions.filter(s => {
+      if (!s) return false;
+      const sTerm = evaluationSearchTerm.toLowerCase().trim();
+      if (sTerm) {
+        const sName = String(s.studentName || s.student || '').toLowerCase();
+        const sEmail = String(s.studentEmail || '').toLowerCase();
+        const sTitle = String(s.vivaTitle || s.subject || '').toLowerCase();
+        if (!sName.includes(sTerm) && !sEmail.includes(sTerm) && !sTitle.includes(sTerm)) {
+          return false;
+        }
+      }
+      const isPending = s.status !== 'Evaluated' && (s.teacherScore === undefined || s.teacherScore === null);
+      if (evaluationStatusFilter === 'pending' && !isPending) return false;
+      if (evaluationStatusFilter === 'evaluated' && isPending) return false;
+      return true;
+    });
+
+    const totalWrittenCount = filteredStudentResults.length;
+    const totalVivaCount = filteredVivaSubmissions.length;
+    const totalPendingCount = pendingWrittenExams.length + pendingVivaSubs.length;
+    const totalEvaluatedCount = (totalWrittenCount - pendingWrittenExams.length) + (totalVivaCount - pendingVivaSubs.length);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <Title
+          title="Student Exam & Viva Evaluations Hub"
+          text="Review submitted student theory exams and oral viva recordings, grade answers, provide voice feedback, and publish official scores directly to student dashboards."
+        />
+
+        {/* METRICS HEADER CARDS */}
+        <div className="ea-metrics">
+          <div className="ea-card">
+            <strong style={{ color: '#2563eb' }}>{totalWrittenCount + totalVivaCount}</strong>
+            <span>Total Candidate Submissions</span>
+          </div>
+          <div className="ea-card" style={{ border: pendingWrittenExams.length > 0 ? '1.5px solid #f59e0b' : '1px solid #e2e8f0', background: pendingWrittenExams.length > 0 ? '#fffdf5' : '#ffffff' }}>
+            <strong style={{ color: pendingWrittenExams.length > 0 ? '#d97706' : '#64748b' }}>{pendingWrittenExams.length}</strong>
+            <span>📝 Written Exams Awaiting Grading</span>
+          </div>
+          <div className="ea-card" style={{ border: pendingVivaSubs.length > 0 ? '1.5px solid #a855f7' : '1px solid #e2e8f0', background: pendingVivaSubs.length > 0 ? '#faf5ff' : '#ffffff' }}>
+            <strong style={{ color: pendingVivaSubs.length > 0 ? '#9333ea' : '#64748b' }}>{pendingVivaSubs.length}</strong>
+            <span>🎙️ Oral Vivas Awaiting Evaluation</span>
+          </div>
+          <div className="ea-card">
+            <strong style={{ color: '#16a34a' }}>{totalEvaluatedCount}</strong>
+            <span>✅ Evaluated & Published</span>
+          </div>
+        </div>
+
+        {/* NAVIGATION & FILTER CONTROLS BAR */}
+        <section className="ea-card" style={{ padding: '16px 20px', borderRadius: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            {/* Type Filter Buttons */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setEvaluationTab('all')}
+                style={{
+                  background: evaluationTab === 'all' ? '#0f172a' : '#f1f5f9',
+                  color: evaluationTab === 'all' ? '#ffffff' : '#334155',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                All Submissions ({totalWrittenCount + totalVivaCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setEvaluationTab('written')}
+                style={{
+                  background: evaluationTab === 'written' ? '#2563eb' : '#eff6ff',
+                  color: evaluationTab === 'written' ? '#ffffff' : '#1d4ed8',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                📝 Written Exams ({totalWrittenCount})
+                {pendingWrittenExams.length > 0 && (
+                  <span style={{ background: '#f59e0b', color: '#fff', fontSize: '11px', padding: '1px 6px', borderRadius: '8px' }}>
+                    {pendingWrittenExams.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEvaluationTab('viva')}
+                style={{
+                  background: evaluationTab === 'viva' ? '#7c3aed' : '#f5f3ff',
+                  color: evaluationTab === 'viva' ? '#ffffff' : '#6d28d9',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                🎙️ Oral Vivas ({totalVivaCount})
+                {pendingVivaSubs.length > 0 && (
+                  <span style={{ background: '#a855f7', color: '#fff', fontSize: '11px', padding: '1px 6px', borderRadius: '8px' }}>
+                    {pendingVivaSubs.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Status Filter Chips */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>Status:</span>
+              <button
+                type="button"
+                onClick={() => setEvaluationStatusFilter('all')}
+                style={{
+                  background: evaluationStatusFilter === 'all' ? '#334155' : '#f8fafc',
+                  color: evaluationStatusFilter === 'all' ? '#ffffff' : '#64748b',
+                  border: '1px solid #cbd5e1',
+                  padding: '5px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setEvaluationStatusFilter('pending')}
+                style={{
+                  background: evaluationStatusFilter === 'pending' ? '#f59e0b' : '#fffbeb',
+                  color: evaluationStatusFilter === 'pending' ? '#ffffff' : '#b45309',
+                  border: '1px solid #fde68a',
+                  padding: '5px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                🟡 Needs Grading ({totalPendingCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setEvaluationStatusFilter('evaluated')}
+                style={{
+                  background: evaluationStatusFilter === 'evaluated' ? '#16a34a' : '#f0fdf4',
+                  color: evaluationStatusFilter === 'evaluated' ? '#ffffff' : '#15803d',
+                  border: '1px solid #86efac',
+                  padding: '5px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                🟢 Evaluated ({totalEvaluatedCount})
+              </button>
+            </div>
+          </div>
+
+          {/* Search bar */}
+          <div style={{ marginTop: '14px' }}>
+            <input
+              type="text"
+              placeholder="🔍 Search submissions by candidate name, student ID, email, or exam title..."
+              value={evaluationSearchTerm}
+              onChange={(e) => setEvaluationSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '10px',
+                border: '1.5px solid #cbd5e1',
+                fontSize: '13px',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+        </section>
+
+        {/* SECTION A: WRITTEN / THEORY EXAM SUBMISSIONS */}
+        {(evaluationTab === 'all' || evaluationTab === 'written') && (
+          <section className="ea-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📝 Student Written & Theory Exam Submissions ({filteredWrittenBySearch.length})
+                {selectedTeacherSubject !== 'ALL' && (
+                  <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: '600' }}>({selectedTeacherSubject} only)</span>
+                )}
+              </h2>
+              {filteredWrittenBySearch.length > 0 && (
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Click "Grade Answers" to review questions, award marks, and publish to student dashboard.
+                </span>
+              )}
+            </div>
+
+            {filteredWrittenBySearch.length === 0 ? (
+              <div style={{ padding: '32px 16px', textAlign: 'center', background: '#f8fafc', borderRadius: '14px', border: '1px dashed #cbd5e1', color: '#64748b' }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>📝</div>
+                <b style={{ color: '#334155', fontSize: '15px', display: 'block', marginBottom: '4px' }}>
+                  No Written Exam Submissions Matching Criteria
+                </b>
+                <p style={{ margin: 0, fontSize: '13px' }}>
+                  When students complete and submit theory examinations in the Student Dashboard, their answers will appear here for grading.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '16px' }}>
+                {filteredWrittenBySearch.map((r, idx) => {
+                  const isEvaluated = r.status === 'Corrected & Graded' || Boolean(r.evaluatedAt);
+                  const studentName = r.student || r.studentName || 'Student';
+                  const examTitle = r.examName || r.examTitle || 'Theory Assessment';
+                  const questionsCount = r.questions?.length || Object.keys(r.answers || {}).length || 0;
+
+                  return (
+                    <div
+                      key={r.id || idx}
+                      style={{
+                        background: isEvaluated ? '#f0fdf4' : '#fffdf5',
+                        border: isEvaluated ? '1.5px solid #86efac' : '2px solid #fde68a',
+                        borderRadius: '16px',
+                        padding: '18px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        boxShadow: isEvaluated ? '0 2px 8px rgba(22, 163, 74, 0.06)' : '0 4px 12px rgba(245, 158, 11, 0.12)'
+                      }}
+                    >
+                      {/* Submission Header Row */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '20px' }}>👤</span>
+                            <b style={{ fontSize: '16px', color: '#0f172a' }}>{studentName}</b>
+                            {r.studentId && (
+                              <span style={{ fontSize: '11px', background: '#e2e8f0', color: '#334155', padding: '2px 8px', borderRadius: '6px', fontWeight: '700' }}>
+                                ID: {r.studentId}
+                              </span>
+                            )}
+                            {r.studentEmail && (
+                              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>({r.studentEmail})</span>
+                            )}
+                          </div>
+                          <div style={{ marginTop: '4px', fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>
+                            📖 {examTitle} • <span style={{ color: '#475569' }}>Subject: <strong>{r.subject || 'General'}</strong></span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                            🕒 Submitted: {r.submittedAt || r.date || 'Today'} · Duration: {r.timeSpent || '45 mins'} · Questions: {questionsCount}
+                          </div>
+                        </div>
+
+                        {/* Status Badge & Actions */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              background: isEvaluated ? '#dcfce7' : '#fef3c7',
+                              color: isEvaluated ? '#15803d' : '#b45309',
+                              border: `1px solid ${isEvaluated ? '#86efac' : '#fde68a'}`,
+                              padding: '5px 12px',
+                              borderRadius: '10px',
+                              fontWeight: '800'
+                            }}
+                          >
+                            {isEvaluated
+                              ? `✅ Graded: ${r.score}/${r.total} (${r.percentage || Math.round(((r.score || 0) / (r.total || 100)) * 100)}%)`
+                              : '🟡 Needs Teacher Grading'}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenExamCorrection(r)}
+                            style={{
+                              background: isEvaluated ? '#0284c7' : '#16a34a',
+                              color: '#ffffff',
+                              border: 'none',
+                              padding: '8px 16px',
+                              borderRadius: '10px',
+                              fontWeight: '800',
+                              fontSize: '13px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                            }}
+                          >
+                            {isEvaluated ? '✏️ Review / Edit Grade' : '📝 Grade Exam Answers →'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubmission(r.id)}
+                            style={{
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fca5a5',
+                              padding: '8px 12px',
+                              borderRadius: '10px',
+                              fontWeight: '700',
+                              fontSize: '12px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            🗑️ Remove
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Evaluated Feedback Note Preview */}
+                      {isEvaluated && (
+                        <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#334155' }}>
+                          <strong style={{ color: '#0369a1' }}>Published Teacher Feedback:</strong> {r.feedback || r.teacherFeedback || 'Exam evaluated by teacher.'}
+                          {(r.evaluatedBy || r.teacherName) && (
+                            <span style={{ marginLeft: '12px', color: '#64748b' }}>
+                              • Evaluator: <strong>{r.evaluatedBy || r.teacherName}</strong>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* SECTION B: ORAL VIVA VOCE SUBMISSIONS & SCORING */}
+        {(evaluationTab === 'all' || evaluationTab === 'viva') && (
+          <section className="ea-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🎙️ Student Spoken Oral Viva Voce Submissions ({filteredVivaBySearch.length})
+                {selectedTeacherSubject !== 'ALL' && (
+                  <span style={{ fontSize: '12px', color: '#9333ea', fontWeight: '600' }}>({selectedTeacherSubject} only)</span>
+                )}
+              </h2>
+              {filteredVivaBySearch.length > 0 && (
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Listen to student voice audio logs, review transcript fluency, enter score (0-10) and publish feedback.
+                </span>
+              )}
+            </div>
+
+            {filteredVivaBySearch.length === 0 ? (
+              <div style={{ padding: '32px 16px', textAlign: 'center', background: '#f8fafc', borderRadius: '14px', border: '1px dashed #cbd5e1', color: '#64748b' }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🎙️</div>
+                <b style={{ color: '#334155', fontSize: '15px', display: 'block', marginBottom: '4px' }}>
+                  No Spoken Oral Viva Submissions Matching Criteria
+                </b>
+                <p style={{ margin: 0, fontSize: '13px' }}>
+                  When students complete voice vivas in the Oral Viva Simulator, their spoken responses and audio logs will appear here for grading.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '16px' }}>
+                {filteredVivaBySearch.map((sub, sIdx) => {
+                  const subId = sub.id || `viva_sub_${sIdx}`;
+                  const isEvaluated = sub.status === 'Evaluated' || (sub.teacherScore !== undefined && sub.teacherScore !== null);
+                  const draft = vivaEvaluationDrafts[subId] || {};
+                  const currentScore = draft.score !== undefined ? draft.score : (sub.teacherScore !== undefined && sub.teacherScore !== null ? sub.teacherScore : '');
+                  const currentGrade = draft.gradeStatus || sub.gradeStatus || 'Pass';
+                  const currentFeedback = draft.feedback !== undefined ? draft.feedback : (sub.teacherFeedback || '');
+                  const spokenText = sub.response || sub.spokenResponse || sub.transcript || sub.questions?.[0]?.studentAnswer || 'No response recorded';
+
+                  return (
+                    <div
+                      key={subId}
+                      style={{
+                        background: isEvaluated ? '#f0fdf4' : '#fffdf5',
+                        border: isEvaluated ? '1.5px solid #86efac' : '2px solid #fde68a',
+                        borderRadius: '16px',
+                        padding: '18px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        boxShadow: isEvaluated ? '0 2px 8px rgba(22, 163, 74, 0.06)' : '0 4px 12px rgba(245, 158, 11, 0.12)'
+                      }}
+                    >
+                      {/* Header Row */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '20px' }}>👤</span>
+                            <b style={{ fontSize: '16px', color: '#0f172a' }}>{sub.studentName || sub.student || 'Registered Student'}</b>
+                            {sub.studentEmail && (
+                              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>({sub.studentEmail})</span>
+                            )}
+                          </div>
+                          <div style={{ marginTop: '4px', fontSize: '13px', color: '#7c3aed', fontWeight: '700' }}>
+                            🎙️ {sub.vivaTitle || sub.subject || 'Oral Viva'} • <span style={{ color: '#475569' }}>Subject: <strong>{sub.subject || 'Oral Viva'}</strong></span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                            🕒 Submitted: {sub.date || 'Today'} {sub.time ? `at ${sub.time}` : ''}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              background: isEvaluated ? '#dcfce7' : '#fef3c7',
+                              color: isEvaluated ? '#15803d' : '#b45309',
+                              border: `1px solid ${isEvaluated ? '#86efac' : '#fde68a'}`,
+                              padding: '5px 12px',
+                              borderRadius: '10px',
+                              fontWeight: '800'
+                            }}
+                          >
+                            {isEvaluated ? `✅ Evaluated: ${sub.teacherScore}/10 (${currentGrade})` : '🟡 Needs Oral Viva Evaluation'}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteVivaSubmission(sub.id)}
+                            style={{
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fca5a5',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              fontWeight: '700',
+                              fontSize: '12px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            🗑️ Remove
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Spoken Answer & Audio Preview Box */}
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <strong style={{ fontSize: '13px', color: '#0f172a' }}>🎙️ Candidate's Spoken Voice Response:</strong>
+                          <button
+                            type="button"
+                            onClick={() => speak(`Candidate spoken response for ${sub.vivaTitle || sub.subject}: ${spokenText}`)}
+                            style={{
+                              background: '#e0f2fe',
+                              color: '#0284c7',
+                              border: 'none',
+                              padding: '5px 12px',
+                              borderRadius: '8px',
+                              fontWeight: '800',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}
+                          >
+                            🔊 Listen Student Voice
+                          </button>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#334155', fontStyle: 'italic', lineHeight: 1.5 }}>
+                          "{spokenText}"
+                        </p>
+                      </div>
+
+                      {/* Inline Viva Grading & Feedback Panel */}
+                      <div style={{ background: '#f1f5f9', borderRadius: '12px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <b style={{ fontSize: '13px', color: '#0f172a' }}>Teacher Grading & Score Entry:</b>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Viva Score (0–10):</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              value={currentScore}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setVivaEvaluationDrafts(prev => ({
+                                  ...prev,
+                                  [subId]: { ...prev[subId], score: val }
+                                }));
+                              }}
+                              style={{ width: '70px', padding: '6px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold', fontSize: '14px' }}
+                            />
+                          </div>
+
+                          {/* Quick Score Chips */}
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            {[5, 7, 8, 9, 10].map(num => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => {
+                                  setVivaEvaluationDrafts(prev => ({
+                                    ...prev,
+                                    [subId]: {
+                                      ...prev[subId],
+                                      score: num,
+                                      gradeStatus: num >= 9 ? 'Distinction' : num >= 5 ? 'Pass' : 'Needs Improvement'
+                                    }
+                                  }));
+                                }}
+                                style={{
+                                  background: Number(currentScore) === num ? '#7c3aed' : '#e2e8f0',
+                                  color: Number(currentScore) === num ? '#ffffff' : '#334155',
+                                  border: 'none',
+                                  padding: '4px 8px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {num}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>Grade:</label>
+                            <select
+                              value={currentGrade}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setVivaEvaluationDrafts(prev => ({
+                                  ...prev,
+                                  [subId]: { ...prev[subId], gradeStatus: val }
+                                }));
+                              }}
+                              style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold' }}
+                            >
+                              <option value="Pass">Pass</option>
+                              <option value="Distinction">Distinction</option>
+                              <option value="Needs Improvement">Needs Improvement</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Feedback text */}
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <input
+                            type="text"
+                            placeholder="Enter oral viva feedback note for candidate..."
+                            value={currentFeedback}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setVivaEvaluationDrafts(prev => ({
+                                ...prev,
+                                [subId]: { ...prev[subId], feedback: val }
+                              }));
+                            }}
+                            style={{ flex: 1, minWidth: '240px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveVivaEvaluation(sub.id)}
+                            style={{
+                              background: '#7c3aed',
+                              color: '#ffffff',
+                              border: 'none',
+                              padding: '8px 18px',
+                              borderRadius: '8px',
+                              fontWeight: '800',
+                              fontSize: '13px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: '0 2px 6px rgba(124, 58, 237, 0.25)'
+                            }}
+                          >
+                            ✅ Publish Viva Grade & Feedback
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    );
+  })();
+
   const pageComponents = {
     Overview: renderOverview,
+    Evaluations: renderEvaluations,
+    'Exam & Viva Evaluations': renderEvaluations,
     'Create exam': renderCreateExam,
     'Question bank': renderQuestionBank,
     'Question builder': renderCreateExam,
@@ -6585,16 +7214,35 @@ export default function TeacherDashboard() {
           <small>TEACHER EXAM PORTAL</small>
         </div>
         <nav aria-label="Teacher exam assistant menu">
-          {menuItems.map(item => (
-            <button
-              key={item.id}
-              className={page === item.id ? 'active' : ''}
-              onClick={() => setPage(item.id)}
-            >
-              <span style={{ marginRight: '8px' }}>{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
+          {menuItems.map(item => {
+            const isEvaluations = item.id === 'Evaluations';
+            const pendingCount = pendingWrittenExams.length + pendingVivaSubs.length;
+            return (
+              <button
+                key={item.id}
+                className={page === item.id ? 'active' : ''}
+                onClick={() => setPage(item.id)}
+                style={{ display: 'flex', alignItems: 'center' }}
+              >
+                <span style={{ marginRight: '8px' }}>{item.icon}</span>
+                <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
+                {isEvaluations && pendingCount > 0 && (
+                  <span style={{
+                    marginLeft: 'auto',
+                    background: '#f59e0b',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    padding: '2px 7px',
+                    borderRadius: '10px',
+                    lineHeight: 1
+                  }}>
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
         <div className="ea-help">
           <b>Assistive Exam Tools</b>
