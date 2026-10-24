@@ -1512,14 +1512,21 @@ export default function TeacherDashboard() {
     say('Cleared live proctoring logs.');
   };
 
-  // Study Material Test Results State (Scoped to current teacher)
+  // Study Material Test Results & Teacher Evaluation State
+  const [activeEvaluatingStudyTest, setActiveEvaluatingStudyTest] = useState(null);
+  const [studyTestEvalForm, setStudyTestEvalForm] = useState({ score: 8, gradeStatus: 'Pass', feedback: '' });
+
   const [studyTestResults, setStudyTestResults] = useState(() => {
     try {
       const raw = localStorage.getItem('shared_study_test_results');
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          return parsed.filter(r => (String(r.teacherEmail || '').toLowerCase().trim()) === teacherEmailKey);
+          return parsed.filter(r => {
+            if (!r) return false;
+            const rEmail = String(r.teacherEmail || '').toLowerCase().trim();
+            return !teacherEmailKey || !rEmail || rEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu';
+          });
         }
       }
       return [];
@@ -1527,6 +1534,86 @@ export default function TeacherDashboard() {
       return [];
     }
   });
+
+  const handleOpenStudyTestEvaluation = (st) => {
+    setActiveEvaluatingStudyTest(st);
+    setStudyTestEvalForm({
+      score: st.teacherScore !== null && st.teacherScore !== undefined ? st.teacherScore : (st.score !== null && st.score !== undefined ? st.score : 8),
+      gradeStatus: st.gradeStatus || (st.score >= 5 ? 'Pass' : 'Needs Review'),
+      feedback: st.teacherFeedback || ''
+    });
+    say(`Opening test evaluation for student ${st.studentName}.`);
+  };
+
+  const handleSaveStudyTestEvaluation = () => {
+    if (!activeEvaluatingStudyTest) return;
+    const scoreNum = Number(studyTestEvalForm.score);
+    if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 10) {
+      return say('Please enter a valid score between 0 and 10.');
+    }
+
+    const feedbackText = (studyTestEvalForm.feedback || '').trim() || (scoreNum >= 8 ? 'Excellent understanding of the core study material concepts.' : 'Good effort. Review key definitions and practice further.');
+    const percentage = Math.round((scoreNum / 10) * 100);
+    const teacherName = teacher?.fullName || teacher?.name || 'Teacher';
+
+    const updated = studyTestResults.map(s => {
+      if (s.id === activeEvaluatingStudyTest.id) {
+        return {
+          ...s,
+          evaluated: true,
+          status: 'Evaluated',
+          teacherScore: scoreNum,
+          score: scoreNum,
+          total: 10,
+          percentage: percentage,
+          gradeStatus: studyTestEvalForm.gradeStatus || (scoreNum >= 5 ? 'Pass' : 'Needs Review'),
+          teacherFeedback: feedbackText,
+          evaluatedBy: `Prof. ${teacherName.replace(/^Prof\.?\s*/i, '')}`,
+          evaluatedAt: new Date().toISOString()
+        };
+      }
+      return s;
+    });
+
+    setStudyTestResults(updated);
+
+    try {
+      const rawAll = localStorage.getItem('shared_study_test_results');
+      const allTests = rawAll ? JSON.parse(rawAll) : [];
+      const merged = Array.isArray(allTests) && allTests.length > 0 ? allTests.map(s => s.id === activeEvaluatingStudyTest.id ? {
+        ...s,
+        evaluated: true,
+        status: 'Evaluated',
+        teacherScore: scoreNum,
+        score: scoreNum,
+        total: 10,
+        percentage: percentage,
+        gradeStatus: studyTestEvalForm.gradeStatus || (scoreNum >= 5 ? 'Pass' : 'Needs Review'),
+        teacherFeedback: feedbackText,
+        evaluatedBy: `Prof. ${teacherName.replace(/^Prof\.?\s*/i, '')}`,
+        evaluatedAt: new Date().toISOString()
+      } : s) : updated;
+
+      localStorage.setItem('shared_study_test_results', JSON.stringify(merged));
+
+      const notifObj = {
+        id: `notif_${Date.now()}`,
+        title: `🎓 Study Test Evaluated: ${activeEvaluatingStudyTest.materialTitle}`,
+        detail: `Prof. ${teacherName.replace(/^Prof\.?\s*/i, '')} evaluated your test for "${activeEvaluatingStudyTest.materialTitle}"! Score: ${scoreNum}/10 (${percentage}%). Remarks: "${feedbackText}"`,
+        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        type: 'Study Material',
+        read: false
+      };
+      const existingNotifsRaw = localStorage.getItem('shared_notifications');
+      const existingNotifs = existingNotifsRaw ? JSON.parse(existingNotifsRaw) : [];
+      localStorage.setItem('shared_notifications', JSON.stringify([notifObj, ...existingNotifs]));
+
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    say(`Evaluation published for ${activeEvaluatingStudyTest.studentName}. Score: ${scoreNum} out of 10.`);
+    setActiveEvaluatingStudyTest(null);
+  };
 
   const broadcastStorageKey = `shared_voice_broadcasts_${teacherEmailKey}`;
   const [broadcastList, setBroadcastList] = useState(() => {
@@ -1687,7 +1774,11 @@ export default function TeacherDashboard() {
         try {
           const parsed = JSON.parse(studyTestRaw);
           if (Array.isArray(parsed)) {
-            setStudyTestResults(parsed.filter(r => (String(r.teacherEmail || '').toLowerCase().trim()) === teacherEmailKey));
+            setStudyTestResults(parsed.filter(r => {
+              if (!r) return false;
+              const rEmail = String(r.teacherEmail || '').toLowerCase().trim();
+              return !teacherEmailKey || !rEmail || rEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu';
+            }));
           }
         } catch (e) {}
       }
@@ -5126,40 +5217,83 @@ export default function TeacherDashboard() {
             )}
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {filteredStudyTestResults.length > 0 ? (
-              filteredStudyTestResults.map((st, i) => (
-                <div key={i} style={{ padding: '14px 18px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#16a34a', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 'bold', fontSize: '14px' }}>
-                      {st.studentName ? st.studentName[0].toUpperCase() : 'S'}
-                    </span>
-                    <div>
-                      <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{st.studentName}</strong>
-                      <small style={{ fontSize: '12px', color: '#166534', fontWeight: '700' }}>
-                        Lesson: {st.materialTitle} ({st.subject}) · {st.date}
-                      </small>
-                      <div style={{ fontSize: '12px', color: '#334155', marginTop: '4px', fontStyle: 'italic' }}>
-                        Voice Answers: "{st.answers || 'Completed test with voice dictation'}"
+              filteredStudyTestResults.map((st, i) => {
+                const isEvaluated = Boolean(st.evaluated);
+                return (
+                  <div key={st.id || i} style={{ padding: '16px 20px', background: isEvaluated ? '#f0fdf4' : '#fffbeb', borderRadius: '14px', border: isEvaluated ? '1px solid #bbf7d0' : '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ width: '40px', height: '40px', borderRadius: '50%', background: isEvaluated ? '#16a34a' : '#d97706', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 'bold', fontSize: '16px' }}>
+                          {st.studentName ? st.studentName[0].toUpperCase() : 'S'}
+                        </span>
+                        <div>
+                          <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block' }}>{st.studentName}</strong>
+                          <span style={{ fontSize: '12px', color: isEvaluated ? '#15803d' : '#92400e', fontWeight: '700' }}>
+                            Study Material: <b>{st.materialTitle}</b> ({st.subject}) • Submitted: {st.date}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        {isEvaluated ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '13px', background: '#dcfce7', color: '#15803d', padding: '5px 14px', borderRadius: '12px', fontWeight: '900', border: '1px solid #86efac' }}>
+                              Score: {st.teacherScore !== null && st.teacherScore !== undefined ? st.teacherScore : st.score} / {st.total || 10} ({st.percentage}%)
+                            </span>
+                            <span style={{ fontSize: '11px', background: '#16a34a', color: '#ffffff', padding: '4px 10px', borderRadius: '8px', fontWeight: '800' }}>
+                              ✓ Evaluated
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '12px', background: '#fef3c7', color: '#92400e', padding: '5px 14px', borderRadius: '12px', fontWeight: '800', border: '1px solid #fcd34d' }}>
+                            ⏳ Pending Teacher Evaluation
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenStudyTestEvaluation(st)}
+                          style={{
+                            background: isEvaluated ? '#0284c7' : '#16a34a',
+                            color: '#ffffff',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '10px',
+                            fontWeight: '800',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          {isEvaluated ? '✏️ Review / Edit Grade' : '📝 Evaluate Student Test'}
+                        </button>
                       </div>
                     </div>
-                  </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '4px 12px', borderRadius: '12px', fontWeight: '800' }}>
-                      {st.percentage}% Score ({st.score}/{st.total || 10})
-                    </span>
-                    <span style={{ fontSize: '11px', background: st.status === 'Passed' ? '#16a34a' : '#eab308', color: '#ffffff', padding: '4px 10px', borderRadius: '8px', fontWeight: 'bold' }}>
-                      {st.status || 'Passed'}
-                    </span>
+                    {/* Answers Preview */}
+                    <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#334155' }}>
+                      <strong style={{ color: '#475569', display: 'block', marginBottom: '4px' }}>🗣️ Submitted Student Answers:</strong>
+                      <div style={{ maxHeight: '80px', overflowY: 'auto', lineHeight: 1.5, fontStyle: 'italic' }}>
+                        "{st.answers || 'No answers submitted'}"
+                      </div>
+                      {isEvaluated && st.teacherFeedback && (
+                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0', color: '#166534', fontWeight: '700' }}>
+                          💬 Teacher Feedback: "{st.teacherFeedback}"
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div style={{ padding: '24px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#64748b' }}>
                 {selectedTeacherSubject !== 'ALL' 
-                  ? `No study material quiz results logged for "${selectedTeacherSubject}" yet.` 
-                  : 'No study material quiz results logged yet. Student scores will appear here in real time as they complete study tests.'}
+                  ? `No study material tests submitted for "${selectedTeacherSubject}" yet.` 
+                  : 'No study material tests submitted yet. When students complete tests on study materials, they will appear here for your manual evaluation.'}
               </div>
             )}
           </div>

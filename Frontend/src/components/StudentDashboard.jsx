@@ -2832,6 +2832,7 @@ export default function StudentDashboard() {
 
   // Active Exam state
   const [currentExam, setCurrentExam] = useState(null);
+  const [isExamActive, setIsExamActive] = useState(false);
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [studentAnswers, setStudentAnswers] = useState({});
   const [currentAnswerInput, setCurrentAnswerInput] = useState('');
@@ -2960,6 +2961,16 @@ export default function StudentDashboard() {
       };
     });
   };
+  // Study Test Submissions & Teacher Evaluations Store
+  const [studyTestResultsList, setStudyTestResultsList] = useState(() => {
+    try {
+      const raw = localStorage.getItem('shared_study_test_results');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Study Materials state (Strictly Short Answer or Long Answer, NO MCQ)
   const defaultStudyMaterials = [];
 
@@ -3615,23 +3626,48 @@ export default function StudentDashboard() {
     const targetMat = mat || activePracticeMat || filteredStudyMaterials[0];
     if (!targetMat) return;
 
-    const questions = targetMat.testQuestions && targetMat.testQuestions.length > 0 ? targetMat.testQuestions : [
-      { id: 1, text: targetMat.practiceQuestion || `What is the core principle of ${targetMat.title}?`, expectedAnswer: targetMat.practiceAnswer || targetMat.textContent },
-      { id: 2, text: `Explain the key concepts and practical applications of ${targetMat.title}.`, expectedAnswer: targetMat.textContent || targetMat.detail }
-    ];
+    const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+    const existingSubmission = (studyTestResultsList || []).find(s => 
+      s && (s.studentEmail === studentEmail || s.studentName === student.name) && 
+      (s.materialTitle === targetMat.title || s.testId === targetMat.id)
+    );
+
+    const questions = targetMat.questions && targetMat.questions.length > 0 
+      ? targetMat.questions 
+      : (targetMat.testQuestions && targetMat.testQuestions.length > 0 ? targetMat.testQuestions : [
+          { id: 1, text: targetMat.practiceQuestion || `What is the core principle of ${targetMat.title}?`, expectedAnswer: targetMat.practiceAnswer || targetMat.textContent },
+          { id: 2, text: `Explain the key concepts and practical applications of ${targetMat.title}.`, expectedAnswer: targetMat.textContent || targetMat.detail }
+        ]);
 
     setActiveLessonTest({
       id: targetMat.id,
       title: targetMat.title,
       subject: targetMat.subject || 'General',
+      teacherEmail: targetMat.teacherEmail || '',
+      teacherName: targetMat.teacherName || targetMat.publishedBy || '',
       questions: questions
     });
+
+    if (existingSubmission) {
+      setLessonTestFeedback(existingSubmission);
+      if (existingSubmission.evaluated) {
+        const msg = `Your test for ${targetMat.title} was evaluated by your teacher. Score: ${existingSubmission.teacherScore || existingSubmission.score} out of 10. Teacher remarks: ${existingSubmission.teacherFeedback || 'Good effort.'}`;
+        announce(msg);
+        speakText(msg);
+      } else {
+        const msg = `Your test for ${targetMat.title} has been submitted to your teacher and is currently awaiting teacher evaluation.`;
+        announce(msg);
+        speakText(msg);
+      }
+      return;
+    }
+
     setLessonTestQIndex(0);
     setLessonTestInput('');
     setLessonTestAnswers({});
     setLessonTestFeedback(null);
 
-    const startMsg = `Starting Study Material Test for ${targetMat.title}. Question 1: ${questions[0].text}`;
+    const startMsg = `Starting Study Material Test for ${targetMat.title}. Question 1: ${questions[0].text}. Dictate your answer or type in the box, then say DONE.`;
     announce(startMsg);
     speakText(startMsg);
   };
@@ -3671,12 +3707,14 @@ export default function StudentDashboard() {
 
     try {
       const rec = new SpeechRecognition();
-      rec.lang = 'en-US';
       rec.continuous = true;
       rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      announce("🎙️ Voice dictation active. Speak your answer, say DONE when finished.");
+
       rec.onstart = () => {
-        announce("🎙️ Listening to your test answer. Speak freely until you say DONE.");
-        speakText("Speak your test answer clearly. I will listen as long as you speak until you say DONE.");
+        setIsVoiceListening(true);
       };
 
       rec.onresult = (event) => {
@@ -3716,66 +3754,81 @@ export default function StudentDashboard() {
     } catch (err) {}
   };
 
+  // Submit Study Material Test to Teacher for Manual Evaluation (No Auto-Scoring)
   const handleSubmitLessonTest = (finalAnswersObj) => {
     if (!activeLessonTest) return;
     const answersToEvaluate = finalAnswersObj || lessonTestAnswers;
-    let earned = 0;
-    const totalQ = activeLessonTest.questions.length;
 
-    activeLessonTest.questions.forEach(q => {
-      const userAns = (answersToEvaluate[q.id] || '').toLowerCase().trim();
-      const expAns = (q.expectedAnswer || '').toLowerCase().trim();
-      if (userAns && expAns) {
-        const words = userAns.split(/\s+/).filter(w => w.length > 3);
-        let matchCount = 0;
-        words.forEach(w => { if (expAns.includes(w)) matchCount++; });
-        if (words.length > 0 && matchCount / words.length > 0.3) earned += 5;
-        else if (userAns.length > 10) earned += 4;
-        else earned += 3;
-      } else if (userAns) {
-        earned += 4;
-      }
-    });
+    const answersList = activeLessonTest.questions.map((q, idx) => ({
+      questionId: q.id || idx + 1,
+      questionText: q.text || `Question ${idx + 1}`,
+      studentAnswer: (answersToEvaluate[q.id] || '').trim() || 'No answer submitted',
+      expectedAnswer: q.expectedAnswer || q.oneLineAnswer || q.correctAnswer || '',
+      explanation: q.explanation || ''
+    }));
 
-    const scoreVal = Math.min(10, Math.max(5, Math.round(earned / totalQ) * 2));
-    const percentage = Math.round((scoreVal / 10) * 100);
+    const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+    const studentName = student.name || 'Student';
 
-    const feedbackObj = {
-      score: scoreVal,
-      total: 10,
-      percentage: percentage,
-      msg: percentage >= 80 ? 'Outstanding! Excellent mastery of this study material.' : 'Good effort! You passed the lesson test.'
-    };
-
-    setLessonTestFeedback(feedbackObj);
-
-    // Save student performance to shared localStorage live for Teacher Dashboard
-    const testResultData = {
-      id: Date.now(),
-      studentName: student.name,
-      studentId: student.studentId,
+    const testSubmissionData = {
+      id: `study_test_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      testId: activeLessonTest.id,
+      studentName: studentName,
+      studentId: student.studentId || 'Reg-001',
+      studentEmail: studentEmail,
       materialTitle: activeLessonTest.title,
-      subject: activeLessonTest.subject,
-      score: scoreVal,
-      total: 10,
-      percentage: percentage,
-      answers: Object.values(answersToEvaluate).join(' | '),
+      subject: activeLessonTest.subject || 'General',
+      teacherEmail: activeLessonTest.teacherEmail || '',
+      teacherName: activeLessonTest.teacherName || '',
+      answersList: answersList,
+      answers: answersList.map(a => `${a.questionText}: ${a.studentAnswer}`).join(' | '),
       date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      status: scoreVal >= 7 ? 'Passed' : 'Needs Review'
+      submittedAt: new Date().toISOString(),
+      evaluated: false,
+      status: 'Pending Teacher Evaluation',
+      gradeStatus: 'Pending Evaluation',
+      teacherScore: null,
+      score: null,
+      total: 10,
+      percentage: null,
+      teacherFeedback: '',
+      evaluatedBy: '',
+      evaluatedAt: null
     };
+
+    setLessonTestFeedback(testSubmissionData);
 
     try {
       const existingShared = JSON.parse(localStorage.getItem('shared_study_test_results') || '[]');
-      localStorage.setItem('shared_study_test_results', JSON.stringify([testResultData, ...existingShared]));
+      const filtered = Array.isArray(existingShared) ? existingShared.filter(s => 
+        !(s && (s.studentEmail === studentEmail || s.studentName === studentName) && (s.materialTitle === activeLessonTest.title || s.testId === activeLessonTest.id))
+      ) : [];
+      const updatedShared = [testSubmissionData, ...filtered];
+      localStorage.setItem('shared_study_test_results', JSON.stringify(updatedShared));
+      setStudyTestResultsList(updatedShared);
+
+      // Notification for teacher
+      const notifObj = {
+        id: `notif_${Date.now()}`,
+        title: `📚 New Study Test Submitted: ${studentName}`,
+        detail: `${studentName} submitted study material test for "${activeLessonTest.title}" (${activeLessonTest.subject}). Awaiting your manual evaluation.`,
+        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        type: 'Study Material',
+        read: false
+      };
+      const rawNotifs = localStorage.getItem('shared_notifications');
+      const existingNotifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+      localStorage.setItem('shared_notifications', JSON.stringify([notifObj, ...existingNotifs]));
+
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
 
-    const completionMsg = `Congratulations! You completed the test for ${activeLessonTest.title}. Score: ${scoreVal} out of 10, or ${percentage} percent. Your performance has been sent to your teacher dashboard.`;
-    announce(completionMsg);
+    const completionMsg = `Study material test submitted to your teacher. Your teacher will evaluate your answers and award your marks. Your score will be displayed in your dashboard once evaluated.`;
+    announce("✅ " + completionMsg);
     speakText(completionMsg);
   };
 
-  const speakDashboardWelcome = () => {
+    const speakDashboardWelcome = () => {
     const hr = new Date().getHours();
     const timeGreeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
     const welcomeMsg = `${timeGreeting}, ${student?.name || 'Student'}. Welcome to your VisionAssist AI Student Dashboard. What help can I do for you? Tap anywhere on the screen, I will guide you.`;
@@ -3893,6 +3946,13 @@ export default function StudentDashboard() {
             const cleaned = sanitizeStudyMaterialList(filtered);
             setStudyMaterials(cleaned);
           }
+        }
+        const rawTestResults = localStorage.getItem('shared_study_test_results');
+        if (rawTestResults) {
+          try {
+            const parsedTR = JSON.parse(rawTestResults);
+            if (Array.isArray(parsedTR)) setStudyTestResultsList(parsedTR);
+          } catch (e) {}
         }
         const rawV = localStorage.getItem('shared_oral_vivas');
         if (rawV) {
@@ -4977,18 +5037,39 @@ export default function StudentDashboard() {
   }, [currentExam, examSubmitted, student, examTimeRemaining, studentAnswers]);
 
   // Cleanly exit an ongoing exam session without recording any completed exam results
-  const handleExitExamWithoutSubmitting = () => {
-    stopCameraForFaceAuth();
+  const handleExitExamWithoutSubmitting = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (e && e.preventDefault) e.preventDefault();
+    try {
+      stopCameraForFaceAuth();
+    } catch (err) {}
     if (proctorScanIntervalRef.current) {
       clearInterval(proctorScanIntervalRef.current);
       proctorScanIntervalRef.current = null;
     }
+    if (examAnswerSilenceTimerRef.current) {
+      clearTimeout(examAnswerSilenceTimerRef.current);
+      examAnswerSilenceTimerRef.current = null;
+    }
+    if (examAnswerRecognitionRef.current) {
+      try {
+        examAnswerRecognitionRef.current.onstart = null;
+        examAnswerRecognitionRef.current.onresult = null;
+        examAnswerRecognitionRef.current.onerror = null;
+        examAnswerRecognitionRef.current.onend = null;
+        examAnswerRecognitionRef.current.abort();
+      } catch (err) {}
+      examAnswerRecognitionRef.current = null;
+    }
     if (examSpeechRecognitionRef.current) {
       try {
         examSpeechRecognitionRef.current.abort();
-      } catch (e) {}
+      } catch (err) {}
       examSpeechRecognitionRef.current = null;
     }
+    try {
+      cancelSpeech();
+    } catch (err) {}
     setIsDictatingExamAnswer(false);
     setLiveExamAnswerTranscript('');
     setFaceMismatchStrikeCount(0);
@@ -5005,7 +5086,7 @@ export default function StudentDashboard() {
     setStudentAnswers({});
     setActiveTab('Dashboard');
 
-    const exitMsg = "Exam session exited. No answers were submitted, and this exam has not been marked as completed.";
+    const exitMsg = "Exam session exited. You have returned to the dashboard. No answers were submitted.";
     announce(exitMsg);
     speakText(exitMsg);
   };
@@ -5053,6 +5134,7 @@ export default function StudentDashboard() {
       }
     } catch (e) {}
 
+    setIsExamActive(true);
     setCurrentExam(exam);
     setCurrentQIndex(0);
     setCurrentAnswerInput('');
@@ -5070,7 +5152,8 @@ export default function StudentDashboard() {
     setActiveTab('AI Exam Assistant');
     hasAnnouncedExamTabRef.current = true;
     
-    const startMsg = `Face Identity Verified. Welcome to ${exam.title}. Total ${exam.questions.length} questions. Starting step by step.`;
+    const instructions = String(exam.instructions || exam.description || "Read and answer each question carefully using voice navigation.").trim();
+    const startMsg = `Face Identity Verified. Welcome to ${exam.title}. Exam instructions: ${instructions}. Total ${exam.questions ? exam.questions.length : 0} questions. Let us begin.`;
     handleReadExamQuestionStepByStep(0, startMsg);
   };
 
@@ -5103,19 +5186,25 @@ export default function StudentDashboard() {
     if (clean) {
       updateCurrentAnswer(clean);
       announce(`✅ Recorded Answer: "${clean}"`);
-      if (currentExam && currentQIndex < currentExam.questions.length - 1) {
-        speakText(`Answer recorded: "${clean}". Moving to next question.`, () => {
-          handleSaveAndNext();
-        });
-      } else {
-        speakText(`Answer recorded: "${clean}". You have reached the final question. Say Submit Exam to submit your assessment.`, () => {
-          handleStartExamAnswerDictation();
-        });
-      }
+      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+      const promptText = isLastQ
+        ? `You answered: "${clean}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
+        : `You answered: "${clean}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
+      speakText(promptText, () => {
+        if (!isOtherPersonDetected && isScannedStudentWritingRef.current) {
+          setTimeout(() => {
+            handleStartExamAnswerDictation();
+          }, 400);
+        }
+      });
     } else {
       announce("No speech detected for answer.");
       speakText("No speech was detected. Please speak your answer now.", () => {
-        handleStartExamAnswerDictation();
+        if (!isOtherPersonDetected && isScannedStudentWritingRef.current) {
+          setTimeout(() => {
+            handleStartExamAnswerDictation();
+          }, 400);
+        }
       });
     }
   };
@@ -5219,10 +5308,32 @@ export default function StudentDashboard() {
         const lowerCombined = combinedSession.toLowerCase();
         const currentQ = currentExam?.questions?.[currentQIndex];
 
-        // 1. Navigation Commands during exam dictation
-        if (/\b(next question|save and next|go to next|next q)\b/i.test(lowerCombined) || lowerCombined === 'next') {
+        // 1. Repeat Answer Command: if candidate asks to repeat their answer or try again
+        if (/\b(repeat answer|repeat my answer|re-record|change answer|try again)\b/i.test(lowerCombined) || (lowerCombined === 'repeat' && currentAnswerInput)) {
           try { recognition.stop(); } catch (e) {}
           setIsDictatingExamAnswer(false);
+          if (examAnswerSilenceTimerRef.current) {
+            clearTimeout(examAnswerSilenceTimerRef.current);
+            examAnswerSilenceTimerRef.current = null;
+          }
+          updateCurrentAnswer('');
+          setLiveExamAnswerTranscript('');
+          speakText("Clearing previous answer. Please speak your answer again now.", () => {
+            setTimeout(() => {
+              handleStartExamAnswerDictation();
+            }, 300);
+          });
+          return;
+        }
+
+        // 2. Navigation Commands during exam dictation
+        if (/\b(next question|save and next|go to next|next q|proceed)\b/i.test(lowerCombined) || lowerCombined === 'next' || lowerCombined === 'next question') {
+          try { recognition.stop(); } catch (e) {}
+          setIsDictatingExamAnswer(false);
+          if (examAnswerSilenceTimerRef.current) {
+            clearTimeout(examAnswerSilenceTimerRef.current);
+            examAnswerSilenceTimerRef.current = null;
+          }
           handleSaveAndNext();
           return;
         }
@@ -5230,6 +5341,10 @@ export default function StudentDashboard() {
         if (/\b(previous question|go back|back question)\b/i.test(lowerCombined) || lowerCombined === 'previous') {
           try { recognition.stop(); } catch (e) {}
           setIsDictatingExamAnswer(false);
+          if (examAnswerSilenceTimerRef.current) {
+            clearTimeout(examAnswerSilenceTimerRef.current);
+            examAnswerSilenceTimerRef.current = null;
+          }
           handlePreviousQ();
           return;
         }
@@ -5237,6 +5352,10 @@ export default function StudentDashboard() {
         if (/\b(exit exam|cancel exam|quit exam|leave exam)\b/i.test(lowerCombined)) {
           try { recognition.stop(); } catch (e) {}
           setIsDictatingExamAnswer(false);
+          if (examAnswerSilenceTimerRef.current) {
+            clearTimeout(examAnswerSilenceTimerRef.current);
+            examAnswerSilenceTimerRef.current = null;
+          }
           handleExitExamWithoutSubmitting();
           return;
         }
@@ -5244,13 +5363,21 @@ export default function StudentDashboard() {
         if (/\b(submit exam|finish exam)\b/i.test(lowerCombined)) {
           try { recognition.stop(); } catch (e) {}
           setIsDictatingExamAnswer(false);
+          if (examAnswerSilenceTimerRef.current) {
+            clearTimeout(examAnswerSilenceTimerRef.current);
+            examAnswerSilenceTimerRef.current = null;
+          }
           handleSubmitExam();
           return;
         }
 
-        if (/\b(repeat question|read question)\b/i.test(lowerCombined) || lowerCombined === 'repeat') {
+        if (/\b(repeat question|read question|read the question|say question)\b/i.test(lowerCombined) || (lowerCombined === 'repeat' && !currentAnswerInput)) {
           try { recognition.stop(); } catch (e) {}
           setIsDictatingExamAnswer(false);
+          if (examAnswerSilenceTimerRef.current) {
+            clearTimeout(examAnswerSilenceTimerRef.current);
+            examAnswerSilenceTimerRef.current = null;
+          }
           handleReadExamQuestionStepByStep(currentQIndex);
           return;
         }
@@ -5284,15 +5411,15 @@ export default function StudentDashboard() {
               clearTimeout(examAnswerSilenceTimerRef.current);
               examAnswerSilenceTimerRef.current = null;
             }
-            if (currentExam && currentQIndex < currentExam.questions.length - 1) {
-              speakText(`Selected ${matchedOption}. Moving to next question.`, () => {
-                handleSaveAndNext();
-              });
-            } else {
-              speakText(`Selected ${matchedOption}. You have reached the final question. Say Submit Exam to finish.`, () => {
+            const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+            const promptText = isLastQ
+              ? `You selected: "${matchedOption}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
+              : `You selected: "${matchedOption}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
+            speakText(promptText, () => {
+              setTimeout(() => {
                 handleStartExamAnswerDictation();
-              });
-            }
+              }, 400);
+            });
             return;
           }
         }
@@ -5427,7 +5554,8 @@ export default function StudentDashboard() {
         || '';
         
       setCurrentAnswerInput(existingNextAns);
-      handleReadExamQuestionStepByStep(nextIndex);
+      const prefix = savedAns ? `Answer saved. Moving to Question ${nextIndex + 1}.` : `Moving to Question ${nextIndex + 1}.`;
+      handleReadExamQuestionStepByStep(nextIndex, prefix);
     } else {
       speakText("You are on the last question of the exam. You can say Submit Exam when ready to finish.");
     }
@@ -5505,7 +5633,8 @@ export default function StudentDashboard() {
       if (!hasAnnouncedExamTabRef.current) {
         hasAnnouncedExamTabRef.current = true;
         const timer = setTimeout(() => {
-          handleReadExamQuestionStepByStep(currentQIndex, `Welcome to ${currentExam.title}. Starting step by step.`);
+          const instructions = String(currentExam.instructions || currentExam.description || "Read and answer each question carefully using voice navigation.").trim();
+          handleReadExamQuestionStepByStep(currentQIndex, `Welcome to ${currentExam.title}. Exam instructions: ${instructions}. Total ${currentExam.questions ? currentExam.questions.length : 0} questions. Let us begin.`);
         }, 500);
         return () => clearTimeout(timer);
       }
@@ -5997,6 +6126,7 @@ export default function StudentDashboard() {
 
     // Cleanly stop webcam face proctoring upon exam completion
     stopCameraForFaceAuth();
+    setIsExamActive(false);
 
     speakText("Congratulations! Your theory exam has been submitted successfully to your teacher for correction and grading.");
   };
@@ -6177,7 +6307,18 @@ export default function StudentDashboard() {
         return;
       }
     }
-    if (transcript.includes('read question') || transcript.includes('repeat question') || transcript.includes('repeat') || transcript.includes('say question')) {
+    if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || (transcript === 'repeat' && currentAnswerInput)) {
+      if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || activeTab === 'Exams' || isExamActive)) {
+        updateCurrentAnswer('');
+        speakText("Clearing previous answer. Please speak your answer again now.", () => {
+          setTimeout(() => {
+            handleStartExamAnswerDictation();
+          }, 300);
+        });
+        return;
+      }
+    }
+    if (transcript.includes('read question') || transcript.includes('repeat question') || transcript.includes('say question') || (transcript === 'repeat' && !currentAnswerInput)) {
       if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || activeTab === 'Exams' || isExamActive)) {
         handleReadExamQuestionStepByStep(currentQIndex);
         return;
@@ -6256,26 +6397,30 @@ export default function StudentDashboard() {
         if (selectedOption) {
           updateCurrentAnswer(selectedOption);
           setMcqConfirmationPending(false);
-          if (currentExam && currentQIndex < currentExam.questions.length - 1) {
-            speakText(`Selected ${selectedOption}. Moving to next question.`, () => {
-              handleSaveAndNext();
-            });
-          } else {
-            speakText(`Selected ${selectedOption}. You are on the last question. Say Submit Exam to finish.`);
-          }
+          const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+          const promptText = isLastQ
+            ? `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
+            : `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
+          speakText(promptText, () => {
+            setTimeout(() => {
+              handleStartExamAnswerDictation();
+            }, 400);
+          });
           return;
         }
       }
 
       const cleanAnswer = rawText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || rawText;
       updateCurrentAnswer(cleanAnswer);
-      if (currentExam && currentQIndex < currentExam.questions.length - 1) {
-        speakText(`Answer recorded: ${cleanAnswer}. Moving to next question.`, () => {
-          handleSaveAndNext();
-        });
-      } else {
-        speakText(`Answer recorded: ${cleanAnswer}. You are on the last question. Say Submit Exam to finish.`);
-      }
+      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+      const promptText = isLastQ
+        ? `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
+        : `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
+      speakText(promptText, () => {
+        setTimeout(() => {
+          handleStartExamAnswerDictation();
+        }, 400);
+      });
       return;
     }
 
@@ -9454,7 +9599,10 @@ export default function StudentDashboard() {
                       </div>
                       <button
                         type="button"
-                        onClick={handleExitExamWithoutSubmitting}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleExitExamWithoutSubmitting(e);
+                        }}
                         style={{
                           background: '#fff1f2',
                           color: '#e11d48',
@@ -10007,7 +10155,10 @@ export default function StudentDashboard() {
                               </button>
                               <button
                                 type="button"
-                                onClick={handleExitExamWithoutSubmitting}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleExitExamWithoutSubmitting(e);
+                                }}
                                 style={{
                                   background: '#fff1f2',
                                   color: '#e11d48',
@@ -10995,15 +11146,52 @@ export default function StudentDashboard() {
                         >
                           <Sparkles size={16} /> Practice with Voice AI
                         </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStartLessonTest(mat);
-                          }}
-                          style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <CheckSquare size={16} /> 📝 Take Lesson Test
-                        </button>
+{(() => {
+                          const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+                          const sub = (studyTestResultsList || []).find(s => 
+                            s && (s.studentEmail === studentEmail || s.studentName === student.name) && 
+                            (s.materialTitle === mat.title || s.testId === mat.id)
+                          );
+                          if (!sub) {
+                            return (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartLessonTest(mat);
+                                }}
+                                style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <CheckSquare size={16} /> 📝 Take Lesson Test
+                              </button>
+                            );
+                          }
+                          if (sub.evaluated) {
+                            return (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartLessonTest(mat);
+                                  }}
+                                  style={{ background: '#15803d', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                >
+                                  <CheckCircle size={16} /> 🟢 Teacher Evaluated: {sub.teacherScore !== null && sub.teacherScore !== undefined ? sub.teacherScore : sub.score}/10
+                                </button>
+                              </div>
+                            );
+                          }
+                          return (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartLessonTest(mat);
+                              }}
+                              style={{ background: '#d97706', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              ⏳ Test Submitted (Pending Evaluation)
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -11088,34 +11276,118 @@ export default function StudentDashboard() {
                       </div>
                     </div>
                   ) : (
-                    /* Test Completion & Performance Results Card */
-                    <div style={{ background: '#ffffff', border: '2px solid #22c55e', padding: '24px', borderRadius: '16px' }}>
-                      <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-                        <CheckCircle size={48} color="#22c55e" style={{ marginBottom: '8px' }} />
-                        <h3 style={{ margin: 0, fontSize: '20px', color: '#14532d', fontWeight: '800' }}>
-                          Test Completed & Submitted to Teacher!
-                        </h3>
-                        <p style={{ color: '#166534', fontSize: '14px', margin: '4px 0 0 0' }}>
-                          Your performance metrics have been published live to your teacher's dashboard.
-                        </p>
-                      </div>
-
-                      <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '12px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    /* Test Completion / Evaluation View */
+                    <div style={{ background: '#ffffff', border: lessonTestFeedback.evaluated ? '2px solid #22c55e' : '2px solid #f59e0b', padding: '24px', borderRadius: '16px' }}>
+                      {lessonTestFeedback.evaluated ? (
+                        /* Evaluated by Teacher View */
                         <div>
-                          <strong style={{ fontSize: '16px', color: '#15803d' }}>Score: {lessonTestFeedback.score} / 10</strong>
-                          <div style={{ fontSize: '12px', color: '#166534' }}>{lessonTestFeedback.msg}</div>
-                        </div>
-                        <span style={{ fontSize: '20px', fontWeight: '900', color: '#15803d' }}>
-                          {lessonTestFeedback.percentage}%
-                        </span>
-                      </div>
+                          <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+                            <CheckCircle size={48} color="#22c55e" style={{ marginBottom: '8px' }} />
+                            <h3 style={{ margin: 0, fontSize: '20px', color: '#14532d', fontWeight: '800' }}>
+                              Test Evaluated by Teacher!
+                            </h3>
+                            <p style={{ color: '#166534', fontSize: '13px', margin: '4px 0 0 0' }}>
+                              Evaluated by <b>{lessonTestFeedback.evaluatedBy || 'Teacher'}</b> on {lessonTestFeedback.date}
+                            </p>
+                          </div>
 
-                      <button 
-                        onClick={() => { setActiveLessonTest(null); setLessonTestFeedback(null); }}
-                        style={{ width: '100%', background: '#16a34a', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '800', cursor: 'pointer' }}
-                      >
-                        Return to Study Materials
-                      </button>
+                          <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '12px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <div>
+                              <strong style={{ fontSize: '18px', color: '#15803d' }}>Score: {lessonTestFeedback.teacherScore !== null && lessonTestFeedback.teacherScore !== undefined ? lessonTestFeedback.teacherScore : lessonTestFeedback.score} / {lessonTestFeedback.total || 10}</strong>
+                              <div style={{ fontSize: '13px', color: '#166534', marginTop: '2px', fontWeight: '700' }}>
+                                Status: {lessonTestFeedback.gradeStatus || (lessonTestFeedback.percentage >= 50 ? 'Passed' : 'Needs Review')}
+                              </div>
+                            </div>
+                            <span style={{ fontSize: '24px', fontWeight: '900', color: '#15803d' }}>
+                              {lessonTestFeedback.percentage}%
+                            </span>
+                          </div>
+
+                          {lessonTestFeedback.teacherFeedback && (
+                            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', textAlign: 'left' }}>
+                              <b style={{ color: '#1e40af', fontSize: '13px', display: 'block', marginBottom: '4px' }}>💬 Teacher Feedback & Remarks:</b>
+                              <p style={{ margin: 0, color: '#1e3a8a', fontSize: '13px', lineHeight: 1.5 }}>
+                                "{lessonTestFeedback.teacherFeedback}"
+                              </p>
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <button 
+                              onClick={() => {
+                                const feedbackSpeech = `Your test for ${activeLessonTest.title} was evaluated by ${lessonTestFeedback.evaluatedBy || 'Teacher'}. You scored ${lessonTestFeedback.teacherScore !== null && lessonTestFeedback.teacherScore !== undefined ? lessonTestFeedback.teacherScore : lessonTestFeedback.score} out of 10, or ${lessonTestFeedback.percentage} percent. Teacher remarks: ${lessonTestFeedback.teacherFeedback || 'Good effort.'}`;
+                                speakText(feedbackSpeech);
+                              }}
+                              style={{ flex: 1, minWidth: '160px', background: '#0284c7', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                            >
+                              <Volume2 size={16} /> 🔊 Listen Feedback
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setLessonTestFeedback(null);
+                                setLessonTestQIndex(0);
+                                setLessonTestInput('');
+                                setLessonTestAnswers({});
+                              }}
+                              style={{ flex: 1, minWidth: '140px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '10px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              🔄 Retake Test
+                            </button>
+                            <button 
+                              onClick={() => { setActiveLessonTest(null); setLessonTestFeedback(null); }}
+                              style={{ flex: 1, minWidth: '160px', background: '#16a34a', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              Return to Study Materials
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Pending Teacher Evaluation View */
+                        <div>
+                          <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+                            <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fef3c7', display: 'grid', placeItems: 'center', margin: '0 auto 10px auto', fontSize: '28px' }}>
+                              ⏳
+                            </div>
+                            <h3 style={{ margin: 0, fontSize: '20px', color: '#92400e', fontWeight: '800' }}>
+                              Test Submitted to Teacher!
+                            </h3>
+                            <p style={{ color: '#b45309', fontSize: '14px', margin: '6px 0 0 0', fontWeight: '600' }}>
+                              Status: <strong>Pending Teacher Evaluation</strong>
+                            </p>
+                          </div>
+
+                          <div style={{ background: '#fffbeb', padding: '16px', borderRadius: '12px', border: '1px solid #fde68a', marginBottom: '16px', textAlign: 'left' }}>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#92400e', lineHeight: 1.6 }}>
+                              Your test answers for <b>{activeLessonTest.title}</b> have been submitted to your teacher's dashboard. 
+                              Your teacher will review each answer, evaluate your performance, and assign marks and audio feedback. 
+                              Your score will be published right here once evaluated.
+                            </p>
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#b45309' }}>
+                              📅 Submitted on: <b>{lessonTestFeedback.date}</b> • Questions: <b>{lessonTestFeedback.answersList ? lessonTestFeedback.answersList.length : activeLessonTest.questions.length}</b>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <button 
+                              onClick={() => {
+                                setLessonTestFeedback(null);
+                                setLessonTestQIndex(0);
+                                setLessonTestInput('');
+                                setLessonTestAnswers({});
+                              }}
+                              style={{ flex: 1, minWidth: '160px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '10px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              🔄 Retake / Submit Again
+                            </button>
+                            <button 
+                              onClick={() => { setActiveLessonTest(null); setLessonTestFeedback(null); }}
+                              style={{ flex: 1, minWidth: '160px', background: '#d97706', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              Return to Study Materials
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
