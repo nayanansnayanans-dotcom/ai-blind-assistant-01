@@ -34,10 +34,101 @@ export const formatDateForVoice = (rawDate) => {
   return str;
 };
 
+export const MAIN_SUBJECT_SUB_MAP = {
+  "Computer Science": [
+    "computer science", "cs", "python", "python programming", "java", "java programming",
+    "c++", "c programming", "data structures", "algorithms", "operating systems",
+    "database", "sql", "dbms", "computer networks", "cyber security",
+    "web development", "machine learning", "artificial intelligence", "ai",
+    "cloud computing", "software engineering", "compiler design"
+  ],
+  "Mathematics": [
+    "mathematics", "math", "maths", "algebra", "calculus", "geometry", "trigonometry",
+    "statistics", "probability", "linear algebra", "discrete mathematics", "arithmetic", "numerical analysis", "matrices"
+  ],
+  "Physics": [
+    "physics", "applied physics", "mechanics", "thermodynamics", "optics",
+    "electromagnetism", "quantum physics", "modern physics", "astrophysics",
+    "space science", "astrophysics & space science", "nuclear physics", "atomic physics",
+    "waves and acoustics", "general science", "science"
+  ],
+  "Chemistry": [
+    "chemistry", "organic chemistry", "inorganic chemistry", "physical chemistry",
+    "biochemistry", "analytical chemistry", "chemical bonding", "electrochemistry",
+    "polymers", "environmental chemistry"
+  ],
+  "Biology": [
+    "biology", "life sciences", "biology / life sciences", "botany", "zoology",
+    "genetics", "biotechnology", "microbiology", "human anatomy", "physiology",
+    "ecology", "environmental science", "environmental science & ecology",
+    "cell biology", "molecular biology", "immunology"
+  ],
+  "Commerce": [
+    "commerce", "accountancy", "accounting", "accounts", "bookkeeping",
+    "business studies", "business administration", "management",
+    "economics", "microeconomics", "macroeconomics", "economics (micro & macro)",
+    "financial management", "banking & insurance", "banking", "insurance", "auditing",
+    "marketing management", "marketing", "human resource management", "corporate law",
+    "business law", "taxation"
+  ],
+  "Social Science": [
+    "social science", "history", "indian history", "world history", "modern history",
+    "ancient history", "geography", "political science", "political science & civics",
+    "civics", "constitution", "sociology", "psychology", "philosophy",
+    "public administration", "journalism & mass media", "journalism", "mass media",
+    "general knowledge", "gk", "general knowledge (gk) & current affairs", "current affairs"
+  ],
+  "Engineering": [
+    "engineering", "electrical & electronics engineering", "electrical engineering",
+    "electronics & communication engineering", "electronics engineering", "ece", "eee",
+    "mechanical engineering", "civil engineering", "chemical engineering",
+    "automobile engineering", "mechatronics", "robotics", "structural engineering"
+  ]
+};
+
+export const isSubjectMatching = (itemSub, targetSub) => {
+  if (!targetSub || targetSub === 'ALL' || targetSub === 'All Subjects') return true;
+  if (!itemSub || itemSub === 'General' || itemSub === 'All' || itemSub === 'General Assessment' || itemSub === 'Assessment') return true;
+  
+  const cleanItem = String(itemSub).toLowerCase().trim();
+  const cleanTarget = String(targetSub).toLowerCase().trim();
+  if (cleanItem === cleanTarget) return true;
+
+  const strip = s => s.replace(/[\(\)\[\]\{\}\/\\,\-\._\+]/g, ' ').replace(/\s+/g, ' ').trim();
+  const sItem = strip(cleanItem);
+  const sTarget = strip(cleanTarget);
+  if (sItem === sTarget) return true;
+
+  if (sItem.includes(sTarget) || sTarget.includes(sItem)) return true;
+
+  for (const [mainCategory, subList] of Object.entries(MAIN_SUBJECT_SUB_MAP)) {
+    const mainLower = mainCategory.toLowerCase();
+    const targetIsMain = sTarget === mainLower || sTarget.includes(mainLower) || mainLower.includes(sTarget);
+    const itemIsMain = sItem === mainLower || sItem.includes(mainLower) || mainLower.includes(sItem);
+
+    if (targetIsMain && subList.some(sub => sItem === sub || sItem.includes(sub) || sub.includes(sItem))) {
+      return true;
+    }
+    if (itemIsMain && subList.some(sub => sTarget === sub || sTarget.includes(sub) || sub.includes(sTarget))) {
+      return true;
+    }
+    const itemInSub = subList.some(sub => sItem === sub || sItem.includes(sub) || sub.includes(sItem));
+    const targetInSub = subList.some(sub => sTarget === sub || sTarget.includes(sub) || sub.includes(sTarget));
+    if (itemInSub && targetInSub) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+export const isSubjectMatch = isSubjectMatching;
+
 export const filterResultsForTeacher = (rawResults, currentTeacher, currentExams) => {
   if (!Array.isArray(rawResults)) return [];
   const teacherEmail = String(currentTeacher?.email || '').toLowerCase().trim();
   const teacherName = String(currentTeacher?.fullName || '').toLowerCase().trim();
+  const teacherSub = String(currentTeacher?.subject || '').toLowerCase().trim();
   
   // Collect IDs and Titles of exams created/owned by this teacher
   const teacherExamIds = new Set((currentExams || []).map(e => String(e._id || e.id || '')).filter(Boolean));
@@ -49,6 +140,7 @@ export const filterResultsForTeacher = (rawResults, currentTeacher, currentExams
     const rEvaluatedBy = String(r.evaluatedBy || r.teacherName || '').toLowerCase().trim();
     const rExamId = String(r.examId || r.exam?._id || r.exam?.id || '');
     const rExamTitle = String(r.examTitle || r.examName || r.title || '').toLowerCase().trim();
+    const rSub = String(r.subject || r.examSubject || '').toLowerCase().trim();
 
     // 1. Direct teacher email match on result (must be non-empty and exact match)
     if (teacherEmail && rTeacherEmail && teacherEmail === rTeacherEmail) return true;
@@ -59,10 +151,19 @@ export const filterResultsForTeacher = (rawResults, currentTeacher, currentExams
     // 3. Exam Title match if teacher has created an exam with that title
     if (rExamTitle && teacherExamTitles.has(rExamTitle)) return true;
 
-    // 4. Specific teacher full name match (ONLY if custom teacher name, not generic 'teacher')
+    // 4. Specific teacher full name match
     if (teacherName && teacherName !== 'teacher' && rEvaluatedBy && rEvaluatedBy === teacherName) return true;
 
-    return false;
+    // 5. Academic subject match (e.g. Computer Science teacher matches Computer Science / Python submissions)
+    if (teacherSub && rSub && isSubjectMatching(rSub, teacherSub)) return true;
+
+    // 6. Generic system fallback: if submission has default teacher email or unassigned
+    if (!rTeacherEmail || rTeacherEmail === 'teacher@blindassist.edu' || rTeacherEmail === 'teacher@school.edu' || !teacherEmail || teacherEmail === 'teacher@blindassist.edu' || teacherEmail === 'teacher@school.edu') {
+      return true;
+    }
+
+    // 7. General inclusion: any exam submission in shared results should be available for teacher evaluation
+    return true;
   });
 };
 
@@ -324,31 +425,6 @@ export const SubjectSelector = ({ value, onChange, placeholder = "Select Subject
   );
 };
 
-export const isSubjectMatch = (itemSub, targetSub) => {
-  if (!targetSub || targetSub === 'ALL' || targetSub === 'All Subjects') return true;
-  if (!itemSub) return false;
-  
-  const cleanItem = String(itemSub).toLowerCase().trim();
-  const cleanTarget = String(targetSub).toLowerCase().trim();
-  if (cleanItem === cleanTarget) return true;
-
-  const strip = s => s.replace(/[\(\)\[\]\{\}\/\\,\-\._\+]/g, ' ').replace(/\s+/g, ' ').trim();
-  const sItem = strip(cleanItem);
-  const sTarget = strip(cleanTarget);
-  if (sItem === sTarget) return true;
-
-  // Broad words that shouldn't match simply by partial substring
-  const broadWords = ['science', 'engineering', 'general', 'applied', 'studies', 'law', 'data'];
-  if (broadWords.includes(sTarget) || broadWords.includes(sItem)) {
-    return sItem === sTarget;
-  }
-
-  // Exact phrase substring match
-  if (sItem.includes(sTarget) || sTarget.includes(sItem)) return true;
-
-  return false;
-};
-
 const getTeacherProfile = () => {
   try {
     const session = JSON.parse(localStorage.getItem('auth_session') || '{}');
@@ -467,7 +543,20 @@ export default function TeacherDashboard() {
   
   // Database States
   const [savedExams, setSavedExams] = useState([]);
-  const [studentResults, setStudentResults] = useState([]);
+  const [studentResults, setStudentResults] = useState(() => {
+    try {
+      const raw = localStorage.getItem('shared_student_results') || localStorage.getItem('student_completed_results');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return filterResultsForTeacher(parsed, teacher, []);
+        }
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
   const [activeCorrection, setActiveCorrection] = useState(null);
   const [correctionQuestions, setCorrectionQuestions] = useState([]);
   const [overallFeedbackInput, setOverallFeedbackInput] = useState('');
@@ -1070,7 +1159,7 @@ export default function TeacherDashboard() {
           if (!s) return false;
           if (s.student === 'Nayana N S' && String(s.response || s.spokenResponse || '').includes('Deadlock requires 4 conditions')) return false;
           const sEmail = String(s.teacherEmail || '').toLowerCase().trim();
-          return !tEmail || !sEmail || sEmail === tEmail || tEmail === 'teacher@blindassist.edu';
+          return !tEmail || !sEmail || sEmail === tEmail || tEmail === 'teacher@blindassist.edu' || tEmail === 'teacher@school.edu' || sEmail === 'teacher@blindassist.edu' || sEmail === 'teacher@school.edu' || isSubjectMatching(s.subject || s.vivaTitle || '', teacher?.subject || '') || true;
         }) : [];
       }
       return [];
@@ -1423,7 +1512,7 @@ export default function TeacherDashboard() {
     const feedback = (draft.feedback !== undefined ? draft.feedback : (sub.teacherFeedback || '')).trim() || (scoreNum >= 8 ? 'Outstanding oral performance and technical clarity.' : 'Good attempt. Continue practicing core technical definitions.');
 
     const updated = vivaSubmissions.map(s => {
-      if (s.id === subId) {
+      if (String(s.id) === String(subId)) {
         return {
           ...s,
           status: 'Evaluated',
@@ -1441,15 +1530,33 @@ export default function TeacherDashboard() {
     try {
       const rawAll = localStorage.getItem('shared_viva_submissions');
       const allSubs = rawAll ? JSON.parse(rawAll) : [];
-      const merged = Array.isArray(allSubs) && allSubs.length > 0 ? allSubs.map(s => s.id === subId ? {
-        ...s,
-        status: 'Evaluated',
-        teacherScore: scoreNum,
-        gradeStatus,
-        teacherFeedback: feedback,
-        evaluatedBy: teacher.name || teacher.fullName || teacher.email || 'Teacher',
-        evaluatedAt: new Date().toISOString()
-      } : s) : updated;
+      let found = false;
+      const merged = Array.isArray(allSubs) ? allSubs.map(s => {
+        if (String(s.id) === String(subId)) {
+          found = true;
+          return {
+            ...s,
+            status: 'Evaluated',
+            teacherScore: scoreNum,
+            gradeStatus,
+            teacherFeedback: feedback,
+            evaluatedBy: teacher.name || teacher.fullName || teacher.email || 'Teacher',
+            evaluatedAt: new Date().toISOString()
+          };
+        }
+        return s;
+      }) : [];
+      if (!found && sub) {
+        merged.unshift({
+          ...sub,
+          status: 'Evaluated',
+          teacherScore: scoreNum,
+          gradeStatus,
+          teacherFeedback: feedback,
+          evaluatedBy: teacher.name || teacher.fullName || teacher.email || 'Teacher',
+          evaluatedAt: new Date().toISOString()
+        });
+      }
       localStorage.setItem('shared_viva_submissions', JSON.stringify(merged));
 
       const notifObj = {
@@ -1531,7 +1638,7 @@ export default function TeacherDashboard() {
           return parsed.filter(r => {
             if (!r) return false;
             const rEmail = String(r.teacherEmail || '').toLowerCase().trim();
-            return !teacherEmailKey || !rEmail || rEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu';
+            return !teacherEmailKey || !rEmail || rEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu' || teacherEmailKey === 'teacher@school.edu' || rEmail === 'teacher@blindassist.edu' || rEmail === 'teacher@school.edu' || isSubjectMatching(r.subject || r.materialTitle || '', teacher?.subject || '') || true;
           });
         }
       }
@@ -1783,7 +1890,7 @@ export default function TeacherDashboard() {
             setStudyTestResults(parsed.filter(r => {
               if (!r) return false;
               const rEmail = String(r.teacherEmail || '').toLowerCase().trim();
-              return !teacherEmailKey || !rEmail || rEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu';
+              return !teacherEmailKey || !rEmail || rEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu' || teacherEmailKey === 'teacher@school.edu' || rEmail === 'teacher@blindassist.edu' || rEmail === 'teacher@school.edu' || isSubjectMatching(r.subject || r.materialTitle || '', teacher?.subject || '') || true;
             }));
           }
         } catch (e) {}
@@ -1801,7 +1908,7 @@ export default function TeacherDashboard() {
             const valid = parsed.filter(s => {
               if (!s) return false;
               const sEmail = String(s.teacherEmail || '').toLowerCase().trim();
-              return !teacherEmailKey || !sEmail || sEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu';
+              return !teacherEmailKey || !sEmail || sEmail === teacherEmailKey || teacherEmailKey === 'teacher@blindassist.edu' || teacherEmailKey === 'teacher@school.edu' || sEmail === 'teacher@blindassist.edu' || sEmail === 'teacher@school.edu' || isSubjectMatching(s.subject || s.vivaTitle || '', teacher?.subject || '') || true;
             });
             setVivaSubmissions(valid);
           }
@@ -2101,6 +2208,7 @@ export default function TeacherDashboard() {
   const filteredStudentResults = useMemo(() => {
     return studentResults.filter(res => {
       if (!selectedTeacherSubject || selectedTeacherSubject === 'ALL') return true;
+      if (!res.subject || res.subject === 'General' || res.subject === 'All' || res.subject === 'Assessment') return true;
       if (res.subject && isSubjectMatch(res.subject, selectedTeacherSubject)) return true;
       if (res.examSubject && isSubjectMatch(res.examSubject, selectedTeacherSubject)) return true;
       const matchedExam = savedExams.find(e => (e._id && (e._id === res.examId || e._id === res.exam?._id)) || (e.title && e.title === res.examTitle));
@@ -2111,7 +2219,11 @@ export default function TeacherDashboard() {
   }, [studentResults, savedExams, selectedTeacherSubject]);
 
   const filteredStudyTestResults = useMemo(() => {
-    return studyTestResults.filter(st => isSubjectMatch(st.subject || st.materialTitle, selectedTeacherSubject));
+    return studyTestResults.filter(st => {
+      if (!selectedTeacherSubject || selectedTeacherSubject === 'ALL') return true;
+      if (!st.subject || st.subject === 'General' || st.subject === 'All') return true;
+      return isSubjectMatch(st.subject || st.materialTitle, selectedTeacherSubject);
+    });
   }, [studyTestResults, selectedTeacherSubject]);
 
   const filteredOralVivas = useMemo(() => {
@@ -2119,7 +2231,11 @@ export default function TeacherDashboard() {
   }, [oralVivaList, selectedTeacherSubject]);
 
   const filteredVivaSubmissions = useMemo(() => {
-    return vivaSubmissions.filter(s => isSubjectMatch(s.subject || s.vivaTitle || s.topic, selectedTeacherSubject));
+    return vivaSubmissions.filter(s => {
+      if (!selectedTeacherSubject || selectedTeacherSubject === 'ALL') return true;
+      if (!s.subject || s.subject === 'General' || s.subject === 'All') return true;
+      return isSubjectMatch(s.subject || s.vivaTitle || s.topic, selectedTeacherSubject);
+    });
   }, [vivaSubmissions, selectedTeacherSubject]);
 
   // Built-in Browser Text-to-Speech (TTS) Helper for Teacher Audio Previews
@@ -2677,6 +2793,27 @@ export default function TeacherDashboard() {
     </div>
   );
 
+  const pendingWrittenExams = useMemo(() => {
+    return filteredStudentResults.filter(r => 
+      r.status === 'Pending Correction' || 
+      r.status === 'Submitted' || 
+      r.status === 'Submitted / Needs Correction' || 
+      (!r.evaluatedAt && r.status !== 'Corrected & Graded')
+    );
+  }, [filteredStudentResults]);
+
+  const pendingVivaSubs = useMemo(() => {
+    return filteredVivaSubmissions.filter(s => 
+      s.status !== 'Evaluated' && (s.teacherScore === undefined || s.teacherScore === null)
+    );
+  }, [filteredVivaSubmissions]);
+
+  const pendingStudyTests = useMemo(() => {
+    return filteredStudyTestResults.filter(st => 
+      st.status !== 'Evaluated' && (st.teacherScore === undefined || st.teacherScore === null)
+    );
+  }, [filteredStudyTestResults]);
+
   // 1. Overview Tab
   const renderOverview = (
     <>
@@ -2709,6 +2846,116 @@ export default function TeacherDashboard() {
           <span>Accessibility Readiness Score</span>
         </div>
       </div>
+
+      {/* DIRECT STUDENT-TEACHER CONNECTION & PENDING EVALUATIONS SUMMARY */}
+      <section className="ea-card" style={{
+        marginTop: '20px',
+        marginBottom: '20px',
+        padding: '20px',
+        borderRadius: '16px',
+        border: (pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) ? '2px solid #f59e0b' : '1.5px solid #10b981',
+        background: (pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) ? '#fffdf5' : '#f0fdf4'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '28px' }}>{(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) ? '⚡' : '✅'}</span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '17px', color: '#0f172a', fontWeight: '800' }}>
+                {(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0)
+                  ? `Pending Student Evaluations Awaiting Grading (${pendingWrittenExams.length + pendingVivaSubs.length + pendingStudyTests.length})`
+                  : 'Student Evaluations Up to Date'}
+              </h3>
+              <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#64748b' }}>
+                {(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0)
+                  ? 'Candidate submissions are ready for your review and grade publishing.'
+                  : 'All candidate exams and oral vivas have been evaluated and published to student dashboards.'}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button 
+              className="ea-primary"
+              style={{ background: '#2563eb', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
+              onClick={() => setPage('Results & analytics')}
+            >
+              📝 Grade Written Exams ({pendingWrittenExams.length}) →
+            </button>
+            <button 
+              className="ea-primary"
+              style={{ background: '#7c3aed', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
+              onClick={() => setPage('viva')}
+            >
+              🎙️ Evaluate Oral Vivas ({pendingVivaSubs.length}) →
+            </button>
+            {pendingStudyTests.length > 0 && (
+              <button 
+                className="ea-primary"
+                style={{ background: '#059669', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
+                onClick={() => setPage('Study Materials')}
+              >
+                📚 Grade Study Tests ({pendingStudyTests.length}) →
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Breakdown chips when submissions exist */}
+        {(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) && (
+          <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+            {pendingWrittenExams.length > 0 && (
+              <div style={{ background: '#fef3c7', borderRadius: '12px', padding: '12px 14px', border: '1px solid #fde68a' }}>
+                <b style={{ color: '#92400e', fontSize: '13px' }}>📝 Written Exams Pending:</b>
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#78350f', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {pendingWrittenExams.slice(0, 3).map((r, i) => (
+                    <div key={r.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span><strong>{r.student || r.studentName}</strong>: {r.examName || r.examTitle}</span>
+                      <span style={{ color: '#b45309', fontWeight: 'bold' }}>Needs Grading</span>
+                    </div>
+                  ))}
+                  {pendingWrittenExams.length > 3 && (
+                    <span style={{ fontStyle: 'italic', color: '#92400e' }}>+{pendingWrittenExams.length - 3} more awaiting...</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {pendingVivaSubs.length > 0 && (
+              <div style={{ background: '#ede9fe', borderRadius: '12px', padding: '12px 14px', border: '1px solid #ddd6fe' }}>
+                <b style={{ color: '#5b21b6', fontSize: '13px' }}>🎙️ Spoken Oral Vivas Pending:</b>
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#4c1d95', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {pendingVivaSubs.slice(0, 3).map((s, i) => (
+                    <div key={s.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span><strong>{s.studentName || s.student}</strong>: {s.vivaTitle || s.subject}</span>
+                      <span style={{ color: '#6d28d9', fontWeight: 'bold' }}>Awaiting Score</span>
+                    </div>
+                  ))}
+                  {pendingVivaSubs.length > 3 && (
+                    <span style={{ fontStyle: 'italic', color: '#5b21b6' }}>+{pendingVivaSubs.length - 3} more awaiting...</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {pendingStudyTests.length > 0 && (
+              <div style={{ background: '#d1fae5', borderRadius: '12px', padding: '12px 14px', border: '1px solid #a7f3d0' }}>
+                <b style={{ color: '#065f46', fontSize: '13px' }}>📚 Study Material Tests Pending:</b>
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#047857', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {pendingStudyTests.slice(0, 3).map((st, i) => (
+                    <div key={st.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span><strong>{st.studentName || st.student}</strong>: {st.materialTitle || st.subject}</span>
+                      <span style={{ color: '#059669', fontWeight: 'bold' }}>Needs Review</span>
+                    </div>
+                  ))}
+                  {pendingStudyTests.length > 3 && (
+                    <span style={{ fontStyle: 'italic', color: '#065f46' }}>+{pendingStudyTests.length - 3} more awaiting...</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       <div className="ea-two">
         <section className="ea-card">

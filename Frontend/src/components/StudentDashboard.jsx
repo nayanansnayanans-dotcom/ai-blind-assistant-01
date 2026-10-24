@@ -5787,8 +5787,13 @@ export default function StudentDashboard() {
               const existing = teacherMap.get(semKey) || {};
               teacherMap.set(semKey, {
                 id: examId,
+                _id: examId,
+                examId: examId,
                 title: ex.title || ex.examTitle || 'Theory Assessment',
                 subject: ex.subject || 'Computer Science',
+                teacherEmail: ex.teacherEmail || ex.creatorEmail || existing.teacherEmail || '',
+                creatorEmail: ex.creatorEmail || ex.teacherEmail || existing.creatorEmail || '',
+                teacherName: ex.teacherName || ex.teacher || existing.teacherName || '',
                 targetStudentEmail: ex.targetStudentEmail || '',
                 targetStudentName: ex.targetStudentName || '',
                 assignedStudents: Array.isArray(ex.assignedStudents) ? ex.assignedStudents : (ex.targetStudentEmail ? [ex.targetStudentEmail] : []),
@@ -5834,8 +5839,13 @@ export default function StudentDashboard() {
 
               teacherMap.set(semKey, {
                 id: examId,
+                _id: examId,
+                examId: examId,
                 title: ex.title || ex.examTitle || 'Theory Assessment',
                 subject: ex.subject || 'Computer Science',
+                teacherEmail: ex.teacherEmail || ex.creatorEmail || existing.teacherEmail || '',
+                creatorEmail: ex.creatorEmail || ex.teacherEmail || existing.creatorEmail || '',
+                teacherName: ex.teacherName || ex.teacher || existing.teacherName || '',
                 targetStudentEmail: ex.targetStudentEmail || '',
                 targetStudentName: ex.targetStudentName || '',
                 assignedStudents: Array.isArray(ex.assignedStudents) ? ex.assignedStudents : (ex.targetStudentEmail ? [ex.targetStudentEmail] : []),
@@ -6193,22 +6203,31 @@ export default function StudentDashboard() {
     const earnedScore = Math.min(100, Math.round((sumAwarded / totalPossibleMarks) * 100));
 
     let examTeacher = (currentExam.teacher || currentExam.teacherName || currentExam.createdBy || currentExam.author || currentExam.invigilator || '').replace(/Prof\. Sharma/gi, '').trim();
-    if (!examTeacher) {
+    let examTeacherEmail = (currentExam.teacherEmail || currentExam.creatorEmail || '').toLowerCase().trim();
+
+    if (!examTeacher || !examTeacherEmail) {
       try {
         const loggedMap = JSON.parse(localStorage.getItem('logged_in_users') || '{}');
-        const teachersList = Object.values(loggedMap).filter(u => u.role === 'teacher' && u.name);
+        const teachersList = Object.values(loggedMap).filter(u => u.role === 'teacher' && (u.name || u.email));
         const subjTeacher = teachersList.find(t => isSubjectMatching(t.subject, currentExam.subject)) || teachersList[0];
-        if (subjTeacher && subjTeacher.name) examTeacher = subjTeacher.name;
+        if (subjTeacher) {
+          if (!examTeacher && subjTeacher.name) examTeacher = subjTeacher.name;
+          if (!examTeacherEmail && subjTeacher.email) examTeacherEmail = subjTeacher.email.toLowerCase().trim();
+        }
       } catch (e) {}
     }
-    if (!examTeacher) {
+    if (!examTeacher || !examTeacherEmail) {
       try {
         const sharedTeachers = JSON.parse(localStorage.getItem('shared_teachers_list') || '[]');
         const subjTeacher = sharedTeachers.find(t => isSubjectMatching(t.subject, currentExam.subject)) || sharedTeachers[0];
-        if (subjTeacher && (subjTeacher.name || subjTeacher.fullName)) examTeacher = subjTeacher.name || subjTeacher.fullName;
+        if (subjTeacher) {
+          if (!examTeacher && (subjTeacher.name || subjTeacher.fullName)) examTeacher = subjTeacher.name || subjTeacher.fullName;
+          if (!examTeacherEmail && subjTeacher.email) examTeacherEmail = subjTeacher.email.toLowerCase().trim();
+        }
       } catch (e) {}
     }
     if (!examTeacher) examTeacher = 'Faculty Course Invigilator';
+    if (!examTeacherEmail) examTeacherEmail = 'teacher@school.edu';
 
     const newResult = {
       id: Date.now(),
@@ -6232,7 +6251,8 @@ export default function StudentDashboard() {
       status: 'Pending Correction',
       evaluatedBy: examTeacher,
       teacherName: examTeacher,
-      teacherEmail: currentExam.teacherEmail || '',
+      teacherEmail: examTeacherEmail,
+      isBroadcast: true,
       questions: formattedQuestions,
       answers: finalAnswers
     };
@@ -6253,8 +6273,8 @@ export default function StudentDashboard() {
       const newLog = {
         student: student.name,
         studentName: student.name,
-        teacherEmail: currentExam?.teacherEmail || '',
-        teacherName: currentExam?.teacherName || '',
+        teacherEmail: examTeacherEmail,
+        teacherName: examTeacher,
         examId: currentExam?.id || currentExam?._id || '',
         examTitle: currentExam?.title || '',
         status: 'Submitted / Needs Correction',
@@ -6265,6 +6285,19 @@ export default function StudentDashboard() {
         submitted: 'Yes'
       };
       localStorage.setItem('shared_live_logs', JSON.stringify([newLog, ...existingLogs.filter(l => l.student !== student.name)]));
+
+      const notifItem = {
+        id: `notif_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        title: `📝 New Exam Submission: ${student.name}`,
+        detail: `${student.name} has submitted '${currentExam.title}' (${currentExam.subject || 'Assessment'}). Awaiting teacher review and grading.`,
+        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        type: 'Exam Submission',
+        teacherEmail: examTeacherEmail,
+        read: false
+      };
+      const existingNotifs = JSON.parse(localStorage.getItem('shared_notifications') || '[]');
+      localStorage.setItem('shared_notifications', JSON.stringify([notifItem, ...existingNotifs]));
+
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
 
@@ -7559,6 +7592,32 @@ export default function StudentDashboard() {
     const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
     const studentName = student.name || studentProfile.name || 'Student';
 
+    let targetTeacherEmail = (currentViva.teacherEmail || currentViva.creatorEmail || '').toLowerCase().trim();
+    let targetTeacherName = currentViva.teacherName || '';
+    if (!targetTeacherEmail || !targetTeacherName) {
+      try {
+        const loggedMap = JSON.parse(localStorage.getItem('logged_in_users') || '{}');
+        const teachersList = Object.values(loggedMap).filter(u => u.role === 'teacher' && (u.name || u.email));
+        const subjTeacher = teachersList.find(t => isSubjectMatching(t.subject, currentViva.subject || activeSubject)) || teachersList[0];
+        if (subjTeacher) {
+          if (!targetTeacherEmail && subjTeacher.email) targetTeacherEmail = subjTeacher.email.toLowerCase().trim();
+          if (!targetTeacherName && subjTeacher.name) targetTeacherName = subjTeacher.name;
+        }
+      } catch (e) {}
+    }
+    if (!targetTeacherEmail || !targetTeacherName) {
+      try {
+        const sharedTeachers = JSON.parse(localStorage.getItem('shared_teachers_list') || '[]');
+        const subjTeacher = sharedTeachers.find(t => isSubjectMatching(t.subject, currentViva.subject || activeSubject)) || sharedTeachers[0];
+        if (subjTeacher) {
+          if (!targetTeacherEmail && subjTeacher.email) targetTeacherEmail = subjTeacher.email.toLowerCase().trim();
+          if (!targetTeacherName && (subjTeacher.name || subjTeacher.fullName)) targetTeacherName = subjTeacher.name || subjTeacher.fullName;
+        }
+      } catch (e) {}
+    }
+    if (!targetTeacherEmail) targetTeacherEmail = 'teacher@school.edu';
+    if (!targetTeacherName) targetTeacherName = 'Teacher';
+
     const submissionObj = {
       id: `viva_sub_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       vivaId: currentViva.id || `viva_${Date.now()}`,
@@ -7567,8 +7626,9 @@ export default function StudentDashboard() {
       student: studentName,
       studentName: studentName,
       studentEmail: studentEmail,
-      teacherEmail: (currentViva.teacherEmail || currentViva.creatorEmail || '').toLowerCase().trim(),
-      teacherName: currentViva.teacherName || 'Teacher',
+      teacherEmail: targetTeacherEmail,
+      teacherName: targetTeacherName,
+      isBroadcast: true,
       submittedAt: new Date().toISOString(),
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -7606,6 +7666,7 @@ export default function StudentDashboard() {
         detail: `${studentName} has submitted oral viva for ${submissionObj.subject} (${submissionObj.vivaTitle}). Awaiting your manual evaluation.`,
         date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         type: 'Oral Viva',
+        teacherEmail: targetTeacherEmail,
         read: false
       };
       const rawNotifs = localStorage.getItem('shared_notifications');
