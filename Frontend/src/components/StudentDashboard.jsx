@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchExams, fetchResults, postAssistanceRequest, updateStudentSubject } from '../services/api';
-import { speakIn, cancelSpeech, formatSpokenName, getBuiltinVoices, speakBuiltinTTS, speakHover, resetHoverSpeech } from './speech';
+import { speakIn, cancelSpeech, formatSpokenName, getBuiltinVoices, speakBuiltinTTS, speakHover, resetHoverSpeech, isTTSActive } from './speech';
 import { 
   speakWithElevenLabs, 
   cancelElevenLabsSpeech, 
@@ -5130,11 +5130,12 @@ export default function StudentDashboard() {
       } catch (err) {}
       examAnswerRecognitionRef.current = null;
     }
-    if (examSpeechRecognitionRef.current) {
+    // Clean up recognition
+    if (examAnswerRecognitionRef.current) {
       try {
-        examSpeechRecognitionRef.current.abort();
+        examAnswerRecognitionRef.current.abort();
       } catch (err) {}
-      examSpeechRecognitionRef.current = null;
+      examAnswerRecognitionRef.current = null;
     }
     try {
       cancelSpeech();
@@ -5345,7 +5346,7 @@ export default function StudentDashboard() {
       recognition.onstart = () => {
         setIsDictatingExamAnswer(true);
         setLiveExamAnswerTranscript('');
-        announce(`🎙️ Listening in ${langConfig.name}... Speak your answer. Say "DONE" when finished.`);
+        announce('🎙️ Listening for your answer... Speak clearly. Say "DONE" when finished.');
         resetSilenceTimer();
       };
 
@@ -5726,6 +5727,7 @@ export default function StudentDashboard() {
             cleanSavedExams.forEach((ex, idx) => {
               const semKey = `${String(ex.title || ex.examTitle || 'Theory Assessment').trim().toLowerCase()}::${String(ex.subject || 'Computer Science').trim().toLowerCase()}::${String(ex.targetStudentEmail || '').trim().toLowerCase()}`;
               const examId = String(ex._id || ex.id || `teacher-exam-${idx}`);
+              const existing = teacherMap.get(semKey) || {};
               teacherMap.set(semKey, {
                 id: examId,
                 title: ex.title || ex.examTitle || 'Theory Assessment',
@@ -5808,12 +5810,14 @@ export default function StudentDashboard() {
         });
 
       // 2. Sync Oral Viva exams published by teacher
+      let activeTeacherVivas = [];
       try {
         const sharedOralVivasRaw = localStorage.getItem('shared_oral_vivas');
         if (sharedOralVivasRaw) {
           const parsedVivas = JSON.parse(sharedOralVivasRaw);
           if (Array.isArray(parsedVivas)) {
-            setOralVivas(parsedVivas.filter(isTeacherPublishedOralViva));
+            activeTeacherVivas = parsedVivas.filter(isTeacherPublishedOralViva);
+            setOralVivas(activeTeacherVivas);
           }
         }
       } catch (e) {}
@@ -5912,8 +5916,9 @@ export default function StudentDashboard() {
       }
 
       // Synthesize notifications for active oral vivas
-      if (Array.isArray(savedOralVivas) && savedOralVivas.length > 0) {
-        savedOralVivas.forEach(v => {
+      const vivasForNotifs = (activeTeacherVivas && activeTeacherVivas.length > 0) ? activeTeacherVivas : (Array.isArray(oralVivas) ? oralVivas : []);
+      if (Array.isArray(vivasForNotifs) && vivasForNotifs.length > 0) {
+        vivasForNotifs.forEach(v => {
           const vivaNotifId = `viva_notif_${v.id || v.title}`;
           const exists = parsedNotifsList.some(n => String(n.id) === vivaNotifId || (n.title && n.title.includes(v.title)));
           if (!exists) {
@@ -6394,7 +6399,7 @@ export default function StudentDashboard() {
         setVivaAnswerInput('');
         speakText("Clearing previous viva answer. Please speak your answer again now.", () => {
           setTimeout(() => {
-            handleStartVivaDictation();
+            startVivaDictation();
           }, 300);
         });
         return;
@@ -8509,7 +8514,7 @@ export default function StudentDashboard() {
                       setVivaAnswerInput('');
                       speakText("Clearing previous answer. Please speak your viva answer again now.", () => {
                         setTimeout(() => {
-                          handleStartVivaDictation();
+                          startVivaDictation();
                         }, 300);
                       });
                     }}
@@ -8544,7 +8549,7 @@ export default function StudentDashboard() {
                     onClick={(e) => { 
                       e.stopPropagation(); 
                       closeVoiceAssistant(false); 
-                      handleStartVivaDictation(); 
+                      startVivaDictation(); 
                     }}
                     style={{ background: '#ede9fe', color: '#6b21a8', border: '1px solid #ddd6fe', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
