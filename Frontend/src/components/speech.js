@@ -367,8 +367,10 @@ let lastGlobalHoverText = '';
  * High-responsiveness Hover-to-Speech / Cursor Screen Reader
  * Immediately cancels previous speech and speaks the newly hovered element cleanly.
  */
-export function speakHover(text, delay = 90) {
+export function speakHover(text, delay = 150) {
   if (typeof window === 'undefined' || !text) return;
+  // If voice assistant / TTS is currently active speaking narration or answers, DO NOT interrupt!
+  if (isTTSActive()) return;
   const clean = cleanTextForElevenLabs(text);
   if (!clean || clean === lastGlobalHoverText) return;
 
@@ -377,8 +379,8 @@ export function speakHover(text, delay = 90) {
   }
 
   globalHoverTimer = setTimeout(() => {
+    if (isTTSActive()) return;
     lastGlobalHoverText = clean;
-    cancelSpeech();
     speakBrowserSpeech(clean, 'en-US');
   }, delay);
 }

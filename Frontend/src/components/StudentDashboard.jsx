@@ -5227,7 +5227,11 @@ export default function StudentDashboard() {
     handleReadExamQuestionStepByStep(0, startMsg);
   };
 
+  const currentAnswerInputRef = useRef('');
+  const lastSpokenExamAnswerRef = useRef('');
+
   const updateCurrentAnswer = (newAnswer) => {
+    currentAnswerInputRef.current = newAnswer;
     setCurrentAnswerInput(newAnswer);
     if (currentExam) {
       const q = currentExam.questions?.[currentQIndex];
@@ -5252,20 +5256,48 @@ export default function StudentDashboard() {
       clearTimeout(examAnswerSilenceTimerRef.current);
       examAnswerSilenceTimerRef.current = null;
     }
-    const clean = String(finalAnswer || '').trim();
+    const clean = String(finalAnswer || currentAnswerInputRef.current || currentAnswerInput || '').trim();
     if (clean) {
       updateCurrentAnswer(clean);
+      lastSpokenExamAnswerRef.current = clean;
       announce(`✅ Recorded Answer: "${clean}"`);
       const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
       const promptText = isLastQ
         ? `You answered: "${clean}". Would you like to repeat your answer, or proceed to submit exam? Tap Repeat Answer or tap Submit Exam.`
         : `You answered: "${clean}". Would you like to repeat your answer, or proceed to the next question? Tap Repeat Answer or tap Next Question.`;
-      // Speak the prompt asking student to repeat answer or proceed to next question
-      // Mic starts only when user taps Answer by Voice or Repeat Answer!
       speakText(promptText);
     } else {
       announce("No speech detected for answer.");
       speakText("No speech was detected. Tap Answer by Voice to record your answer.");
+    }
+  };
+
+  const handleExamTextareaBlur = () => {
+    const clean = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
+    if (clean && clean !== lastSpokenExamAnswerRef.current && !isDictatingExamAnswer) {
+      lastSpokenExamAnswerRef.current = clean;
+      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+      const promptText = isLastQ
+        ? `You entered: "${clean}". Would you like to repeat your answer, or submit the exam? Tap Read My Answer or tap Submit Exam.`
+        : `You entered: "${clean}". Would you like to repeat your answer, or proceed to the next question? Tap Read My Answer or tap Save and Next.`;
+      announce(`✅ Recorded Answer: "${clean}"`);
+      speakText(promptText);
+    }
+  };
+
+  const handleExamTextareaKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const clean = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
+      if (clean) {
+        lastSpokenExamAnswerRef.current = clean;
+        const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+        const promptText = isLastQ
+          ? `You entered: "${clean}". Would you like to repeat your answer, or submit the exam? Tap Read My Answer or tap Submit Exam.`
+          : `You entered: "${clean}". Would you like to repeat your answer, or proceed to the next question? Tap Read My Answer or tap Save and Next.`;
+        announce(`✅ Recorded Answer: "${clean}"`);
+        speakText(promptText);
+      }
     }
   };
 
@@ -5511,6 +5543,12 @@ export default function StudentDashboard() {
 
       recognition.onend = () => {
         setIsDictatingExamAnswer(false);
+        examAnswerRecognitionRef.current = null;
+        const finalAns = (sessionSpoken || currentAnswerInputRef.current || currentAnswerInput || liveExamAnswerTranscript || '').trim();
+        if (finalAns && finalAns !== lastSpokenExamAnswerRef.current) {
+          lastSpokenExamAnswerRef.current = finalAns;
+          handleFinishExamAnswerDictation(finalAns);
+        }
       };
 
       examAnswerRecognitionRef.current = recognition;
@@ -5534,13 +5572,14 @@ export default function StudentDashboard() {
       announce("Voice Assistant is disabled. Enable it from the top header.");
       return;
     }
-    const clean = String(currentAnswerInput || '').trim();
+    const clean = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
     if (!clean) {
-      const msg = `Question ${currentQIndex + 1} has no answer recorded yet. You can type or click Answer by Voice to speak your response.`;
+      const msg = `Question ${currentQIndex + 1} has no answer recorded yet. You can type or tap Answer by Voice to speak your response.`;
       announce("ℹ️ No answer recorded yet.");
       speakText(msg);
     } else {
-      const msg = `Your recorded answer for Question ${currentQIndex + 1} is: "${clean}". You can click Save and Next or say Next Question to move forward.`;
+      lastSpokenExamAnswerRef.current = clean;
+      const msg = `You entered: "${clean}". Would you like to repeat your answer, or proceed to the next question?`;
       announce(`🔊 Reading Recorded Answer: "${clean}"`);
       speakText(msg);
     }
@@ -5581,15 +5620,15 @@ export default function StudentDashboard() {
     const q = currentExam.questions?.[currentQIndex];
     const qId = q && q.id !== undefined ? q.id : currentQIndex + 1;
 
-    const savedAns = String(currentAnswerInput || '').trim();
+    const savedAns = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
     const updatedAnswers = {
       ...studentAnswers,
-      [`${currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [`${currentExam._id || currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [currentQIndex]: currentAnswerInput,
-      [`q_${currentQIndex}`]: currentAnswerInput,
-      [`${qId}`]: currentAnswerInput,
-      [`q_${qId}`]: currentAnswerInput
+      [`${currentExam.id}-${currentQIndex}`]: savedAns,
+      [`${currentExam._id || currentExam.id}-${currentQIndex}`]: savedAns,
+      [currentQIndex]: savedAns,
+      [`q_${currentQIndex}`]: savedAns,
+      [`${qId}`]: savedAns,
+      [`q_${qId}`]: savedAns
     };
     setStudentAnswers(updatedAnswers);
 
@@ -5608,10 +5647,18 @@ export default function StudentDashboard() {
         || '';
         
       setCurrentAnswerInput(existingNextAns);
-      const prefix = savedAns ? `Answer saved. Moving to Question ${nextIndex + 1}.` : `Moving to Question ${nextIndex + 1}.`;
+      currentAnswerInputRef.current = existingNextAns;
+      lastSpokenExamAnswerRef.current = existingNextAns;
+
+      const prefix = savedAns 
+        ? `Your answer was: "${savedAns}". Answer saved. Moving to Question ${nextIndex + 1}.` 
+        : `Moving to Question ${nextIndex + 1}.`;
       handleReadExamQuestionStepByStep(nextIndex, prefix);
     } else {
-      speakText("You are on the last question of the exam. You can say Submit Exam when ready to finish.");
+      const lastMsg = savedAns
+        ? `Your answer was: "${savedAns}". Answer saved. You are on the last question of the exam. You can say Submit Exam when ready to finish.`
+        : "You are on the last question of the exam. You can say Submit Exam when ready to finish.";
+      speakText(lastMsg);
     }
   };
 
@@ -7029,9 +7076,13 @@ export default function StudentDashboard() {
     };
 
     const promptText = (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam'))
-      ? "Listening for your answer. Speak freely or say DONE when finished, or say CLOSE to exit."
+      ? (currentAnswerInputRef.current || currentAnswerInput
+          ? `You answered: "${currentAnswerInputRef.current || currentAnswerInput}". Would you like to repeat your answer, or proceed to the next question? Say REPEAT ANSWER or say NEXT QUESTION.`
+          : `Question: ${currentExam.questions?.[currentQIndex]?.text || ''}. No answer recorded yet. Speak your answer now, or say CLOSE.`)
       : (activeTab === 'AI Oral Viva Simulator')
-        ? "Listening for your viva answer. Speak your answer now, and say DONE when finished, or say Repeat Question."
+        ? (vivaAnswerInput
+            ? `You answered: "${vivaAnswerInput}". Would you like to repeat your answer, or proceed to the next viva question? Say REPEAT ANSWER or say NEXT QUESTION.`
+            : `Oral Viva: ${currentVivaQ?.text || ''}. Speak your answer now, or say repeat question.`)
         : "Listening. What help can I do for you? Say your command, or say speak all features, or tell me your interested subject.";
 
     const promptSpeechLang = 'en-US';
@@ -7048,6 +7099,10 @@ export default function StudentDashboard() {
   const handleDashboardGlobalClick = (e) => {
     if (
       !isVoiceAssistantEnabled ||
+      activeTab === 'AI Oral Viva Simulator' ||
+      activeTab === 'AI Exam Assistant' ||
+      activeTab === 'Active Exam' ||
+      isExamActive ||
       e.target.closest('input') || 
       e.target.closest('button') || 
       e.target.closest('a') || 
@@ -7166,11 +7221,7 @@ export default function StudentDashboard() {
       const promptText = isLastVivaQ
         ? `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
         : `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
-      speakText(promptText, () => {
-        setTimeout(() => {
-          startVivaDictation(false);
-        }, 400);
-      });
+      speakText(promptText);
     }
   };
 
@@ -7205,6 +7256,7 @@ export default function StudentDashboard() {
         };
 
         rec.onresult = (e) => {
+          if (isTTSActive()) return;
           let currentTranscript = '';
           for (let i = 0; i < e.results.length; i++) {
             currentTranscript += e.results[i][0].transcript;
@@ -7288,11 +7340,7 @@ export default function StudentDashboard() {
               ? `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
               : `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
 
-            speakText(promptText, () => {
-              setTimeout(() => {
-                startVivaDictation(false);
-              }, 400);
-            });
+            speakText(promptText);
           }
         };
 
@@ -7321,8 +7369,9 @@ export default function StudentDashboard() {
     };
 
     if (speakPrompt) {
-      speakText("Listening for your viva answer. Speak your answer now, and say DONE when you are finished.");
-      setTimeout(doStartRec, 1200);
+      speakText("Listening for your viva answer. Speak your answer now, and say DONE when you are finished.", () => {
+        setTimeout(doStartRec, 150);
+      });
     } else {
       doStartRec();
     }
@@ -7357,12 +7406,8 @@ export default function StudentDashboard() {
 
   const handleRepeatVivaQuestion = () => {
     if (!currentVivaQ) return;
-    const msg = `Question ${activeVivaQIdx + 1} of ${currentVivaQList.length}: ${currentVivaQ.text}. Please speak your answer.`;
-    speakText(msg, () => {
-      setTimeout(() => {
-        startVivaDictation(false);
-      }, 300);
-    });
+    const msg = `Question ${activeVivaQIdx + 1} of ${currentVivaQList.length}: ${currentVivaQ.text}. Tap Answer by Voice to speak your answer.`;
+    speakText(msg);
   };
 
   const handleNextVivaQuestion = () => {
@@ -7387,13 +7432,9 @@ export default function StudentDashboard() {
       lastSpokenVivaAnswerRef.current = existingNextAns;
       setVivaFeedback(null);
       const nextQ = currentVivaQList[nextIdx];
-      const prefix = currentAns ? 'Answer saved. ' : '';
-      const msg = `${prefix}Moving to Question ${nextIdx + 1} of ${currentVivaQList.length}: ${nextQ.text}. ${existingNextAns ? 'Your recorded answer is: ' + existingNextAns : 'Please speak your answer.'}`;
-      speakText(msg, () => {
-        setTimeout(() => {
-          startVivaDictation(false);
-        }, 300);
-      });
+      const prefix = currentAns ? `Your answer was: "${currentAns}". Answer saved. ` : '';
+      const msg = `${prefix}Moving to Question ${nextIdx + 1} of ${currentVivaQList.length}: ${nextQ.text}. ${existingNextAns ? 'Your recorded answer is: ' + existingNextAns : 'Tap Answer by Voice to speak your answer.'}`;
+      speakText(msg);
     } else {
       speakText(`You are on the last question of this viva exam. Say 'Submit Viva' or click Submit Viva Exam to complete your assessment.`);
     }
@@ -10514,18 +10555,10 @@ export default function StudentDashboard() {
 
                                   <textarea
                                     rows={5}
-                                    placeholder={(isOtherPersonDetected || !isScannedStudentWriting) ? `⚠️ Input Locked: Return to camera view as candidate ${student.name} to write...` : `Tap here or tap "Answer by Voice" to speak your answer...`}
+                                    placeholder={(isOtherPersonDetected || !isScannedStudentWriting) ? `⚠️ Input Locked: Return to camera view as candidate ${student.name} to write...` : `Type answer here or tap "Answer by Voice" to speak...`}
                                     value={currentAnswerInput}
-                                    onClick={() => {
-                                      if (!isDictatingExamAnswer && !isOtherPersonDetected && isScannedStudentWritingRef.current) {
-                                        handleStartExamAnswerDictation();
-                                      }
-                                    }}
-                                    onFocus={() => {
-                                      if (!isDictatingExamAnswer && !isOtherPersonDetected && isScannedStudentWritingRef.current) {
-                                        handleStartExamAnswerDictation();
-                                      }
-                                    }}
+                                    onBlur={handleExamTextareaBlur}
+                                    onKeyDown={handleExamTextareaKeyDown}
                                     onChange={e => {
                                       if (isOtherPersonDetected || !isScannedStudentWriting) {
                                         announce("⚠️ Input locked: Unrecognized face detected.");
