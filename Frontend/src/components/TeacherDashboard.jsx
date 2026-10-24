@@ -588,13 +588,39 @@ export default function TeacherDashboard() {
   });
   const [editingExamId, setEditingExamId] = useState(null);
 
+  // Helper to ensure each published exam appears only once (strictly deduplicated by title + subject + target student)
+  const deduplicateExamsList = (examList) => {
+    if (!Array.isArray(examList)) return [];
+    const map = new Map();
+    for (const ex of examList) {
+      if (!ex) continue;
+      const titleKey = String(ex.title || ex.examTitle || 'Exam').trim().toLowerCase();
+      const subjKey = String(ex.subject || 'General').trim().toLowerCase();
+      const targetKey = String(ex.targetStudentEmail || (Array.isArray(ex.assignedStudents) ? ex.assignedStudents.join(',') : '')).trim().toLowerCase();
+      const key = `${titleKey}::${subjKey}::${targetKey}`;
+      
+      if (!map.has(key)) {
+        map.set(key, ex);
+      } else {
+        const prev = map.get(key);
+        const prevQs = Array.isArray(prev.questions) ? prev.questions.length : 0;
+        const curQs = Array.isArray(ex.questions) ? ex.questions.length : 0;
+        const hasMongoId = ex._id && !String(ex._id).startsWith('exam-') && !String(ex._id).startsWith('mem-');
+        if (curQs >= prevQs || hasMongoId) {
+          map.set(key, { ...prev, ...ex });
+        }
+      }
+    }
+    return Array.from(map.values());
+  };
+
   // Active Exam Form (Persisted in localStorage per teacher so new teachers start with a clean form)
   const initialExamState = {
     title: '',
     subject: selectedTeacherSubject !== 'ALL' ? selectedTeacherSubject : (teacher?.subject || 'Computer Science'),
     targetStudentEmail: '',
     targetStudentName: '',
-    assignedStudents: [],
+    assignedStudents: ['all'],
     date: new Date().toISOString().split('T')[0],
     time: '10:00',
     duration: 60,
@@ -649,7 +675,7 @@ export default function TeacherDashboard() {
       ...prev,
       targetStudentEmail: '',
       targetStudentName: '',
-      assignedStudents: []
+      assignedStudents: ['all']
     }));
     say('Exam target set to open for all students.');
   };
@@ -870,7 +896,16 @@ export default function TeacherDashboard() {
         : questions.filter(q => selectedQuestionIds.includes(q.id))
     };
 
-    const existingIndex = savedExams.findIndex(x => (x.title === activeTitle || x._id === editingExamId));
+    const normTitle = activeTitle.trim().toLowerCase();
+    const normSubj = (exam.subject || 'Computer Science').trim().toLowerCase();
+    const normTarget = (exam.targetStudentEmail || '').trim().toLowerCase();
+
+    const existingIndex = savedExams.findIndex(x => 
+      (editingExamId && (x._id === editingExamId || x.id === editingExamId)) ||
+      ((x.title || x.examTitle || '').trim().toLowerCase() === normTitle &&
+       (x.subject || '').trim().toLowerCase() === normSubj &&
+       (x.targetStudentEmail || '').trim().toLowerCase() === normTarget)
+    );
     let nextSaved;
     if (existingIndex !== -1) {
       nextSaved = [...savedExams];
@@ -882,10 +917,10 @@ export default function TeacherDashboard() {
       const xId = String(x._id || x.id || '');
       return !xId.startsWith('ex_') && !xId.startsWith('mock-');
     });
-    setSavedExams(cleanSaved);
+    setSavedExams(deduplicateExamsList(cleanSaved));
 
     try {
-      localStorage.setItem('shared_exams', JSON.stringify(cleanSaved));
+      localStorage.setItem('shared_exams', JSON.stringify(deduplicateExamsList(cleanSaved)));
       localStorage.setItem('draft_teacher_exam', JSON.stringify(updatedExam));
 
       const notifObj = {
@@ -910,7 +945,13 @@ export default function TeacherDashboard() {
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
 
-    createExam(updatedExam).catch(() => {});
+    if (editingExamId || existingIndex !== -1) {
+      const targetId = editingExamId || savedExams[existingIndex]?._id || savedExams[existingIndex]?.id;
+      if (targetId) updateExam(targetId, updatedExam).catch(() => {});
+      else createExam(updatedExam).catch(() => {});
+    } else {
+      createExam(updatedExam).catch(() => {});
+    }
 
     say(`Schedule and assignments saved for "${activeTitle}"! Connected live to Student Dashboard.`);
   };
@@ -1570,7 +1611,7 @@ export default function TeacherDashboard() {
               return cEmail && cEmail !== teacherEmailKey;
             })
           : [];
-        localStorage.setItem('shared_exams', JSON.stringify([...savedExams, ...otherTeachersExams]));
+        localStorage.setItem('shared_exams', JSON.stringify(deduplicateExamsList([...savedExams, ...otherTeachersExams])));
       } catch (e) {}
     }
   }, [savedExams, teacherEmailKey]);
@@ -1794,7 +1835,7 @@ export default function TeacherDashboard() {
   }, [questions, selectedTeacherSubject, searchQuery]);
 
   const filteredSavedExams = useMemo(() => {
-    return savedExams.filter(item => isSubjectMatch(item.subject || item.topic, selectedTeacherSubject));
+    return deduplicateExamsList(savedExams.filter(item => isSubjectMatch(item.subject || item.topic, selectedTeacherSubject)));
   }, [savedExams, selectedTeacherSubject]);
 
   const subjectQuestionsForExam = useMemo(() => {
@@ -1865,7 +1906,7 @@ export default function TeacherDashboard() {
         accessibilitySettings: access,
         assignedStudents: exam.targetStudentEmail
           ? [exam.targetStudentEmail]
-          : (exam.assignedStudents && exam.assignedStudents.length > 0 ? exam.assignedStudents : []),
+          : (exam.assignedStudents && exam.assignedStudents.length > 0 ? exam.assignedStudents : ['all']),
         targetStudentEmail: exam.targetStudentEmail || '',
         targetStudentName: exam.targetStudentName || '',
         questions: examQuestions.map(q => ({
@@ -1878,22 +1919,34 @@ export default function TeacherDashboard() {
         }))
       };
 
+      const normTitle = (exam.title || '').trim().toLowerCase();
+      const normSubj = (exam.subject || 'Computer Science').trim().toLowerCase();
+      const normTarget = (exam.targetStudentEmail || '').trim().toLowerCase();
+
+      const existingExamIndex = savedExams.findIndex(item => 
+        (editingExamId && (item._id === editingExamId || item.id === editingExamId)) ||
+        ((item.title || item.examTitle || '').trim().toLowerCase() === normTitle &&
+         (item.subject || '').trim().toLowerCase() === normSubj &&
+         (item.targetStudentEmail || '').trim().toLowerCase() === normTarget)
+      );
+
       let nextSaved;
-      if (editingExamId) {
-        const updated = await updateExam(editingExamId, payload);
-        nextSaved = savedExams.map(item => ((item._id === editingExamId || item.id === editingExamId) ? updated : item));
-        setSavedExams(nextSaved);
+      if (editingExamId || existingExamIndex !== -1) {
+        const targetId = editingExamId || savedExams[existingExamIndex]?._id || savedExams[existingExamIndex]?.id;
+        const updated = await updateExam(targetId, payload);
+        nextSaved = savedExams.map((item, idx) => ((item._id === targetId || item.id === targetId || idx === existingExamIndex) ? { ...item, ...payload, ...updated } : item));
+        setSavedExams(deduplicateExamsList(nextSaved));
         say('Exam updated successfully in MongoDB database.');
       } else {
         const created = await createExam(payload);
         nextSaved = [created, ...savedExams];
-        setSavedExams(nextSaved);
+        setSavedExams(deduplicateExamsList(nextSaved));
         say(exam.targetStudentName 
           ? `Personalized exam saved for ${exam.targetStudentName} (${payload.subject}).` 
           : 'New exam saved successfully to MongoDB database.');
       }
       try {
-        localStorage.setItem('shared_exams', JSON.stringify(nextSaved));
+        localStorage.setItem('shared_exams', JSON.stringify(deduplicateExamsList(nextSaved)));
         
         // Publish notification for student dashboard
         const notifObj = {
@@ -1969,7 +2022,7 @@ export default function TeacherDashboard() {
       const nextSaved = savedExams.filter(x => (x._id || x.id) !== examId);
       setSavedExams(nextSaved);
       try {
-        localStorage.setItem('shared_exams', JSON.stringify(nextSaved));
+        localStorage.setItem('shared_exams', JSON.stringify(deduplicateExamsList(nextSaved)));
         window.dispatchEvent(new Event('storage'));
       } catch (e) {}
       say('Exam deleted from database.');
@@ -1993,7 +2046,17 @@ export default function TeacherDashboard() {
       correctAnswer: q.correctAnswer || ''
     }));
 
-    const existingIndex = savedExams.findIndex(x => (x.title === activeExamTitle || x.examTitle === activeExamTitle || x._id === editingExamId));
+    setExam(prev => ({ ...prev, questions: formattedQuestions }));
+    try {
+      const draftRaw = localStorage.getItem(draftExamKey);
+      const draftObj = draftRaw ? JSON.parse(draftRaw) : {};
+      localStorage.setItem(draftExamKey, JSON.stringify({ ...draftObj, questions: formattedQuestions }));
+    } catch (e) {}
+
+    const existingIndex = savedExams.findIndex(x => 
+      (editingExamId && (x._id === editingExamId || x.id === editingExamId)) ||
+      ((x.title === activeExamTitle || x.examTitle === activeExamTitle) && (x.subject === activeExamSubject))
+    );
     let nextSaved;
 
     if (existingIndex !== -1) {
@@ -2020,7 +2083,7 @@ export default function TeacherDashboard() {
         teacherEmail: teacher.email || 'teacher@blindassist.edu',
         questions: formattedQuestions
       };
-      nextSaved = [autoExam, ...savedExams];
+      return;
     }
 
     const cleanNextSaved = nextSaved.filter(x => {
@@ -2029,7 +2092,7 @@ export default function TeacherDashboard() {
     });
     setSavedExams(cleanNextSaved);
     try {
-      localStorage.setItem('shared_exams', JSON.stringify(cleanNextSaved));
+      localStorage.setItem('shared_exams', JSON.stringify(deduplicateExamsList(cleanNextSaved)));
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
   };
@@ -3330,7 +3393,76 @@ export default function TeacherDashboard() {
         </section>
 
         <section className="ea-card">
-          <h2>Assign Student Cohorts</h2>
+          <h2>Assign Students & Cohorts</h2>
+          <Field label="Target Student (Select a particular student or choose All Students)">
+            <select
+              value={exam.targetStudentEmail || (exam.assignedStudents?.includes('all') ? 'all' : '')}
+              onChange={e => {
+                const val = e.target.value;
+                if (!val || val === 'all') {
+                  handleClearTargetStudent();
+                } else {
+                  handleSelectTargetStudent(val);
+                }
+              }}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: exam.targetStudentEmail ? '2px solid #10b981' : '1px solid #cbd5e1',
+                background: exam.targetStudentEmail ? '#f0fdf4' : '#ffffff',
+                color: exam.targetStudentEmail ? '#065f46' : '#0f172a',
+                fontWeight: '700',
+                fontSize: '13px',
+                cursor: 'pointer',
+                width: '100%',
+                marginBottom: '12px'
+              }}
+            >
+              <option value="all">🌐 All Students studying this subject (General Exam)</option>
+              {registeredStudents.length > 0 && (
+                <optgroup label="👤 Registered Students (Select particular student)">
+                  {registeredStudents.map(stu => {
+                    const sub = stu.interestedSubject || stu.subject || 'Computer Science';
+                    return (
+                      <option key={stu.email || stu._id} value={stu.email}>
+                        👤 {stu.username || stu.name} — ({stu.email}) • Subject: {sub}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+            </select>
+          </Field>
+          {exam.targetStudentEmail && (
+            <div style={{
+              background: '#ecfdf5',
+              border: '1px solid #10b981',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <span style={{ fontSize: '13px', color: '#065f46', fontWeight: '800' }}>
+                🎯 Assigned Specifically to: {exam.targetStudentName || exam.targetStudentEmail} ({exam.subject})
+              </span>
+              <button
+                type="button"
+                onClick={handleClearTargetStudent}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#dc2626',
+                  fontSize: '12px',
+                  fontWeight: '800',
+                  cursor: 'pointer'
+                }}
+              >
+                ✕ Switch to All Students
+              </button>
+            </div>
+          )}
           <label className="ea-check">
             <input type="checkbox" checked={assignedGroups.bcaSem3} onChange={e => setAssignedGroups({ ...assignedGroups, bcaSem3: e.target.checked })} />
             BCA Semester 3 (28 Students)

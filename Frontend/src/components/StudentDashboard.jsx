@@ -2368,6 +2368,31 @@ export const isExamSuccessfullyCompleted = (result) => {
   return true;
 };
 
+export const deduplicateExamsList = (examList) => {
+  if (!Array.isArray(examList)) return [];
+  const map = new Map();
+  for (const ex of examList) {
+    if (!ex) continue;
+    const titleKey = String(ex.title || ex.examTitle || 'Theory Assessment').trim().toLowerCase();
+    const subjKey = String(ex.subject || 'General').trim().toLowerCase();
+    const targetKey = String(ex.targetStudentEmail || (Array.isArray(ex.assignedStudents) ? ex.assignedStudents.join(',') : '')).trim().toLowerCase();
+    const semKey = `${titleKey}::${subjKey}::${targetKey}`;
+
+    if (!map.has(semKey)) {
+      map.set(semKey, ex);
+    } else {
+      const prev = map.get(semKey);
+      const prevQs = Array.isArray(prev.questions) ? prev.questions.length : 0;
+      const curQs = Array.isArray(ex.questions) ? ex.questions.length : 0;
+      const hasMongoId = ex._id && !String(ex._id).startsWith('exam-') && !String(ex._id).startsWith('mem-') && !String(ex._id).startsWith('teacher-');
+      if (curQs >= prevQs || hasMongoId) {
+        map.set(semKey, { ...prev, ...ex });
+      }
+    }
+  }
+  return Array.from(map.values());
+};
+
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const [studentProfile, setStudentProfile] = useState(readStudentProfile);
@@ -3027,7 +3052,27 @@ export default function StudentDashboard() {
       return isSubjectMatching(ex.subject, activeSubject);
     });
 
-    return matching;
+    // Strictly ensure each published exam shows only ONCE in the table & dashboard
+    const uniqueMap = new Map();
+    for (const ex of matching) {
+      const titleKey = String(ex.title || ex.examTitle || 'Exam').trim().toLowerCase();
+      const subjKey = String(ex.subject || 'General').trim().toLowerCase();
+      const targetKey = String(ex.targetStudentEmail || '').trim().toLowerCase();
+      const key = `${titleKey}::${subjKey}::${targetKey}`;
+
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, ex);
+      } else {
+        const prev = uniqueMap.get(key);
+        const prevQs = Array.isArray(prev.questions) ? prev.questions.length : 0;
+        const curQs = Array.isArray(ex.questions) ? ex.questions.length : 0;
+        if (curQs > prevQs || (ex.targetStudentEmail && !prev.targetStudentEmail)) {
+          uniqueMap.set(key, ex);
+        }
+      }
+    }
+
+    return Array.from(uniqueMap.values());
   }, [exams, activeSubject, student.email, studentProfile.email, student.name, studentProfile.name]);
 
   const filteredStudyMaterials = useMemo(() => {
@@ -5248,7 +5293,7 @@ export default function StudentDashboard() {
         try {
           const parsed = JSON.parse(sharedExamsRaw);
           if (Array.isArray(parsed)) {
-            const cleanSavedExams = parsed.filter(ex => {
+            const rawSavedExams = parsed.filter(ex => {
               const examId = String(ex._id || ex.id || '');
               const titleStr = String(ex.title || ex.examTitle || '').toLowerCase();
               if (examId === 'ex_1' || examId === 'ex_2' || examId === 'ex_3' || examId === 'ex_4') return false;
@@ -5257,13 +5302,15 @@ export default function StudentDashboard() {
               if (titleStr.includes('network security & web assistive systems') && examId.startsWith('mock-')) return false;
               return true;
             });
+            const cleanSavedExams = deduplicateExamsList(rawSavedExams);
             if (cleanSavedExams.length !== parsed.length) {
               localStorage.setItem('shared_exams', JSON.stringify(cleanSavedExams));
             }
 
             cleanSavedExams.forEach((ex, idx) => {
+              const semKey = `${String(ex.title || ex.examTitle || 'Theory Assessment').trim().toLowerCase()}::${String(ex.subject || 'Computer Science').trim().toLowerCase()}::${String(ex.targetStudentEmail || '').trim().toLowerCase()}`;
               const examId = String(ex._id || ex.id || `teacher-exam-${idx}`);
-              teacherMap.set(examId, {
+              teacherMap.set(semKey, {
                 id: examId,
                 title: ex.title || ex.examTitle || 'Theory Assessment',
                 subject: ex.subject || 'Computer Science',
@@ -5276,14 +5323,16 @@ export default function StudentDashboard() {
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
                 status: ex.status || 'Scheduled',
                 instructions: ex.instructions || 'Read all theory questions carefully.',
-                questions: (ex.questions || []).map((q, qIdx) => ({
-                  id: qIdx + 1,
-                  text: q.text || q.questionText,
-                  type: q.type || q.questionType || 'Descriptive Theory',
-                  options: q.options || [],
-                  correctAnswer: q.correctAnswer || '',
-                  marks: q.marks || 5
-                }))
+                questions: (ex.questions && ex.questions.length > 0)
+                  ? ex.questions.map((q, qIdx) => ({
+                      id: qIdx + 1,
+                      text: q.text || q.questionText,
+                      type: q.type || q.questionType || 'Descriptive Theory',
+                      options: q.options || [],
+                      correctAnswer: q.correctAnswer || '',
+                      marks: q.marks || 5
+                    }))
+                  : (existing.questions || [])
               });
             });
           }
@@ -5293,14 +5342,22 @@ export default function StudentDashboard() {
       fetchExams()
         .then(backendExams => {
           if (isMounted && Array.isArray(backendExams)) {
-            backendExams.forEach((ex, idx) => {
-              const examId = String(ex._id || ex.id || `teacher-exam-${idx}`);
+            const rawBackend = backendExams.filter(ex => {
+              const examId = String(ex._id || ex.id || '');
               const titleStr = String(ex.title || ex.examTitle || '').toLowerCase();
-              if (examId === 'ex_1' || examId === 'ex_2' || examId === 'ex_3' || examId === 'ex_4') return;
-              if (examId.startsWith('mock-') || examId.includes('bank-exam')) return;
-              if (titleStr.includes('operating systems & deadlocks') || titleStr.includes('ai & machine learning foundations')) return;
+              if (examId === 'ex_1' || examId === 'ex_2' || examId === 'ex_3' || examId === 'ex_4') return false;
+              if (examId.startsWith('mock-') || examId.includes('bank-exam')) return false;
+              if (titleStr.includes('operating systems & deadlocks') || titleStr.includes('ai & machine learning foundations')) return false;
+              return true;
+            });
+            const cleanBackend = deduplicateExamsList(rawBackend);
 
-              teacherMap.set(examId, {
+            cleanBackend.forEach((ex, idx) => {
+              const semKey = `${String(ex.title || ex.examTitle || 'Theory Assessment').trim().toLowerCase()}::${String(ex.subject || 'Computer Science').trim().toLowerCase()}::${String(ex.targetStudentEmail || '').trim().toLowerCase()}`;
+              const existing = teacherMap.get(semKey) || {};
+              const examId = String(ex._id || ex.id || existing.id || `teacher-exam-${idx}`);
+
+              teacherMap.set(semKey, {
                 id: examId,
                 title: ex.title || ex.examTitle || 'Theory Assessment',
                 subject: ex.subject || 'Computer Science',
@@ -5313,22 +5370,24 @@ export default function StudentDashboard() {
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
                 status: ex.status || 'Scheduled',
                 instructions: ex.instructions || 'Read all theory questions carefully.',
-                questions: (ex.questions || []).map((q, qIdx) => ({
-                  id: qIdx + 1,
-                  text: q.text || q.questionText,
-                  type: q.type || q.questionType || 'Descriptive Theory',
-                  options: q.options || [],
-                  correctAnswer: q.correctAnswer || '',
-                  marks: q.marks || 5
-                }))
+                questions: (ex.questions && ex.questions.length > 0)
+                  ? ex.questions.map((q, qIdx) => ({
+                      id: qIdx + 1,
+                      text: q.text || q.questionText,
+                      type: q.type || q.questionType || 'Descriptive Theory',
+                      options: q.options || [],
+                      correctAnswer: q.correctAnswer || '',
+                      marks: q.marks || 5
+                    }))
+                  : (existing.questions || [])
               });
             });
-            setExams(Array.from(teacherMap.values()));
+            setExams(deduplicateExamsList(Array.from(teacherMap.values())));
           }
         })
         .catch(() => {
           if (isMounted) {
-            setExams(Array.from(teacherMap.values()));
+            setExams(deduplicateExamsList(Array.from(teacherMap.values())));
           }
         });
 

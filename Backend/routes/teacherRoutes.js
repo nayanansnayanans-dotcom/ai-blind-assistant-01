@@ -25,7 +25,30 @@ const inMemoryContactMessages = [
 
 const isDbConnected = () => mongoose.connection.readyState === 1 && mongoose.connection.db;
 
-// 1. Create a New Accessible Exam
+const deduplicateExams = (list) => {
+  if (!Array.isArray(list)) return [];
+  const map = new Map();
+  for (const ex of list) {
+    if (!ex) continue;
+    const titleKey = String(ex.title || ex.examTitle || 'Exam').trim().toLowerCase();
+    const subjKey = String(ex.subject || 'General').trim().toLowerCase();
+    const targetKey = String(ex.targetStudentEmail || (Array.isArray(ex.assignedStudents) ? ex.assignedStudents.join(',') : '')).trim().toLowerCase();
+    const semKey = `${titleKey}::${subjKey}::${targetKey}`;
+    if (!map.has(semKey)) {
+      map.set(semKey, ex);
+    } else {
+      const prev = map.get(semKey);
+      const prevQs = Array.isArray(prev.questions) ? prev.questions.length : 0;
+      const curQs = Array.isArray(ex.questions) ? ex.questions.length : 0;
+      if (curQs >= prevQs) {
+        map.set(semKey, ex);
+      }
+    }
+  }
+  return Array.from(map.values());
+};
+
+// 1. Create or Update an Accessible Exam (Prevents Duplicates)
 router.post('/exams', async (req, res) => {
   const teacherEmail = String(req.body.creatorEmail || req.body.teacherEmail || '').trim().toLowerCase();
   const examPayload = {
@@ -34,24 +57,65 @@ router.post('/exams', async (req, res) => {
     teacherEmail: teacherEmail
   };
 
+  const titleKey = String(req.body.title || req.body.examTitle || '').trim().toLowerCase();
+  const subjKey = String(req.body.subject || '').trim().toLowerCase();
+  const targetKey = String(req.body.targetStudentEmail || '').trim().toLowerCase();
+
   if (!isDbConnected()) {
+    const existingIdx = inMemoryExams.findIndex(e => 
+      String(e.title || '').trim().toLowerCase() === titleKey &&
+      String(e.subject || '').trim().toLowerCase() === subjKey &&
+      String(e.targetStudentEmail || '').trim().toLowerCase() === targetKey
+    );
+    if (existingIdx !== -1) {
+      inMemoryExams[existingIdx] = { ...inMemoryExams[existingIdx], ...examPayload, updatedAt: new Date() };
+      return res.status(200).json({ success: true, message: "Exam updated (In-Memory Fallback)", data: inMemoryExams[existingIdx] });
+    }
     const mockExam = { _id: `mem-exam-${Date.now()}`, ...examPayload, createdAt: new Date() };
     inMemoryExams.unshift(mockExam);
     return res.status(201).json({ success: true, message: "Exam created (In-Memory Fallback)", data: mockExam });
   }
 
   try {
+    // If an exam with the same title, subject, and target student already exists for this teacher, update it to prevent duplicates
+    if (titleKey && subjKey) {
+      const existing = await Exam.findOne({
+        $or: [
+          { creatorEmail: teacherEmail },
+          { teacherEmail: teacherEmail }
+        ],
+        title: new RegExp(`^${titleKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+        subject: new RegExp(`^${subjKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+        targetStudentEmail: targetKey
+      }).setOptions({ bufferCommands: false });
+
+      if (existing) {
+        Object.assign(existing, examPayload);
+        const updated = await existing.save({ bufferCommands: false });
+        return res.status(200).json({ success: true, message: "Exam updated in MongoDB", data: updated });
+      }
+    }
+
     const newExam = new Exam(examPayload);
     const savedExam = await newExam.save({ bufferCommands: false });
     return res.status(201).json({ success: true, message: "Exam created successfully in MongoDB", data: savedExam });
   } catch (error) {
+    const existingIdx = inMemoryExams.findIndex(e => 
+      String(e.title || '').trim().toLowerCase() === titleKey &&
+      String(e.subject || '').trim().toLowerCase() === subjKey &&
+      String(e.targetStudentEmail || '').trim().toLowerCase() === targetKey
+    );
+    if (existingIdx !== -1) {
+      inMemoryExams[existingIdx] = { ...inMemoryExams[existingIdx], ...examPayload, updatedAt: new Date() };
+      return res.status(200).json({ success: true, message: "Exam updated (In-Memory Fallback)", data: inMemoryExams[existingIdx] });
+    }
     const mockExam = { _id: `mem-exam-${Date.now()}`, ...examPayload, createdAt: new Date() };
     inMemoryExams.unshift(mockExam);
     res.status(201).json({ success: true, message: "Exam created (In-Memory Fallback)", data: mockExam });
   }
 });
 
-// 2. Get All Exams Created by Teachers (Filtered by teacherEmail when provided)
+// 2. Get All Exams Created by Teachers (Filtered by teacherEmail when provided, strictly deduplicated)
 router.get('/exams', async (req, res) => {
   const teacherEmail = String(req.query.teacherEmail || req.query.email || '').trim().toLowerCase();
 
@@ -59,7 +123,7 @@ router.get('/exams', async (req, res) => {
     const filteredMem = teacherEmail
       ? inMemoryExams.filter(e => (String(e.creatorEmail || e.teacherEmail || '').toLowerCase() === teacherEmail))
       : inMemoryExams;
-    return res.status(200).json({ success: true, data: filteredMem, note: 'Serving from In-Memory fallback (MongoDB disconnected)' });
+    return res.status(200).json({ success: true, data: deduplicateExams(filteredMem), note: 'Serving from In-Memory fallback (MongoDB disconnected)' });
   }
 
   try {
@@ -71,12 +135,12 @@ router.get('/exams', async (req, res) => {
       ];
     }
     const exams = await Exam.find(query).setOptions({ bufferCommands: false }).sort({ createdAt: -1 });
-    return res.status(200).json({ success: true, data: exams });
+    return res.status(200).json({ success: true, data: deduplicateExams(exams) });
   } catch (error) {
     const filteredMem = teacherEmail
       ? inMemoryExams.filter(e => (String(e.creatorEmail || e.teacherEmail || '').toLowerCase() === teacherEmail))
       : inMemoryExams;
-    res.status(200).json({ success: true, data: filteredMem, note: 'Serving from In-Memory fallback' });
+    res.status(200).json({ success: true, data: deduplicateExams(filteredMem), note: 'Serving from In-Memory fallback' });
   }
 });
 
