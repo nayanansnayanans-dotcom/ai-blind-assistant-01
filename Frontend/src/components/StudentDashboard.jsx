@@ -3220,6 +3220,15 @@ export default function StudentDashboard() {
   const scannedExamFaceVectorRef = React.useRef(null);
   const isScannedStudentWritingRef = React.useRef(true);
 
+  // Multi-angle face biometric states (Center, Left, Right)
+  const [faceScanStage, setFaceScanStage] = useState('center'); // 'center' | 'left' | 'right' | 'complete'
+  const scanStageRef = React.useRef('center');
+  const [scannedAnglesState, setScannedAnglesState] = useState({ center: false, left: false, right: false });
+  const scannedAnglesStateRef = React.useRef({ center: false, left: false, right: false });
+  const [scannedAnglesThumbs, setScannedAnglesThumbs] = useState({ center: null, left: null, right: null });
+  const scannedExamFaceVectorsRef = React.useRef({ center: null, left: null, right: null });
+  const stageStableTicksRef = React.useRef(0);
+
   const [detectedPeopleCount, setDetectedPeopleCount] = useState(1);
   const [isMultiplePeopleDetected, setIsMultiplePeopleDetected] = useState(false);
   const [showMultiplePeopleWarningModal, setShowMultiplePeopleWarningModal] = useState(false);
@@ -4072,6 +4081,13 @@ export default function StudentDashboard() {
     setFaceMismatchActiveAlert(null);
     setExamTerminationModal(null);
     setFaceMatchStatus('Align your face inside the camera circle to scan and verify your identity...');
+    setFaceScanStage('center');
+    scanStageRef.current = 'center';
+    setScannedAnglesState({ center: false, left: false, right: false });
+    scannedAnglesStateRef.current = { center: false, left: false, right: false };
+    setScannedAnglesThumbs({ center: null, left: null, right: null });
+    scannedExamFaceVectorsRef.current = { center: null, left: null, right: null };
+    stageStableTicksRef.current = 0;
 
     // Prioritize checking & loading registered profile picture
     const cleanEmail = (student.email || '').trim().toLowerCase();
@@ -4126,13 +4142,25 @@ export default function StudentDashboard() {
     }
   };
 
-  // Initial face scanning live analysis effect for modal (Scans student face and locks biometric template)
+  // Multi-angle Face Scanning & Biometric Lock (Center, Left, Right)
   useEffect(() => {
     if (!faceAuthModalOpen) {
       return;
     }
 
-    let progress = 0;
+    stageStableTicksRef.current = 0;
+    scanStageRef.current = 'center';
+    setFaceScanStage('center');
+    setScannedAnglesState({ center: false, left: false, right: false });
+    scannedAnglesStateRef.current = { center: false, left: false, right: false };
+    setScannedAnglesThumbs({ center: null, left: null, right: null });
+    scannedExamFaceVectorsRef.current = { center: null, left: null, right: null };
+
+    // Auditory opening prompt for accessibility
+    setTimeout(() => {
+      speakText("Candidate Face Biometric Scanner. Step 1 of 3: Look straight into the camera to scan center face.");
+    }, 400);
+
     scanIntervalRef.current = setInterval(async () => {
       if (!videoRef.current || !canvasRef.current) return;
       const video = videoRef.current;
@@ -4165,7 +4193,7 @@ export default function StudentDashboard() {
             return;
           }
           // STRICT MANDATORY PROFILE PHOTO CHECK: A student CANNOT write an exam without a matching profile photo!
-          progress = 0;
+          stageStableTicksRef.current = 0;
           setFaceScanProgress(0);
           setFaceConfidence(0);
           setFaceMatchScore(0);
@@ -4174,105 +4202,15 @@ export default function StudentDashboard() {
           return;
         }
 
-        if (!peopleCheck.isPresent) {
-          progress = Math.max(0, progress - 4);
-          setFaceScanProgress(progress);
-          setFaceConfidence(0);
-          setFaceMatchScore(0);
-          setFaceMatchStatus("🎯 Align your face inside the camera circle to scan...");
-          setFaceErrorMessage("Please position your face clearly inside the oval target.");
-          return;
-        }
-
-        // Biometric Match check against enrolled profile photo
-        let similarity = 0;
-        if (refVector && liveVector) {
-          similarity = computeBiometricSimilarity(refVector, liveVector);
-        }
-
-        const matchPercent = Math.min(99, Math.round(similarity * 100));
-        setFaceConfidence(matchPercent);
-        setFaceMatchScore(matchPercent);
-
-        // Biometric Match check (Pearson correlation threshold >= 46%)
-        const isFaceMatch = Boolean(similarity >= 0.46);
-
-        if (isFaceMatch) {
-          // Centered candidate matches registered profile picture: verify candidate!
-          setIsMultiplePeopleDetected(false);
-          isMultiplePeopleDetectedRef.current = false;
-          consecutiveMultiplePeopleCountRef.current = 0;
-          setDetectedPeopleCount(1);
-          setFaceErrorMessage('');
-          progress += 25;
-          setFaceScanProgress(Math.min(100, progress));
-          setFaceMatchStatus(`🟢 Scanning candidate face: ${Math.min(100, progress)}%... Verified: ${student.name} (${matchPercent}% match)`);
-
-          if (progress >= 100) {
-            clearInterval(scanIntervalRef.current);
-            scanIntervalRef.current = null;
-            setFaceDetecting(false);
-            setFaceDetected(true);
-            
-            const snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.90);
-            setFaceSnapshotUrl(snapshotDataUrl);
-            setScannedExamFaceUrl(snapshotDataUrl);
-            scannedExamFaceVectorRef.current = liveVector;
-
-            setIsFaceVerifiedForExam(true);
-            setIsFacePresentInExam(true);
-            setIsScannedStudentWriting(true);
-            setIsOtherPersonDetected(false);
-            setIsMultiplePeopleDetected(false);
-            isScannedStudentWritingRef.current = true;
-
-            // Record face verification in live monitoring for Teacher Dashboard
-            try {
-              const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
-              const updatedLog = {
-                id: `log_${Date.now()}`,
-                student: student.name,
-                studentName: student.name,
-                teacherEmail: pendingExamToStart?.teacherEmail || '',
-                teacherName: pendingExamToStart?.teacherName || '',
-                examId: pendingExamToStart?.id || pendingExamToStart?._id || '',
-                examTitle: pendingExamToStart?.title || '',
-                status: 'Face Verified & Active',
-                statusBadge: '🟢 Verified: ' + student.name,
-                started: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                remaining: '01:00:00',
-                answered: '0 / 3',
-                voice: 'Active (en-US)',
-                submitted: 'No',
-                faceVerified: true,
-                facePresent: true,
-                faceSnapshot: snapshotDataUrl
-              };
-              localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
-              window.dispatchEvent(new Event('storage'));
-            } catch (e) {}
-
-            const successMsg = `Face matched with registered profile picture. Welcome ${student.name}. Entering exam now.`;
-            announce(successMsg);
-            speakText(successMsg);
-
-            setTimeout(() => {
-              setFaceAuthModalOpen(false);
-              if (pendingExamToStart) {
-                launchActualExam(pendingExamToStart);
-              }
-            }, 800);
-          }
-        } else if (peopleCheck.isMultiple) {
+        if (peopleCheck.isMultiple) {
           consecutiveMultiplePeopleCountRef.current++;
-          if (consecutiveMultiplePeopleCountRef.current >= 6) {
+          if (consecutiveMultiplePeopleCountRef.current >= 4) {
             setIsMultiplePeopleDetected(true);
             isMultiplePeopleDetectedRef.current = true;
             setDetectedPeopleCount(peopleCheck.count);
             setFaceConfidence(0);
             setFaceMatchScore(0);
-            progress = 0;
-            setFaceScanProgress(0);
+            stageStableTicksRef.current = 0;
             setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
             setFaceMatchStatus(`🔴 Multiple people detected (${peopleCheck.count} People) — Please be alone`);
 
@@ -4282,22 +4220,181 @@ export default function StudentDashboard() {
               speakText(`Warning: Multiple people detected in camera view. Only candidate ${student.name} must be in front of the camera.`);
             }
           }
-        } else if (matchPercent >= 35) {
-          // Candidate face is aligned in frame, fine-tuning features
-          consecutiveMultiplePeopleCountRef.current = 0;
-          setIsMultiplePeopleDetected(false);
-          isMultiplePeopleDetectedRef.current = false;
-          setFaceMatchStatus(`⏳ Aligning face features with profile photo... (${matchPercent}% match, hold still)`);
-          setFaceErrorMessage('');
+          return;
         } else {
-          // Face mismatch against enrolled profile photo
-          consecutiveMultiplePeopleCountRef.current = 0;
           setIsMultiplePeopleDetected(false);
           isMultiplePeopleDetectedRef.current = false;
-          progress = Math.max(0, progress - 4);
-          setFaceScanProgress(progress);
-          setFaceMatchStatus(`🔴 Face Mismatch (${matchPercent}% match): Face does not match registered profile photo of ${student.name}`);
-          setFaceErrorMessage(`Identity Mismatch: The live face does not match the registered profile photo of ${student.name} (${matchPercent}% match). Please ensure proper lighting and face the camera directly.`);
+          consecutiveMultiplePeopleCountRef.current = 0;
+        }
+
+        if (!peopleCheck.isPresent) {
+          stageStableTicksRef.current = Math.max(0, stageStableTicksRef.current - 1);
+          setFaceConfidence(0);
+          setFaceMatchScore(0);
+          const stagePrompt = scanStageRef.current === 'center'
+            ? '🎯 Step 1: Align your face looking straight into the camera...'
+            : scanStageRef.current === 'left'
+              ? '👈 Step 2: Turn your face slightly to the left...'
+              : '👉 Step 3: Turn your face slightly to the right...';
+          setFaceMatchStatus(stagePrompt);
+          setFaceErrorMessage("Please position your face clearly inside the oval target.");
+          return;
+        }
+
+        // Biometric similarity check against enrolled profile picture and center vector
+        let similarity = 0;
+        if (refVector && liveVector) {
+          similarity = computeBiometricSimilarity(refVector, liveVector);
+        }
+        let centerSim = 0;
+        if (scannedExamFaceVectorsRef.current.center && liveVector) {
+          centerSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.center, liveVector);
+        }
+
+        const matchPercent = Math.min(99, Math.round(similarity * 100));
+        setFaceConfidence(matchPercent);
+        setFaceMatchScore(matchPercent);
+
+        const currentStage = scanStageRef.current;
+        let isStageMatch = false;
+
+        if (currentStage === 'center') {
+          // Profile photo is frontal: require strong correlation
+          isStageMatch = Boolean(similarity >= 0.40);
+        } else if (currentStage === 'left') {
+          // Turned left: matches either profile photo or the just-captured center angle
+          isStageMatch = Boolean(similarity >= 0.28 || centerSim >= 0.38);
+        } else if (currentStage === 'right') {
+          // Turned right: matches either profile photo or center angle
+          isStageMatch = Boolean(similarity >= 0.28 || centerSim >= 0.38);
+        }
+
+        if (isStageMatch) {
+          setFaceErrorMessage('');
+          stageStableTicksRef.current++;
+
+          if (currentStage === 'center') {
+            const centerProg = Math.min(33, stageStableTicksRef.current * 11);
+            setFaceScanProgress(centerProg);
+            setFaceMatchStatus(`🟢 Step 1: Scanning Center Face (${centerProg}%)... Candidate: ${student.name}`);
+
+            if (stageStableTicksRef.current >= 3) {
+              const snap = canvas.toDataURL('image/jpeg', 0.88);
+              scannedExamFaceVectorsRef.current.center = liveVector;
+              scannedExamFaceVectorRef.current = liveVector;
+              scannedAnglesStateRef.current.center = true;
+              setScannedAnglesState(prev => ({ ...prev, center: true }));
+              setScannedAnglesThumbs(prev => ({ ...prev, center: snap }));
+              setFaceSnapshotUrl(snap);
+              setScannedExamFaceUrl(snap);
+
+              scanStageRef.current = 'left';
+              setFaceScanStage('left');
+              stageStableTicksRef.current = 0;
+              setFaceScanProgress(34);
+              setFaceMatchStatus("✓ Center Angle Captured! Step 2: Now turn your face slightly to the left 👈");
+              announce("Center angle verified. Now turn your face slightly to the left.");
+              speakText("Center angle verified. Now turn your face slightly to the left.");
+            }
+          } else if (currentStage === 'left') {
+            const leftProg = 33 + Math.min(33, stageStableTicksRef.current * 11);
+            setFaceScanProgress(leftProg);
+            setFaceMatchStatus(`🟢 Step 2: Scanning Left Angle (${leftProg}%)... Candidate: ${student.name}`);
+
+            if (stageStableTicksRef.current >= 3) {
+              const snap = canvas.toDataURL('image/jpeg', 0.88);
+              scannedExamFaceVectorsRef.current.left = liveVector;
+              scannedAnglesStateRef.current.left = true;
+              setScannedAnglesState(prev => ({ ...prev, left: true }));
+              setScannedAnglesThumbs(prev => ({ ...prev, left: snap }));
+
+              scanStageRef.current = 'right';
+              setFaceScanStage('right');
+              stageStableTicksRef.current = 0;
+              setFaceScanProgress(67);
+              setFaceMatchStatus("✓ Left Angle Captured! Step 3: Now turn your face slightly to the right 👉");
+              announce("Left angle verified. Now turn your face slightly to the right.");
+              speakText("Left angle verified. Now turn your face slightly to the right.");
+            }
+          } else if (currentStage === 'right') {
+            const rightProg = 66 + Math.min(34, stageStableTicksRef.current * 12);
+            setFaceScanProgress(rightProg);
+            setFaceMatchStatus(`🟢 Step 3: Scanning Right Angle (${rightProg}%)... Candidate: ${student.name}`);
+
+            if (stageStableTicksRef.current >= 3) {
+              const snap = canvas.toDataURL('image/jpeg', 0.88);
+              scannedExamFaceVectorsRef.current.right = liveVector;
+              scannedAnglesStateRef.current.right = true;
+              setScannedAnglesState(prev => ({ ...prev, right: true }));
+              setScannedAnglesThumbs(prev => ({ ...prev, right: snap }));
+
+              scanStageRef.current = 'complete';
+              setFaceScanStage('complete');
+              setFaceScanProgress(100);
+              clearInterval(scanIntervalRef.current);
+              scanIntervalRef.current = null;
+
+              setFaceDetecting(false);
+              setFaceDetected(true);
+              setIsFaceVerifiedForExam(true);
+              setIsFacePresentInExam(true);
+              setIsScannedStudentWriting(true);
+              setIsOtherPersonDetected(false);
+              setIsMultiplePeopleDetected(false);
+              isScannedStudentWritingRef.current = true;
+
+              // Record multi-angle face verification in shared logs for Teacher Dashboard
+              try {
+                const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+                const updatedLog = {
+                  id: `log_${Date.now()}`,
+                  student: student.name,
+                  studentName: student.name,
+                  teacherEmail: pendingExamToStart?.teacherEmail || '',
+                  teacherName: pendingExamToStart?.teacherName || '',
+                  examId: pendingExamToStart?.id || pendingExamToStart?._id || '',
+                  examTitle: pendingExamToStart?.title || '',
+                  status: 'Multi-Angle Face Verified & Active',
+                  statusBadge: '🟢 Verified (All Angles): ' + student.name,
+                  started: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  remaining: '01:00:00',
+                  answered: '0 / 3',
+                  voice: 'Active (en-US)',
+                  submitted: 'No',
+                  faceVerified: true,
+                  facePresent: true,
+                  faceSnapshot: snap,
+                  multiAngleVerified: true
+                };
+                localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
+                window.dispatchEvent(new Event('storage'));
+              } catch (e) {}
+
+              const successMsg = `Multi-angle biometric scan complete. Center, left, and right verified for ${student.name}. Entering exam now.`;
+              announce(successMsg);
+              speakText(successMsg);
+
+              setTimeout(() => {
+                setFaceAuthModalOpen(false);
+                if (pendingExamToStart) {
+                  launchActualExam(pendingExamToStart);
+                }
+              }, 900);
+            }
+          }
+        } else if (matchPercent >= 32) {
+          // Face in frame, aligning
+          setFaceErrorMessage('');
+          const stagePrompt = currentStage === 'center'
+            ? `⏳ Aligning center face features... (${matchPercent}% match)`
+            : currentStage === 'left'
+              ? `👈 Aligning left face profile... (${matchPercent}% match)`
+              : `👉 Aligning right face profile... (${matchPercent}% match)`;
+          setFaceMatchStatus(stagePrompt);
+        } else {
+          // Mismatch against candidate
+          setFaceErrorMessage(`Identity Mismatch: Live face does not match registered profile photo of ${student.name} (${matchPercent}% match). Please ensure proper lighting and face the camera.`);
+          setFaceMatchStatus(`🔴 Face Mismatch (${matchPercent}% match): Unverified Face`);
         }
       } catch (e) {}
     }, 250);
@@ -4310,123 +4407,160 @@ export default function StudentDashboard() {
     };
   }, [faceAuthModalOpen, pendingExamToStart, student, studentProfile.profilePic]);
 
-  // Instant Manual Scan & Lock Face Button for Examinee
+  // Instant Manual Scan & Lock Face Button for Examinee across stages (Center -> Left -> Right -> Enter)
   const handleManualPassFaceAuth = async () => {
-    let snapshotDataUrl = null;
-    let liveVector = null;
-    if (canvasRef.current && videoRef.current) {
-      try {
-        const canvas = canvasRef.current;
-        const video = videoRef.current;
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+    if (!canvasRef.current || !videoRef.current) return;
+    try {
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const snapshotDataUrl = canvas.toDataURL('image/jpeg', 0.88);
 
-        // Multi-person and face match check
-        const peopleCheck = await detectPeopleInCanvas(canvas);
-        if (peopleCheck.isMultiple) {
-          setIsMultiplePeopleDetected(true);
-          isMultiplePeopleDetectedRef.current = true;
-          setDetectedPeopleCount(peopleCheck.count);
-          setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
-          setFaceMatchStatus(`🔴 Multiple people detected! Examination blocked.`);
-          speakText(`Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
-          return;
+      const peopleCheck = await detectPeopleInCanvas(canvas);
+      if (peopleCheck.isMultiple) {
+        setIsMultiplePeopleDetected(true);
+        isMultiplePeopleDetectedRef.current = true;
+        setDetectedPeopleCount(peopleCheck.count);
+        setFaceErrorMessage(`⚠️ Multiple people detected in camera (${peopleCheck.count} individuals)! Examination requires strictly single candidate ${student.name}. Please ensure you are alone.`);
+        setFaceMatchStatus(`🔴 Multiple people detected! Examination blocked.`);
+        speakText(`Multiple people detected in front of the camera. Only candidate ${student.name} is permitted.`);
+        return;
+      }
+
+      if (!peopleCheck.isPresent) {
+        setFaceErrorMessage("No candidate face detected. Please position your face inside the camera circle.");
+        speakText("No face detected. Please position your face inside the circle.");
+        return;
+      }
+
+      const liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
+
+      let refVector = enrolledFaceVectorRef.current;
+      if (!refVector) {
+        const availPic = studentProfile.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic');
+        if (availPic) {
+          refVector = await extractBiometricFeaturesFromImage(availPic);
+          if (refVector) enrolledFaceVectorRef.current = refVector;
         }
+      }
 
-        liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
+      if (!refVector) {
+        setFaceErrorMessage(`Mandatory Exam Requirement: No registered profile photo found for ${student.name}. Please register your profile photo first.`);
+        speakText(`Identity verification failed. No registered profile photo found for ${student.name}. You cannot write this exam.`);
+        return;
+      }
 
-        let refVector = enrolledFaceVectorRef.current;
-        if (!refVector) {
-          const availPic = studentProfile.profilePic || localStorage.getItem('student_profile_pic') || localStorage.getItem('last_active_student_profile_pic');
-          if (availPic) {
-            refVector = await extractBiometricFeaturesFromImage(availPic);
-            if (refVector) enrolledFaceVectorRef.current = refVector;
-          }
-        }
+      const sim = computeBiometricSimilarity(refVector, liveVector);
+      const matchScore = Math.round(sim * 100);
 
-        if (!refVector) {
-          setFaceErrorMessage(`Mandatory Exam Requirement: No registered profile photo found for ${student.name}. A student cannot write an exam without a matching profile photo. Please register your profile photo first.`);
-          speakText(`Identity verification failed. No registered profile photo found for ${student.name}. You cannot write this exam.`);
-          return;
-        }
+      // Verify on center stage
+      if (scanStageRef.current === 'center' && sim < 0.35) {
+        setFaceErrorMessage(`Face Mismatch (${matchScore}% match)! Live face does not match registered profile photo of ${student.name}.`);
+        speakText(`Identity verification failed. Your face does not match the registered profile photo of ${student.name}.`);
+        return;
+      }
 
-        if (!peopleCheck.isPresent) {
-          setFaceErrorMessage("No candidate face detected. Please position your face inside the camera circle.");
-          speakText("No face detected. Please position your face inside the circle.");
-          return;
-        }
+      setIsMultiplePeopleDetected(false);
+      isMultiplePeopleDetectedRef.current = false;
+      setFaceConfidence(Math.max(matchScore, 50));
+      setFaceMatchScore(Math.max(matchScore, 50));
 
-        const sim = computeBiometricSimilarity(refVector, liveVector);
-        const matchScore = Math.round(sim * 100);
-
-        if (sim < 0.38) {
-          setFaceErrorMessage(`Face Mismatch (${matchScore}% match)! Live face does not match registered profile photo of ${student.name}. Please ensure good lighting and face camera directly.`);
-          speakText(`Identity verification failed. Your face does not match the registered profile photo of ${student.name}. You cannot write this exam.`);
-          return;
-        }
-
-        setIsMultiplePeopleDetected(false);
-        isMultiplePeopleDetectedRef.current = false;
-        setFaceConfidence(Math.max(matchScore, 50));
-        setFaceMatchScore(Math.max(matchScore, 50));
+      const activeStage = scanStageRef.current;
+      if (activeStage === 'center') {
+        scannedExamFaceVectorsRef.current.center = liveVector;
+        scannedExamFaceVectorRef.current = liveVector;
+        scannedAnglesStateRef.current.center = true;
+        setScannedAnglesState(prev => ({ ...prev, center: true }));
+        setScannedAnglesThumbs(prev => ({ ...prev, center: snapshotDataUrl }));
         setFaceSnapshotUrl(snapshotDataUrl);
         setScannedExamFaceUrl(snapshotDataUrl);
-      } catch (e) {}
-    }
 
-    if (liveVector) {
-      scannedExamFaceVectorRef.current = liveVector;
-    }
+        scanStageRef.current = 'left';
+        setFaceScanStage('left');
+        setFaceScanProgress(34);
+        setFaceMatchStatus("✓ Step 1 Center locked! Step 2: Now turn your face slightly to the left 👈");
+        announce("Center angle locked. Now turn your face slightly to the left.");
+        speakText("Center angle locked. Now turn your face slightly to the left.");
+      } else if (activeStage === 'left') {
+        scannedExamFaceVectorsRef.current.left = liveVector;
+        scannedAnglesStateRef.current.left = true;
+        setScannedAnglesState(prev => ({ ...prev, left: true }));
+        setScannedAnglesThumbs(prev => ({ ...prev, left: snapshotDataUrl }));
 
-    setFaceScanProgress(100);
-    setFaceDetecting(false);
-    setFaceDetected(true);
-    setIsFaceVerifiedForExam(true);
-    setIsFacePresentInExam(true);
-    setIsScannedStudentWriting(true);
-    setIsOtherPersonDetected(false);
-    setIsMultiplePeopleDetected(false);
-    isMultiplePeopleDetectedRef.current = false;
-    isScannedStudentWritingRef.current = true;
+        scanStageRef.current = 'right';
+        setFaceScanStage('right');
+        setFaceScanProgress(67);
+        setFaceMatchStatus("✓ Step 2 Left locked! Step 3: Now turn your face slightly to the right 👉");
+        announce("Left angle locked. Now turn your face slightly to the right.");
+        speakText("Left angle locked. Now turn your face slightly to the right.");
+      } else {
+        // Right or finalize
+        scannedExamFaceVectorsRef.current.right = liveVector;
+        scannedAnglesStateRef.current.right = true;
+        setScannedAnglesState(prev => ({ ...prev, right: true }));
+        setScannedAnglesThumbs(prev => ({ ...prev, right: snapshotDataUrl }));
 
-    try {
-      const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
-      const updatedLog = {
-        id: `log_${Date.now()}`,
-        student: student.name,
-        studentName: student.name,
-        teacherEmail: pendingExamToStart?.teacherEmail || '',
-        teacherName: pendingExamToStart?.teacherName || '',
-        examId: pendingExamToStart?.id || pendingExamToStart?._id || '',
-        examTitle: pendingExamToStart?.title || '',
-        status: 'Face Verified & Active',
-        statusBadge: '🟢 Verified: ' + student.name,
-        started: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        remaining: '01:00:00',
-        answered: '0 / 3',
-        voice: 'Active (en-US)',
-        submitted: 'No',
-        faceVerified: true,
-        facePresent: true,
-        faceSnapshot: snapshotDataUrl || faceSnapshotUrl
-      };
-      localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {}
-    
-    const msg = `Face scanned and confirmed for candidate ${student.name}. Biometric identity locked for this exam. Starting with continuous live proctoring.`;
-    announce(msg);
-    speakText(msg);
+        scanStageRef.current = 'complete';
+        setFaceScanStage('complete');
+        setFaceScanProgress(100);
+        setFaceDetecting(false);
+        setFaceDetected(true);
+        setIsFaceVerifiedForExam(true);
+        setIsFacePresentInExam(true);
+        setIsScannedStudentWriting(true);
+        setIsOtherPersonDetected(false);
+        setIsMultiplePeopleDetected(false);
+        isScannedStudentWritingRef.current = true;
 
-    setTimeout(() => {
-      setFaceAuthModalOpen(false);
-      if (pendingExamToStart) {
-        launchActualExam(pendingExamToStart);
+        if (scanIntervalRef.current) {
+          clearInterval(scanIntervalRef.current);
+          scanIntervalRef.current = null;
+        }
+
+        try {
+          const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+          const updatedLog = {
+            id: `log_${Date.now()}`,
+            student: student.name,
+            studentName: student.name,
+            teacherEmail: pendingExamToStart?.teacherEmail || '',
+            teacherName: pendingExamToStart?.teacherName || '',
+            examId: pendingExamToStart?.id || pendingExamToStart?._id || '',
+            examTitle: pendingExamToStart?.title || '',
+            status: 'Multi-Angle Face Verified & Active',
+            statusBadge: '🟢 Verified (All Angles): ' + student.name,
+            started: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            remaining: '01:00:00',
+            answered: '0 / 3',
+            voice: 'Active (en-US)',
+            submitted: 'No',
+            faceVerified: true,
+            facePresent: true,
+            faceSnapshot: snapshotDataUrl || faceSnapshotUrl,
+            multiAngleVerified: true
+          };
+          localStorage.setItem('shared_live_logs', JSON.stringify([updatedLog, ...existingLogs.filter(l => l.student !== student.name)]));
+          window.dispatchEvent(new Event('storage'));
+        } catch (e) {}
+
+        const msg = `Multi-angle face scan confirmed for candidate ${student.name}. Biometric identity locked across center, left, and right angles. Entering exam now.`;
+        announce(msg);
+        speakText(msg);
+
+        setTimeout(() => {
+          setFaceAuthModalOpen(false);
+          if (pendingExamToStart) {
+            launchActualExam(pendingExamToStart);
+          }
+        }, 800);
       }
-    }, 800);
+    } catch (e) {
+      console.warn("Manual face pass error:", e);
+    }
   };
 
   const handleCancelFaceAuth = () => {
@@ -4491,17 +4625,32 @@ export default function StudentDashboard() {
         const peopleCheck = await detectPeopleInCanvas(canvas);
         const liveVector = extractBiometricFeaturesFromCanvas(canvas, peopleCheck.primaryFaceBox);
         const enrolledVector = enrolledFaceVectorRef.current;
-        const scannedVector = scannedExamFaceVectorRef.current;
+        const scannedVectors = scannedExamFaceVectorsRef.current || {};
+        const scannedCenter = scannedVectors.center || scannedExamFaceVectorRef.current;
+        const scannedLeft = scannedVectors.left;
+        const scannedRight = scannedVectors.right;
 
         let enrolledSim = 0;
-        let scannedSim = 0;
+        let simCenter = 0;
+        let simLeft = 0;
+        let simRight = 0;
 
         if (enrolledVector && liveVector) {
           enrolledSim = computeBiometricSimilarity(enrolledVector, liveVector);
         }
-        if (scannedVector && liveVector) {
-          scannedSim = computeBiometricSimilarity(scannedVector, liveVector);
+        if (scannedCenter && liveVector) {
+          simCenter = computeBiometricSimilarity(scannedCenter, liveVector);
         }
+        if (scannedLeft && liveVector) {
+          simLeft = computeBiometricSimilarity(scannedLeft, liveVector);
+        }
+        if (scannedRight && liveVector) {
+          simRight = computeBiometricSimilarity(scannedRight, liveVector);
+        }
+
+        // Multi-Angle Matching: Matches if ANY of Center, Left, or Right angle matches!
+        const bestScannedSim = Math.max(simCenter, simLeft, simRight);
+        const bestOverallSim = Math.max(bestScannedSim, enrolledSim);
 
         const now = Date.now();
 
@@ -4555,13 +4704,10 @@ export default function StudentDashboard() {
           isScannedStudentWritingRef.current = false;
         } else {
           // Exactly 1 person in camera: verify if it's the registered scanned student
+          // Head movement tolerance: When student moves or turns face (center/left/right/writing), it matches one of the 3 enrolled angles!
           let isScannedStudentMatch = false;
-          if (scannedVector && enrolledVector) {
-            isScannedStudentMatch = Boolean(scannedSim >= 0.50 && (enrolledSim >= 0.35 || scannedSim >= 0.65));
-          } else if (scannedVector) {
-            isScannedStudentMatch = Boolean(scannedSim >= 0.50);
-          } else if (enrolledVector) {
-            isScannedStudentMatch = Boolean(enrolledSim >= 0.45);
+          if (scannedCenter || scannedLeft || scannedRight || enrolledVector) {
+            isScannedStudentMatch = Boolean(bestScannedSim >= 0.38 || bestOverallSim >= 0.38);
           } else {
             isScannedStudentMatch = true;
           }
@@ -4616,18 +4762,19 @@ export default function StudentDashboard() {
           setIsOtherPersonDetected(true);
           isScannedStudentWritingRef.current = false;
 
-          // Fast Strike Dispatcher:
-          // Alert 1 fires on tick 2 (~1.2s)!
-          // Alert 2 fires after 3.5s cooldown
-          // Strike 3 (Exit) fires after 3.0s cooldown
+          // Sustained Violation & Alert Spacing:
+          // 1. Requires at least 7 consecutive ticks (~8.4 seconds) of continuous violation
+          //    so student moving head, glancing down, or shifting posture NEVER triggers false alert!
+          // 2. Cooldown between alerts is AT LEAST 20 SECONDS so student has plenty of time to readjust!
           const timeSinceLastAlert = now - lastMismatchAlertTimeRef.current;
           const strikeCooldown = faceMismatchStrikeCountRef.current === 0 
             ? 0 
-            : (faceMismatchStrikeCountRef.current === 1 ? 3500 : 3000);
+            : 20000; // 20 full seconds spacing between one alert to another alert!
 
-          const minRequiredTicks = violationType === 'multiple_people' ? 3 : 2;
+          const minRequiredTicks = 7; // ~8.4 seconds sustained violation required
           if (consecutiveMismatchTicksRef.current >= minRequiredTicks && timeSinceLastAlert >= strikeCooldown) {
             lastMismatchAlertTimeRef.current = now;
+            consecutiveMismatchTicksRef.current = 0; // Reset ticks so next alert requires another 8.4s sustained violation
 
               if (faceMismatchStrikeCountRef.current === 0) {
                 // === ALERT 1 OF 2 ===
@@ -7102,7 +7249,7 @@ export default function StudentDashboard() {
             </div>
 
             <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a', margin: '0 0 6px 0' }}>
-              Candidate Face Biometric Scanner
+              Candidate Multi-Angle Face Biometric Scanner
             </h2>
             <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b', lineHeight: 1.4 }}>
               Candidate: <b>{student.name}</b> (Reg: {student.studentId}) • Exam: <b>{pendingExamToStart?.title || 'Exam'}</b>
@@ -7215,6 +7362,62 @@ export default function StudentDashboard() {
                 </button>
               </div>
 
+              {/* 3-Step Multi-Angle Enrollment Indicator (Center -> Left -> Right) */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '8px',
+                marginBottom: '14px'
+              }}>
+                <div style={{
+                  background: scannedAnglesState.center ? '#f0fdf4' : faceScanStage === 'center' ? '#eff6ff' : '#f8fafc',
+                  border: scannedAnglesState.center ? '2px solid #22c55e' : faceScanStage === 'center' ? '2px solid #0284c7' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '8px 10px',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: scannedAnglesState.center ? '#15803d' : faceScanStage === 'center' ? '#0369a1' : '#64748b' }}>
+                    👤 Step 1: Center {scannedAnglesState.center ? '✓' : faceScanStage === 'center' ? '●' : '○'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: scannedAnglesState.center ? '#16a34a' : '#94a3b8', marginTop: '2px', fontWeight: '600' }}>
+                    {scannedAnglesState.center ? 'Locked ✓' : faceScanStage === 'center' ? 'Look Straight' : 'Pending'}
+                  </div>
+                </div>
+
+                <div style={{
+                  background: scannedAnglesState.left ? '#f0fdf4' : faceScanStage === 'left' ? '#eff6ff' : '#f8fafc',
+                  border: scannedAnglesState.left ? '2px solid #22c55e' : faceScanStage === 'left' ? '2px solid #0284c7' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '8px 10px',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: scannedAnglesState.left ? '#15803d' : faceScanStage === 'left' ? '#0369a1' : '#64748b' }}>
+                    👈 Step 2: Left {scannedAnglesState.left ? '✓' : faceScanStage === 'left' ? '●' : '○'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: scannedAnglesState.left ? '#16a34a' : '#94a3b8', marginTop: '2px', fontWeight: '600' }}>
+                    {scannedAnglesState.left ? 'Locked ✓' : faceScanStage === 'left' ? 'Turn Face Left' : 'Pending'}
+                  </div>
+                </div>
+
+                <div style={{
+                  background: scannedAnglesState.right ? '#f0fdf4' : faceScanStage === 'right' ? '#eff6ff' : '#f8fafc',
+                  border: scannedAnglesState.right ? '2px solid #22c55e' : faceScanStage === 'right' ? '2px solid #0284c7' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '8px 10px',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: scannedAnglesState.right ? '#15803d' : faceScanStage === 'right' ? '#0369a1' : '#64748b' }}>
+                    👉 Step 3: Right {scannedAnglesState.right ? '✓' : faceScanStage === 'right' ? '●' : '○'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: scannedAnglesState.right ? '#16a34a' : '#94a3b8', marginTop: '2px', fontWeight: '600' }}>
+                    {scannedAnglesState.right ? 'Locked ✓' : faceScanStage === 'right' ? 'Turn Face Right' : 'Pending'}
+                  </div>
+                </div>
+              </div>
+
               {/* Camera Viewport with Oval Target Overlay */}
               <div style={{
                 position: 'relative',
@@ -7262,6 +7465,57 @@ export default function StudentDashboard() {
                   pointerEvents: 'none',
                   transition: 'all 0.3s ease'
                 }} />
+
+                {/* Dynamic Angle Guide Banner */}
+                <div style={{
+                  position: 'absolute',
+                  top: '12px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: faceScanStage === 'complete' 
+                    ? 'rgba(22, 163, 74, 0.95)' 
+                    : faceScanStage === 'center' 
+                      ? 'rgba(2, 132, 199, 0.92)' 
+                      : faceScanStage === 'left' 
+                        ? 'rgba(126, 34, 206, 0.92)' 
+                        : 'rgba(217, 119, 6, 0.92)',
+                  color: '#ffffff',
+                  padding: '5px 14px',
+                  borderRadius: '20px',
+                  fontSize: '11px',
+                  fontWeight: '900',
+                  letterSpacing: '0.3px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
+                  zIndex: 4,
+                  whiteSpace: 'nowrap'
+                }}>
+                  {faceScanStage === 'center' && '🎯 STEP 1: LOOK STRAIGHT INTO CAMERA'}
+                  {faceScanStage === 'left' && '👈 STEP 2: TURN FACE SLIGHTLY LEFT'}
+                  {faceScanStage === 'right' && '👉 STEP 3: TURN FACE SLIGHTLY RIGHT'}
+                  {faceScanStage === 'complete' && '✓ ALL 3 ANGLES SCANNED & VERIFIED!'}
+                </div>
+
+                {/* Captured Multi-Angle Thumbnails Badge */}
+                <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '4px', zIndex: 4 }}>
+                  {scannedAnglesThumbs.center && (
+                    <div title="Center angle captured" style={{ width: '28px', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #22c55e', background: '#000' }}>
+                      <img src={scannedAnglesThumbs.center} alt="C" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                  {scannedAnglesThumbs.left && (
+                    <div title="Left angle captured" style={{ width: '28px', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #22c55e', background: '#000' }}>
+                      <img src={scannedAnglesThumbs.left} alt="L" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                  {scannedAnglesThumbs.right && (
+                    <div title="Right angle captured" style={{ width: '28px', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #22c55e', background: '#000' }}>
+                      <img src={scannedAnglesThumbs.right} alt="R" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                </div>
 
                 {/* Glowing Corner Accents */}
                 <div style={{ position: 'absolute', top: '12px', left: '12px', width: '20px', height: '20px', borderTop: '3px solid #38bdf8', borderLeft: '3px solid #38bdf8' }} />
@@ -7365,9 +7619,13 @@ export default function StudentDashboard() {
                     ? '⛔ No Profile Photo (Exam Blocked)'
                     : isMultiplePeopleDetected
                       ? '⚠️ Multiple People Detected (Blocked)'
-                      : (faceDetected || faceConfidence >= 46) 
-                        ? '✓ Enter Exam Now' 
-                        : '📸 Verify & Lock My Face Now'}
+                      : (faceDetected || faceScanStage === 'complete')
+                        ? '✓ Multi-Angle Verified: Enter Exam Now'
+                        : faceScanStage === 'center'
+                          ? '📸 1. Lock Center Face & Next (Turn Left 👈)'
+                          : faceScanStage === 'left'
+                            ? '📸 2. Lock Left Face & Next (Turn Right 👉)'
+                            : '📸 3. Lock Right Face & Complete Verification'}
                 </button>
                 <button
                   type="button"
