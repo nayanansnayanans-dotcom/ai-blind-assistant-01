@@ -2796,6 +2796,16 @@ export default function StudentDashboard() {
   }, [activeSubject, studentProfile.email]);
 
   const handleSwitchStudentSubject = async (newSubject) => {
+    // Strictly prevent subject switching when student is in an exam or oral viva
+    if (isExamActive || currentExam || activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam') {
+      console.warn("Ignoring subject switch during an active exam session.");
+      return;
+    }
+    if (activeTab === 'AI Oral Viva Simulator') {
+      console.warn("Ignoring subject switch during an active viva session.");
+      return;
+    }
+
     const targetSub = (newSubject || 'Computer Science').trim();
     setActiveSubject(targetSub);
     setStudentProfile(prev => ({ ...prev, interestedSubject: targetSub, subject: targetSub }));
@@ -6277,6 +6287,215 @@ export default function StudentDashboard() {
       return;
     }
 
+    // -------------------------------------------------------------------------
+    // STRICT ACTIVE EXAM MODE: When student is taking an exam, Voice Assistant
+    // speaks and processes ONLY exam-related content (questions, answers, navigation, SOS).
+    // It NEVER prompts for interested subject, NEVER switches subjects, and NEVER lists features!
+    // -------------------------------------------------------------------------
+    const isStudentInActiveExam = Boolean(
+      (currentExam || isExamActive) &&
+      !examSubmitted &&
+      (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive)
+    );
+
+    if (isStudentInActiveExam) {
+      // 1. Exit / Cancel Exam
+      if (transcript.includes('exit exam') || transcript.includes('cancel exam') || transcript.includes('quit exam') || transcript.includes('leave exam')) {
+        handleExitExamWithoutSubmitting();
+        return;
+      }
+
+      // 2. Submit Exam
+      if (transcript === 'submit' || transcript.includes('submit exam') || transcript.includes('finish exam') || transcript.includes('complete exam')) {
+        handleSubmitExam();
+        return;
+      }
+
+      // 3. Next Question / Save and Next
+      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('save and next') || transcript.includes('go to next')) {
+        handleSaveAndNext();
+        return;
+      }
+
+      // 4. Previous Question
+      if (transcript === 'previous' || transcript === 'back' || transcript.includes('previous question') || transcript.includes('go back')) {
+        handlePreviousQ();
+        return;
+      }
+
+      // 5. Repeat / Read Question
+      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say question') || transcript === 'repeat the question' || transcript === 'read the question' || (transcript === 'repeat' && !currentAnswerInput)) {
+        handleReadExamQuestionStepByStep(currentQIndex);
+        return;
+      }
+
+      // 6. Repeat / Clear Answer
+      if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || transcript.includes('re-answer') || transcript.includes('re-record') || transcript.includes('clear answer') || (transcript === 'repeat' && currentAnswerInput)) {
+        updateCurrentAnswer('');
+        speakText("Clearing previous answer. Please speak your answer again now.", () => {
+          setTimeout(() => {
+            handleStartExamAnswerDictation();
+          }, 300);
+        });
+        return;
+      }
+
+      // 7. Check / Read Recorded Answer
+      if (transcript.includes('read my answer') || transcript.includes('listen my answer') || transcript.includes('read answer') || transcript.includes('what is my answer') || transcript.includes('what did i answer')) {
+        speakText(`Your recorded answer is: ${currentAnswerInput || 'empty'}. Say Next Question to proceed, or say Repeat Answer to re-record.`);
+        return;
+      }
+
+      // 8. Remaining Time Check
+      if (transcript.includes('time') || transcript.includes('remaining') || transcript.includes('clock') || transcript.includes('how much time')) {
+        const mins = Math.floor(examTimeRemaining / 60);
+        speakText(`You have ${mins} minutes remaining in your exam.`);
+        return;
+      }
+
+      // 9. SOS / Emergency
+      if (transcript.includes('emergency') || transcript.includes('sos') || transcript.includes('teacher assist')) {
+        handleEmergencyAssistAlert();
+        return;
+      }
+
+      // 10. MCQ Option Confirmation
+      if (transcript.includes('confirm') || transcript.includes('confirm answer')) {
+        setMcqConfirmationPending(false);
+        speakText("Answer confirmed.");
+        handleSaveAndNext();
+        return;
+      }
+
+      // 11. MCQ Option selection
+      const currentQ = currentExam?.questions?.[currentQIndex];
+      if (currentQ?.options && currentQ.options.length > 0) {
+        let selectedOption = null;
+        if (transcript.includes('option a') || transcript.includes('select a') || transcript.includes('choice a') || transcript === 'a' || transcript === 'option 1' || transcript === '1') {
+          selectedOption = currentQ.options[0];
+        } else if (transcript.includes('option b') || transcript.includes('select b') || transcript.includes('choice b') || transcript === 'b' || transcript === 'option 2' || transcript === '2') {
+          selectedOption = currentQ.options[1];
+        } else if (transcript.includes('option c') || transcript.includes('select c') || transcript.includes('choice c') || transcript === 'c' || transcript === 'option 3' || transcript === '3') {
+          selectedOption = currentQ.options[2];
+        } else if (transcript.includes('option d') || transcript.includes('select d') || transcript.includes('choice d') || transcript === 'd' || transcript === 'option 4' || transcript === '4') {
+          selectedOption = currentQ.options[3];
+        } else {
+          for (const opt of currentQ.options) {
+            const optLower = opt.toLowerCase();
+            if (transcript.includes(optLower) || (optLower.length > 8 && transcript.includes(optLower.slice(0, 15)))) {
+              selectedOption = opt;
+              break;
+            }
+          }
+        }
+
+        if (selectedOption) {
+          updateCurrentAnswer(selectedOption);
+          setMcqConfirmationPending(false);
+          const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+          const promptText = isLastQ
+            ? `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
+            : `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
+          speakText(promptText, () => {
+            setTimeout(() => {
+              handleStartExamAnswerDictation();
+            }, 400);
+          });
+          return;
+        }
+      }
+
+      // 12. Candidate's Spoken Answer (Default during exam)
+      const cleanAnswer = rawText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || rawText;
+      updateCurrentAnswer(cleanAnswer);
+      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
+      const promptText = isLastQ
+        ? `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
+        : `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
+      speakText(promptText, () => {
+        setTimeout(() => {
+          handleStartExamAnswerDictation();
+        }, 400);
+      });
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // STRICT ACTIVE ORAL VIVA MODE: When student is in viva simulator,
+    // Voice Assistant handles only viva questions, answers & commands.
+    // NEVER switch subjects, NEVER list features, NEVER ask for interested subject!
+    // -------------------------------------------------------------------------
+    const isStudentInActiveViva = Boolean(activeTab === 'AI Oral Viva Simulator');
+    if (isStudentInActiveViva) {
+      const activeVivaList = resolveCurrentVivaList();
+      const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
+
+      // 1. Submit Viva
+      if (transcript === 'submit' || transcript.includes('submit viva') || transcript.includes('finish viva') || transcript.includes('complete viva')) {
+        handleSubmitVivaExam();
+        return;
+      }
+
+      // 2. Next Question
+      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('next viva') || transcript.includes('save and next')) {
+        handleNextVivaQuestion();
+        return;
+      }
+
+      // 3. Previous Question
+      if (transcript === 'previous' || transcript === 'back' || transcript.includes('previous question') || transcript.includes('go back')) {
+        handlePrevVivaQuestion();
+        return;
+      }
+
+      // 4. Repeat Viva Question
+      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say question') || (transcript === 'repeat' && !vivaAnswerInput)) {
+        handleRepeatVivaQuestion();
+        return;
+      }
+
+      // 5. Repeat / Change Viva Answer
+      if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || (transcript === 'repeat' && vivaAnswerInput)) {
+        setVivaAnswerInput('');
+        setVivaAnswersRecord(prev => ({ ...prev, [curVivaQIdx]: '' }));
+        lastSpokenVivaAnswerRef.current = '';
+        speakText("Clearing previous answer. Please speak your answer again now.", () => {
+          setTimeout(() => {
+            startVivaDictation(false);
+          }, 300);
+        });
+        return;
+      }
+
+      // 6. Read Viva Answer
+      if (transcript.includes('read my answer') || transcript.includes('listen my answer') || transcript.includes('read answer')) {
+        speakText(`Your recorded viva answer is: ${vivaAnswerInput || 'empty'}. Say Next Question to proceed, or say Repeat Answer to re-record.`);
+        return;
+      }
+
+      // 7. Restart Viva
+      if (transcript.includes('restart viva') || transcript.includes('retake viva')) {
+        handleRestartViva();
+        return;
+      }
+
+      // 8. Viva Answer Spoken by Candidate
+      const cleanAnswer = rawText.replace(/^(answer|my answer is|viva answer is)\s*/i, '').trim() || rawText;
+      setVivaAnswerInput(cleanAnswer);
+      setVivaAnswersRecord(prev => ({ ...prev, [curVivaQIdx]: cleanAnswer }));
+      lastSpokenVivaAnswerRef.current = cleanAnswer;
+      const isLastVivaQ = curVivaQIdx >= activeVivaList.length - 1;
+      const promptText = isLastVivaQ
+        ? `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
+        : `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
+      speakText(promptText, () => {
+        setTimeout(() => {
+          startVivaDictation(false);
+        }, 400);
+      });
+      return;
+    }
+
     // Voice Profile Wizard Trigger
     if (transcript.includes('fill profile') || transcript.includes('voice profile') || transcript.includes('fill details') || transcript.includes('fill student profile') || transcript.includes('setup profile') || transcript.includes('edit profile by voice') || transcript.includes('profile by voice')) {
       closeVoiceAssistant(false);
@@ -6494,201 +6713,6 @@ export default function StudentDashboard() {
     }
     if (transcript.includes('logout') || transcript.includes('log out') || transcript.includes('sign out') || transcript === 'exit dashboard') {
       handleLogout();
-      return;
-    }
-
-    // 2. Active Exam Answering Mode (strictly scoped to exam tab with Option selection & confirmation)
-    if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam') && !examSubmitted) {
-      if (transcript.includes('confirm') || transcript.includes('confirm answer')) {
-        setMcqConfirmationPending(false);
-        speakText("Answer confirmed.");
-        handleSaveAndNext();
-        return;
-      }
-      if (transcript.includes('change answer') || transcript === 'change') {
-        setCurrentAnswerInput('');
-        setMcqConfirmationPending(false);
-        speakText("Selection cleared. Please speak Option A, B, C, or D, or your answer.", () => {
-          handleStartExamAnswerDictation();
-        });
-        return;
-      }
-      if (transcript.includes('read my answer') || transcript.includes('listen my answer') || transcript.includes('read answer')) {
-        speakText(`Your recorded answer is: ${currentAnswerInput || 'empty'}. Say Next Question to proceed, or say Change to re-record.`);
-        return;
-      }
-
-      const currentQ = currentExam.questions?.[currentQIndex];
-
-      // Check MCQ Option commands: Option A, B, C, D
-      if (currentQ?.options && currentQ.options.length > 0) {
-        let selectedOption = null;
-        if (transcript.includes('option a') || transcript.includes('select a') || transcript.includes('choice a') || transcript === 'a' || transcript === 'option 1' || transcript === '1') {
-          selectedOption = currentQ.options[0];
-        } else if (transcript.includes('option b') || transcript.includes('select b') || transcript.includes('choice b') || transcript === 'b' || transcript === 'option 2' || transcript === '2') {
-          selectedOption = currentQ.options[1];
-        } else if (transcript.includes('option c') || transcript.includes('select c') || transcript.includes('choice c') || transcript === 'c' || transcript === 'option 3' || transcript === '3') {
-          selectedOption = currentQ.options[2];
-        } else if (transcript.includes('option d') || transcript.includes('select d') || transcript.includes('choice d') || transcript === 'd' || transcript === 'option 4' || transcript === '4') {
-          selectedOption = currentQ.options[3];
-        } else {
-          for (const opt of currentQ.options) {
-            const optLower = opt.toLowerCase();
-            if (transcript.includes(optLower) || (optLower.length > 8 && transcript.includes(optLower.slice(0, 15)))) {
-              selectedOption = opt;
-              break;
-            }
-          }
-        }
-
-        if (selectedOption) {
-          updateCurrentAnswer(selectedOption);
-          setMcqConfirmationPending(false);
-          const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
-          const promptText = isLastQ
-            ? `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
-            : `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
-          speakText(promptText, () => {
-            setTimeout(() => {
-              handleStartExamAnswerDictation();
-            }, 400);
-          });
-          return;
-        }
-      }
-
-      const cleanAnswer = rawText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || rawText;
-      updateCurrentAnswer(cleanAnswer);
-      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
-      const promptText = isLastQ
-        ? `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
-        : `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
-      speakText(promptText, () => {
-        setTimeout(() => {
-          handleStartExamAnswerDictation();
-        }, 400);
-      });
-      return;
-    }
-
-    // 3. Oral Viva Answering Mode
-    if (activeTab === 'AI Oral Viva Simulator') {
-      if (transcript.includes('python') || transcript.includes('select python')) {
-        const pyViva = Array.isArray(oralVivas) ? oralVivas.find(v => (v.title && v.title.toLowerCase().includes('python')) || (v.subject && v.subject.toLowerCase().includes('python'))) : null;
-        setVivaSubject(pyViva ? (pyViva.title || pyViva.subject) : 'Python Programming');
-        setVivaQIndex(0);
-        setVivaFeedback(null);
-        setVivaAnswerInput('');
-        speakText("Selected Python Programming for Viva practice.");
-        return;
-      }
-      if (transcript.includes('java') || transcript.includes('select java')) {
-        setVivaSubject('Java Programming');
-        setVivaQIndex(0);
-        setVivaFeedback(null);
-        setVivaAnswerInput('');
-        speakText("Selected Java Programming for Viva practice.");
-        return;
-      }
-      if (transcript.includes('operating systems') || transcript.includes('select operating')) {
-        setVivaSubject('Operating Systems');
-        setVivaQIndex(0);
-        setVivaFeedback(null);
-        setVivaAnswerInput('');
-        speakText("Selected Operating Systems for Viva practice.");
-        return;
-      }
-      if (transcript.includes('computer networks') || transcript.includes('select networks')) {
-        setVivaSubject('Computer Networks');
-        setVivaQIndex(0);
-        setVivaFeedback(null);
-        setVivaAnswerInput('');
-        speakText("Selected Computer Networks for Viva practice.");
-        return;
-      }
-      if (transcript.includes('cyber security') || transcript.includes('select security')) {
-        setVivaSubject('Cyber Security');
-        setVivaQIndex(0);
-        setVivaFeedback(null);
-        setVivaAnswerInput('');
-        speakText("Selected Cyber Security for Viva practice.");
-        return;
-      }
-      if (transcript.includes('physics') || transcript.includes('select physics')) {
-        setVivaSubject('Physics');
-        setVivaQIndex(0);
-        setVivaFeedback(null);
-        setVivaAnswerInput('');
-        speakText("Selected Physics for Viva practice.");
-        return;
-      }
-
-      // Check if user spoke the title or subject of any teacher published viva
-      if (Array.isArray(filteredOralVivas) && filteredOralVivas.length > 0) {
-        const matchedViva = filteredOralVivas.find(v => 
-          (v.title && transcript.includes(v.title.toLowerCase())) || 
-          (v.subject && transcript.includes(v.subject.toLowerCase()))
-        );
-        if (matchedViva) {
-          setVivaSubject(matchedViva.title || matchedViva.subject);
-          setVivaQIndex(0);
-          setVivaFeedback(null);
-          setVivaAnswerInput('');
-          speakText(`Selected teacher viva: ${matchedViva.title || matchedViva.subject}`);
-          return;
-        }
-      }
-
-      if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || (transcript === 'repeat' && vivaAnswerInput)) {
-        setVivaAnswerInput('');
-        setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: '' }));
-        lastSpokenVivaAnswerRef.current = '';
-        speakText("Clearing previous answer. Please speak your answer again now.", () => {
-          setTimeout(() => {
-            startVivaDictation(false);
-          }, 300);
-        });
-        return;
-      }
-      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say question') || transcript.includes('what is the question') || (transcript === 'repeat' && !vivaAnswerInput)) {
-        handleRepeatVivaQuestion();
-        return;
-      }
-      if (transcript.includes('next question') || transcript === 'next' || transcript.includes('next q') || transcript.includes('proceed') || transcript.includes('save and next')) {
-        handleNextVivaQuestion();
-        return;
-      }
-      if (transcript.includes('previous question') || transcript === 'previous' || transcript === 'back' || transcript.includes('prev question') || transcript.includes('go back')) {
-        handlePrevVivaQuestion();
-        return;
-      }
-      if (transcript.includes('submit viva') || transcript.includes('submit exam') || transcript === 'submit' || transcript.includes('finish viva') || transcript.includes('finish exam')) {
-        handleSubmitVivaExam();
-        return;
-      }
-      if (transcript.includes('restart viva') || transcript.includes('retake viva')) {
-        handleRestartViva();
-        return;
-      }
-      if (transcript.includes('evaluate viva') || transcript.includes('evaluate') || transcript.includes('check answer')) {
-        handleEvaluateViva();
-        return;
-      }
-
-      const cleanViva = rawText.replace(/^(answer|my answer is|my response is)\s*/i, '').trim() || rawText;
-      setVivaAnswerInput(cleanViva);
-      setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanViva }));
-      lastSpokenVivaAnswerRef.current = cleanViva;
-
-      const isLastVivaQ = activeVivaQIdx >= currentVivaQList.length - 1;
-      const promptViva = isLastVivaQ
-        ? `You answered: "${cleanViva}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
-        : `You answered: "${cleanViva}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
-      speakText(promptViva, () => {
-        setTimeout(() => {
-          startVivaDictation(false);
-        }, 400);
-      });
       return;
     }
 
@@ -6991,12 +7015,17 @@ export default function StudentDashboard() {
           // Check if examinee said DONE to exit and save answer
           const { isDone, cleanText } = parseDoneTrigger(cleaned);
 
-          if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam') && !examSubmitted) {
+          const isStudentInActiveExam = Boolean((currentExam || isExamActive) && !examSubmitted && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive));
+          const isStudentInActiveViva = Boolean(activeTab === 'AI Oral Viva Simulator');
+
+          if (isStudentInActiveExam) {
             const cleanAns = cleanText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || cleanText;
             if (cleanAns) {
               setCurrentAnswerInput(cleanAns);
               currentAnswerInputRef.current = cleanAns;
-              setStudentAnswers(prev => ({ ...prev, [`${currentExam.id}-${currentQIndex}`]: cleanAns }));
+              if (currentExam) {
+                setStudentAnswers(prev => ({ ...prev, [`${currentExam.id}-${currentQIndex}`]: cleanAns }));
+              }
             }
 
             if (isDone) {
@@ -7007,11 +7036,13 @@ export default function StudentDashboard() {
             }
             // Continuous listening: DO NOT EXIT in the middle while candidate speaks!
             return;
-          } else if (activeTab === 'AI Oral Viva Simulator') {
+          } else if (isStudentInActiveViva) {
             const cleanAns = cleanText.replace(/^(answer|my answer is|viva answer is)\s*/i, '').trim() || cleanText;
             if (cleanAns) {
               setVivaAnswerInput(cleanAns);
-              setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanAns }));
+              const activeVivaList = resolveCurrentVivaList();
+              const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
+              setVivaAnswersRecord(prev => ({ ...prev, [curVivaQIdx]: cleanAns }));
               lastSpokenVivaAnswerRef.current = cleanAns;
             }
 
@@ -7084,15 +7115,38 @@ export default function StudentDashboard() {
       }, 300);
     };
 
-    const promptText = (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam'))
-      ? (currentAnswerInputRef.current || currentAnswerInput
-          ? `You answered: "${currentAnswerInputRef.current || currentAnswerInput}". Would you like to repeat your answer, or proceed to the next question? Say REPEAT ANSWER or say NEXT QUESTION.`
-          : `Question: ${currentExam.questions?.[currentQIndex]?.text || ''}. No answer recorded yet. Speak your answer now, or say CLOSE.`)
-      : (activeTab === 'AI Oral Viva Simulator')
-        ? (vivaAnswerInput
-            ? `You answered: "${vivaAnswerInput}". Would you like to repeat your answer, or proceed to the next viva question? Say REPEAT ANSWER or say NEXT QUESTION.`
-            : `Oral Viva: ${currentVivaQ?.text || ''}. Speak your answer now, or say repeat question.`)
-        : "Listening. What help can I do for you? Say your command, or say speak all features, or tell me your interested subject.";
+    const isPromptExamSession = Boolean((currentExam || isExamActive) && !examSubmitted && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive));
+    const isPromptVivaSession = Boolean(activeTab === 'AI Oral Viva Simulator');
+
+    let promptText = "";
+    if (isPromptExamSession) {
+      const recordedAns = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
+      const currentQ = currentExam?.questions?.[currentQIndex];
+      const qText = currentQ?.text || currentQ?.questionText || '';
+      const totalQ = currentExam?.questions?.length || 1;
+      if (recordedAns) {
+        promptText = `You answered: "${recordedAns}". Would you like to repeat your answer, or proceed to the next question? Say REPEAT ANSWER or say NEXT QUESTION.`;
+      } else if (qText) {
+        promptText = `Question ${currentQIndex + 1} of ${totalQ}: ${qText}. Please speak your answer now. When finished, say DONE.`;
+      } else {
+        promptText = `Question ${currentQIndex + 1}. Please speak your answer now. When finished, say DONE.`;
+      }
+    } else if (isPromptVivaSession) {
+      const recordedViva = String(vivaAnswerInput || '').trim();
+      const activeVivaList = resolveCurrentVivaList();
+      const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
+      const curVivaQ = activeVivaList.length > 0 ? (activeVivaList[curVivaQIdx] || activeVivaList[0]) : null;
+      const currentVivaText = curVivaQ?.text || curVivaQ?.question || '';
+      if (recordedViva) {
+        promptText = `You answered: "${recordedViva}". Would you like to repeat your answer, or proceed to the next viva question? Say REPEAT ANSWER or say NEXT QUESTION.`;
+      } else if (currentVivaText) {
+        promptText = `Oral Viva: ${currentVivaText}. Please speak your answer now. When finished, say DONE.`;
+      } else {
+        promptText = "Oral Viva question ready. Please speak your answer now. When finished, say DONE.";
+      }
+    } else {
+      promptText = "Listening. What help can I do for you? Say your command, or say speak all features, or tell me your interested subject.";
+    }
 
     const promptSpeechLang = 'en-US';
 
@@ -8395,7 +8449,7 @@ export default function StudentDashboard() {
             </div>
             
             {/* Smart Context-Aware Voice Assistant Display (Exam / Viva / Dashboard) */}
-            {currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive) ? (
+            {((currentExam || isExamActive) && !examSubmitted && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive)) ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '14px 0 20px 0' }}>
                 {/* Active Exam Question & Answer Card */}
                 <div style={{ background: '#f0fdf4', border: '2px solid #86efac', padding: '16px 20px', borderRadius: '16px', textAlign: 'left' }}>
