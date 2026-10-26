@@ -19,6 +19,22 @@ export default function StudentRegistrationPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [registrationMethod, setRegistrationMethod] = useState('otp'); // 'otp' or 'password'
+  const registrationMethodRef = useRef('otp');
+  const pendingMethodRef = useRef('otp');
+
+  const changeRegistrationMethod = (method) => {
+    setRegistrationMethod(method);
+    registrationMethodRef.current = method;
+    pendingMethodRef.current = method;
+  };
+
+  useEffect(() => {
+    if (location.state?.method === 'password') {
+      changeRegistrationMethod('password');
+    } else if (location.state?.method === 'otp') {
+      changeRegistrationMethod('otp');
+    }
+  }, [location.state]);
 
   // Email OTP Authentication States
   const [isEmailVerified, setIsEmailVerified] = useState(false);
@@ -142,14 +158,14 @@ export default function StudentRegistrationPage() {
   useEffect(() => {
     const greetingTimer = setTimeout(() => {
       if (!isVoiceDisabled()) {
-        speak("Student Registration Portal. Tap anywhere on screen or press Spacebar to activate voice assistant.");
+        speak("Welcome to Student Registration Portal. Would you like to register via OTP or register with Password? Tap anywhere on screen or press Spacebar to activate voice assistant.");
       }
     }, 450);
 
     const triggerAction = () => {
       if (isVoiceDisabled()) return;
       isManuallyClosedRef.current = false;
-      triggerVoiceRegistration('firstName');
+      triggerVoiceRegistration('registration_method');
     };
 
     const handleKeyDown = (e) => {
@@ -180,7 +196,7 @@ export default function StudentRegistrationPage() {
     };
   }, []);
 
-  const triggerVoiceRegistration = async (targetField = 'firstName') => {
+  const triggerVoiceRegistration = async (targetField = 'registration_method') => {
     if (isVoiceDisabled()) return;
     isManuallyClosedRef.current = false;
     stopRecognition();
@@ -198,28 +214,32 @@ export default function StudentRegistrationPage() {
     }
 
     let promptMsg = "";
-    if (targetField === 'firstName' || targetField === 'all') {
-      promptMsg = "Step 1: Please speak your First Name now.";
+    if (targetField === 'registration_method' || targetField === 'all') {
+      promptMsg = "Step 1: Registration Method. Would you like to register via OTP or register with Password? Please say OTP or say PASSWORD.";
+    } else if (targetField === 'firstName') {
+      promptMsg = "Step 2: Please speak your First Name now.";
     } else if (targetField === 'confirm_firstName') {
       promptMsg = `You entered First Name ${pendingFirstNameRef.current || firstName}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'lastName') {
-      promptMsg = "Step 2: Please speak your Last Name now.";
+      promptMsg = "Step 3: Please speak your Last Name now.";
     } else if (targetField === 'confirm_lastName') {
       promptMsg = `You entered Last Name ${pendingLastNameRef.current || lastName}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'phone') {
-      promptMsg = "Step 3: Please speak your Phone Number now.";
+      promptMsg = "Step 4: Please speak your Phone Number now.";
     } else if (targetField === 'confirm_phone') {
       promptMsg = `You entered Phone Number ${pendingPhoneRef.current || phone}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'email') {
-      promptMsg = "Step 4: Please speak your Email Address now.";
+      promptMsg = "Step 5: Please speak your Email Address now.";
     } else if (targetField === 'confirm_email') {
       promptMsg = `You entered Email Address ${formatSpokenEmail(pendingEmailRef.current || email)}. Is this correct? Say CONFIRM or NO.`;
+    } else if (targetField === 'otp') {
+      promptMsg = "Step 6: Please speak or enter the 6-digit OTP code sent to your email.";
     } else if (targetField === 'password') {
-      promptMsg = "Step 5: Please speak your New Password now. Your password must contain only alphabets and numbers.";
+      promptMsg = "Step 6: Please speak your New Password now. Your password must contain only alphabets and numbers.";
     } else if (targetField === 'confirm_password_entry') {
       promptMsg = `You entered Password ${pendingPasswordRef.current || password}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'confirmPassword') {
-      promptMsg = "Step 6: Please speak Confirm Password now. It must match your password and contain only alphabets and numbers.";
+      promptMsg = "Step 7: Please speak Confirm Password now. It must match your password and contain only alphabets and numbers.";
     } else if (targetField === 'confirm_confirmPassword') {
       promptMsg = `You entered Confirm Password ${pendingConfirmPasswordRef.current || confirmPassword}. Is this correct? Say CONFIRM or NO.`;
     } else if (targetField === 'role') {
@@ -269,6 +289,14 @@ export default function StudentRegistrationPage() {
           const rawText = (finalText + ' ' + interim).replace(/\s+/g, ' ').trim();
           if (!rawText) return;
           setLiveTranscript(rawText);
+
+          const lower = rawText.toLowerCase();
+          if ((targetField === 'registration_method' || targetField === 'all') && (lower.includes('password') || lower.includes('otp') || lower.includes('pass') || lower.includes('code') || lower.includes('email'))) {
+            hasProcessedRef.current = true;
+            stopRecognition();
+            processVoiceResult(rawText, 'registration_method');
+            return;
+          }
 
           if (targetField.startsWith('confirm_') && (hasWord(rawText, posWordsLive) || hasWord(rawText, negWordsLive))) {
             hasProcessedRef.current = true;
@@ -344,7 +372,28 @@ export default function StudentRegistrationPage() {
       return;
     }
 
-    // --- STEP 1: FIRST NAME ---
+    // --- STEP 1: REGISTRATION METHOD (OTP OR PASSWORD) ---
+    if (fieldKey === 'registration_method' || fieldKey === 'method' || fieldKey === 'all') {
+      const lower = cleanText.toLowerCase();
+      if (lower.includes('otp') || lower.includes('email otp') || lower.includes('code') || lower.includes('mail')) {
+        changeRegistrationMethod('otp');
+        speak("Register via Email OTP selected. Step 2: Please speak your First Name.", () => {
+          setTimeout(() => triggerVoiceRegistration('firstName'), 300);
+        });
+      } else if (lower.includes('password') || lower.includes('pass')) {
+        changeRegistrationMethod('password');
+        speak("Register with Password selected. Step 2: Please speak your First Name.", () => {
+          setTimeout(() => triggerVoiceRegistration('firstName'), 300);
+        });
+      } else {
+        speak("Would you like to register via OTP or register with Password? Please say OTP or say PASSWORD.", () => {
+          setTimeout(() => triggerVoiceRegistration('registration_method'), 300);
+        });
+      }
+      return;
+    }
+
+    // --- STEP 2: FIRST NAME ---
     if (fieldKey === 'firstName') {
       const val = rawText.charAt(0).toUpperCase() + rawText.slice(1);
       setFirstName(val);
@@ -363,7 +412,7 @@ export default function StudentRegistrationPage() {
       return;
     }
 
-    // --- STEP 2: LAST NAME ---
+    // --- STEP 3: LAST NAME ---
     if (fieldKey === 'lastName') {
       const val = rawText.charAt(0).toUpperCase() + rawText.slice(1);
       setLastName(val);
@@ -382,7 +431,7 @@ export default function StudentRegistrationPage() {
       return;
     }
 
-    // --- STEP 3: PHONE NUMBER ---
+    // --- STEP 4: PHONE NUMBER ---
     if (fieldKey === 'phone') {
       const digits = cleanText.replace(/\D/g, '') || cleanText;
       setPhone(digits);
@@ -410,7 +459,7 @@ export default function StudentRegistrationPage() {
       return;
     }
 
-    // --- STEP 4: EMAIL ADDRESS ---
+    // --- STEP 5: EMAIL ADDRESS ---
     if (fieldKey === 'email') {
       const parsedEmail = parseSpokenEmail(rawText);
       setEmail(parsedEmail);
@@ -431,11 +480,19 @@ export default function StudentRegistrationPage() {
         }
         setEmail(emailToCheck);
         pendingEmailRef.current = emailToCheck;
-        setIsEmailVerified(false);
-        setOtpSent(false);
-        setOtpInput('');
-        handleGetRegistrationOtp(emailToCheck);
-        triggerVoiceRegistration('otp');
+
+        const curMethod = registrationMethodRef.current || pendingMethodRef.current || registrationMethod;
+        if (curMethod === 'otp') {
+          setIsEmailVerified(false);
+          setOtpSent(false);
+          setOtpInput('');
+          handleGetRegistrationOtp(emailToCheck);
+          triggerVoiceRegistration('otp');
+        } else {
+          speak("Email address confirmed. Step 6: Please speak your New Password.", () => {
+            setTimeout(() => triggerVoiceRegistration('password'), 300);
+          });
+        }
       } else {
         setEmail('');
         pendingEmailRef.current = '';
@@ -455,7 +512,8 @@ export default function StudentRegistrationPage() {
           if (res && res.success) {
             setIsEmailVerified(true);
             setOtpMessage('✅ Email verified successfully!');
-            if (registrationMethod === 'otp' || !password) {
+            const curMethod = registrationMethodRef.current || pendingMethodRef.current || registrationMethod;
+            if (curMethod === 'otp' || !password) {
               await completeStudentRegistration(phone.trim().replace(/\D/g, ''), null);
             } else {
               speak("Email verified successfully! Now speak your new password.", () => {
@@ -566,7 +624,7 @@ export default function StudentRegistrationPage() {
     if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a') || e.target.closest('form')) {
       return;
     }
-    triggerVoiceRegistration('firstName');
+    triggerVoiceRegistration('registration_method');
   };
 
   const handleGetRegistrationOtp = async (targetEmail = null) => {
@@ -608,6 +666,7 @@ export default function StudentRegistrationPage() {
     const phoneToUse = cleanPhone || phone.trim().replace(/\D/g, '') || "9876543210";
 
     try {
+      const curRegMethod = registrationMethodRef.current || pendingMethodRef.current || registrationMethod;
       const regPayload = {
         username: fullName,
         firstName: firstName.trim(),
@@ -616,7 +675,7 @@ export default function StudentRegistrationPage() {
         phone: phoneToUse,
         role: 'student',
         isOtpVerified: true,
-        registrationMethod: registrationMethod
+        registrationMethod: curRegMethod
       };
       if (passwordToUse) {
         regPayload.password = passwordToUse;
@@ -647,7 +706,7 @@ export default function StudentRegistrationPage() {
           setTimeout(() => {
             setShowSuccessPopup(false);
             cancelSpeech();
-            navigate('/student-login', { state: { email: cleanEmail, method: registrationMethod === 'otp' ? 'otp' : 'password' } });
+            navigate('/student-login', { state: { email: cleanEmail, method: curRegMethod === 'otp' ? 'otp' : 'password' } });
           }, 1200);
         });
 
@@ -655,7 +714,7 @@ export default function StudentRegistrationPage() {
         setTimeout(() => {
           setShowSuccessPopup(false);
           cancelSpeech();
-          navigate('/student-login', { state: { email: cleanEmail, method: registrationMethod === 'otp' ? 'otp' : 'password' } });
+          navigate('/student-login', { state: { email: cleanEmail, method: curRegMethod === 'otp' ? 'otp' : 'password' } });
         }, 2200);
       } else {
         const msg = res?.message || 'Student registration failed.';
@@ -707,7 +766,7 @@ export default function StudentRegistrationPage() {
         setOtpMessage('✅ Email verified successfully!');
 
         // If in OTP registration mode or no password entered, register immediately and go to login page!
-        if (registrationMethod === 'otp' || !password) {
+        if ((registrationMethodRef.current || registrationMethod) === 'otp' || !password) {
           await completeStudentRegistration(cleanPhone, password || null);
         } else {
           speak('Email verified successfully! You can now submit your registration.');
@@ -762,7 +821,7 @@ export default function StudentRegistrationPage() {
     }
 
     // OTP REGISTRATION FLOW
-    if (registrationMethod === 'otp') {
+    if ((registrationMethodRef.current || registrationMethod) === 'otp') {
       if (isEmailVerified) {
         await completeStudentRegistration(cleanPhone, null);
         return;
@@ -847,7 +906,8 @@ export default function StudentRegistrationPage() {
             </h2>
 
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#e0f2fe', color: '#0284c7', padding: '6px 14px', borderRadius: '16px', fontSize: '13px', fontWeight: '800', marginBottom: '14px' }}>
-              {activeVoiceField === 'role' ? '🗣️ Step 1: Speak Role (Student, Teacher, Admin)' :
+              {activeVoiceField === 'registration_method' || activeVoiceField === 'all' ? '🗣️ Step 1: Choose Registration Method — Say "OTP" or "Password"' :
+               activeVoiceField === 'role' ? '🗣️ Step 1: Speak Role (Student, Teacher, Admin)' :
                activeVoiceField === 'confirm_role' ? `🗣️ Selected ${pendingRoleRef.current || 'Student'} role — Say CONFIRM or NO` :
                activeVoiceField === 'firstName' ? '🗣️ Step 2: Speak First Name' :
                activeVoiceField === 'confirm_firstName' ? `🗣️ First Name: ${pendingFirstNameRef.current || firstName} — Say CONFIRM or NO` :
@@ -858,9 +918,9 @@ export default function StudentRegistrationPage() {
                activeVoiceField === 'email' ? '🗣️ Step 5: Speak Email Address' :
                activeVoiceField === 'confirm_email' ? `🗣️ Email: ${pendingEmailRef.current || email} — Say CONFIRM or NO` :
                activeVoiceField === 'otp' ? `🗣️ Step 6: Speak or Enter 6-Digit Email OTP (${otpInput || 'Waiting'})` :
-               activeVoiceField === 'password' ? '🗣️ Step 7: Speak New Password' :
+               activeVoiceField === 'password' ? '🗣️ Step 6: Speak New Password' :
                activeVoiceField === 'confirm_password_entry' ? `🗣️ Password: ${pendingPasswordRef.current || password} — Say CONFIRM or NO` :
-               activeVoiceField === 'confirmPassword' ? '🗣️ Step 8: Speak Confirm Password' :
+               activeVoiceField === 'confirmPassword' ? '🗣️ Step 7: Speak Confirm Password' :
                activeVoiceField === 'confirm_confirmPassword' ? `🗣️ Confirm Password: ${pendingConfirmPasswordRef.current || confirmPassword} — Say CONFIRM or NO` :
                activeVoiceField === 'confirm_go_to_login' ? `🎉 Registration Complete: Say YES or LOGIN to Proceed, or NO to Stay` :
                '🎙️ Listening for Voice Input'}
@@ -870,6 +930,7 @@ export default function StudentRegistrationPage() {
             <div style={{ background: '#f0f9ff', border: '2px dashed #0284c7', padding: '20px 16px', borderRadius: '20px', margin: '12px 0 20px 0', minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <p style={{ margin: 0, fontSize: '17px', color: liveTranscript ? '#0f172a' : '#0284c7', fontWeight: '800', textAlign: 'center', lineHeight: 1.5, wordBreak: 'break-word' }}>
                 {liveTranscript ? `"${liveTranscript}"` : (
+                  (activeVoiceField === 'registration_method' || activeVoiceField === 'all') ? '🗣️ Would you like to register via OTP or register with Password? Say "OTP" or "PASSWORD".' :
                   activeVoiceField === 'confirm_go_to_login' ? '🗣️ Say YES, LOGIN, or CONFIRM to proceed to the Student Login page, or say NO to stay.' :
                   '🎙️ Listening... Speak your response clearly.'
                 )}
@@ -892,6 +953,33 @@ export default function StudentRegistrationPage() {
                     style={{ background: '#64748b', color: '#fff', border: 'none', padding: '12px 20px', borderRadius: '12px', fontSize: '14px', fontWeight: '800', cursor: 'pointer' }}
                   >
                     ✖ Stay on Registration Screen (Say NO)
+                  </button>
+                </>
+              ) : (activeVoiceField === 'registration_method' || activeVoiceField === 'all') ? (
+                <>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      changeRegistrationMethod('otp');
+                      speak("Register via Email OTP selected. Step 2: Please speak your First Name.", () => {
+                        triggerVoiceRegistration('firstName');
+                      });
+                    }}
+                    style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    ✉️ Register via OTP
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      changeRegistrationMethod('password');
+                      speak("Register with Password selected. Step 2: Please speak your First Name.", () => {
+                        triggerVoiceRegistration('firstName');
+                      });
+                    }}
+                    style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🔒 Register with Password
                   </button>
                 </>
               ) : (
@@ -975,7 +1063,7 @@ export default function StudentRegistrationPage() {
               toggleVoiceAssistant();
               return;
             }
-            triggerVoiceRegistration('all');
+            triggerVoiceRegistration('registration_method');
           }}
           style={{
             padding: '12px 16px', borderRadius: '14px', 
@@ -1008,11 +1096,21 @@ export default function StudentRegistrationPage() {
         )}
 
         {/* REGISTRATION METHOD TOGGLE: OTP VS PASSWORD */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <label style={{ fontSize: '12px', color: '#0369a1', fontWeight: '800' }}>Choose Registration Method</label>
+          <button 
+            type="button" 
+            onClick={() => triggerVoiceRegistration('registration_method')}
+            style={{ background: '#f0f9ff', color: '#0284c7', border: '1px solid #0284c7', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <Mic size={12} /> Choose via Voice
+          </button>
+        </div>
         <div style={{ display: 'flex', background: '#e0f2fe', padding: '4px', borderRadius: '14px', marginBottom: '16px' }}>
           <button
             type="button"
             onClick={() => {
-              setRegistrationMethod('otp');
+              changeRegistrationMethod('otp');
               setErrorMessage('');
               cancelSpeech();
               speak("Switched to Register via Email OTP.");
@@ -1040,7 +1138,7 @@ export default function StudentRegistrationPage() {
           <button
             type="button"
             onClick={() => {
-              setRegistrationMethod('password');
+              changeRegistrationMethod('password');
               setErrorMessage('');
               cancelSpeech();
               speak("Switched to Register with Password.");
