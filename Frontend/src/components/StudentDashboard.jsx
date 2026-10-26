@@ -4319,6 +4319,63 @@ export default function StudentDashboard() {
     return () => clearInterval(timer);
   }, [currentExam, examSubmitted, examTimeRemaining]);
 
+  // Continuous Real-Time Live Monitoring sync for Teacher Dashboard while student is writing exam
+  useEffect(() => {
+    if (!currentExam || examSubmitted || !isExamActive) return;
+
+    const syncLiveLog = () => {
+      try {
+        const sName = studentProfile?.name || student?.name || 'Examinee';
+        const sEmail = studentProfile?.email || student?.email || '';
+        const mins = Math.floor(examTimeRemaining / 60);
+        const secs = examTimeRemaining % 60;
+        const remainingStr = `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+        const totalQs = (currentExam.questions || []).length || 1;
+        const ansCount = Object.keys(studentAnswers || {}).length;
+        const isWriting = !isOtherPersonDetected && isScannedStudentWriting;
+        const voiceStatus = isOtherPersonDetected 
+          ? '🔒 Locked (Unauthorized Person)' 
+          : (isDictatingExamAnswer ? '🗣️ Dictating Answer...' : 'Active (Voice Dictation)');
+
+        const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+        const existingEntry = existingLogs.find(l => l && (l.student === sName || l.studentEmail === sEmail));
+
+        const updatedEntry = {
+          id: existingEntry?.id || `log_${currentExam.id || currentExam._id || Date.now()}`,
+          student: sName,
+          studentName: sName,
+          studentEmail: sEmail,
+          teacherEmail: currentExam.teacherEmail || currentExam.creatorEmail || existingEntry?.teacherEmail || '',
+          teacherName: currentExam.teacherName || existingEntry?.teacherName || '',
+          examId: currentExam.id || currentExam._id || existingEntry?.examId || '',
+          examTitle: currentExam.title || existingEntry?.examTitle || 'Theory Assessment',
+          subject: currentExam.subject || existingEntry?.subject || 'Computer Science',
+          status: isWriting ? '🟢 Writing' : '🔴 OTHERS WRITING (ALERT)',
+          statusBadge: isWriting ? `🟢 Writing: ${sName}` : `🔴 ALERT: ${sName}`,
+          started: existingEntry?.started || existingEntry?.start || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          start: existingEntry?.started || existingEntry?.start || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          remaining: remainingStr,
+          answered: `${ansCount} / ${totalQs}`,
+          voice: voiceStatus,
+          submitted: 'No',
+          faceVerified: true,
+          facePresent: true,
+          isOtherPerson: isOtherPersonDetected,
+          isMultiplePeople: false,
+          timestamp: Date.now()
+        };
+
+        const otherLogs = existingLogs.filter(l => l && l.student !== sName && l.studentEmail !== sEmail);
+        localStorage.setItem('shared_live_logs', JSON.stringify([updatedEntry, ...otherLogs]));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+    };
+
+    syncLiveLog();
+    const interval = setInterval(syncLiveLog, 2000);
+    return () => clearInterval(interval);
+  }, [currentExam, examSubmitted, isExamActive, examTimeRemaining, studentAnswers, isOtherPersonDetected, isScannedStudentWriting, isDictatingExamAnswer, studentProfile?.name, student?.name]);
+
   // Overall Performance average strictly for focused subject
   const overallProgress = useMemo(() => {
     if (!filteredResults.length) return 0;
@@ -5461,6 +5518,15 @@ export default function StudentDashboard() {
     setStudentAnswers({});
     setActiveTab('Dashboard');
 
+    // Cleanly remove from active live examinee logs upon exit
+    try {
+      const sName = studentProfile?.name || student?.name || 'Examinee';
+      const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+      const cleaned = existingLogs.filter(l => l && l.student !== sName);
+      localStorage.setItem('shared_live_logs', JSON.stringify(cleaned));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
     const exitMsg = "Exam session exited. You have returned to the dashboard. No answers were submitted.";
     announce(exitMsg);
     speakText(exitMsg);
@@ -5535,6 +5601,42 @@ export default function StudentDashboard() {
     setExamTimeRemaining(allocatedMinutes * 60);
     setActiveTab('AI Exam Assistant');
     hasAnnouncedExamTabRef.current = true;
+
+    // Immediately register active examinee in shared_live_logs for Teacher Dashboard monitoring
+    try {
+      const sName = studentProfile?.name || student?.name || 'Examinee';
+      const sEmail = studentProfile?.email || student?.email || '';
+      const startLog = {
+        id: `log_${exam.id || exam._id || Date.now()}`,
+        student: sName,
+        studentName: sName,
+        studentEmail: sEmail,
+        teacherEmail: exam.teacherEmail || exam.creatorEmail || '',
+        teacherName: exam.teacherName || '',
+        examId: exam.id || exam._id || '',
+        examTitle: exam.title || 'Theory Assessment',
+        subject: exam.subject || 'Computer Science',
+        status: '🟢 Writing',
+        statusBadge: '🟢 Writing: ' + sName,
+        started: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        start: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        remaining: `${allocatedMinutes}m 00s`,
+        answered: `0 / ${(exam.questions || []).length || 1}`,
+        voice: 'Active (Voice Dictation)',
+        submitted: 'No',
+        faceVerified: true,
+        facePresent: true,
+        isOtherPerson: false,
+        isMultiplePeople: false,
+        timestamp: Date.now()
+      };
+      const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+      const filtered = existingLogs.filter(l => l && l.student !== sName && l.studentEmail !== sEmail);
+      localStorage.setItem('shared_live_logs', JSON.stringify([startLog, ...filtered]));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.warn("Live monitoring initial log error:", e);
+    }
     
     const instructions = String(exam.instructions || exam.description || "Read and answer each question carefully using voice navigation.").trim();
     const startMsg = `Welcome to ${exam.title}. Exam instructions: ${instructions}. Total ${exam.questions ? exam.questions.length : 0} questions. Let us begin.`;
@@ -6568,19 +6670,29 @@ export default function StudentDashboard() {
 
       // Update Teacher Live Monitoring logs
       const existingLogs = JSON.parse(localStorage.getItem('shared_live_logs') || '[]');
+      const priorLog = existingLogs.find(l => l && l.student === student.name);
       const newLog = {
+        id: priorLog?.id || `log_${currentExam?.id || currentExam?._id || Date.now()}`,
         student: student.name,
         studentName: student.name,
         teacherEmail: examTeacherEmail,
         teacherName: examTeacher,
         examId: currentExam?.id || currentExam?._id || '',
         examTitle: currentExam?.title || '',
+        subject: currentExam?.subject || 'Computer Science',
         status: 'Submitted / Needs Correction',
-        start: '10:00 AM',
+        statusBadge: '🔵 Completed / Submitted',
+        started: priorLog?.started || priorLog?.start || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        start: priorLog?.started || priorLog?.start || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         remaining: '00:00:00',
-        answered: `${Object.keys(finalAnswers).length} / ${currentExam.questions.length || 3}`,
-        voice: 'Active (en-US)',
-        submitted: 'Yes'
+        answered: `${Object.keys(finalAnswers).length} / ${(currentExam.questions || []).length || 3}`,
+        voice: 'Completed',
+        submitted: 'Yes',
+        faceVerified: true,
+        facePresent: true,
+        isOtherPerson: false,
+        isMultiplePeople: false,
+        timestamp: Date.now()
       };
       localStorage.setItem('shared_live_logs', JSON.stringify([newLog, ...existingLogs.filter(l => l.student !== student.name)]));
 

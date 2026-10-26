@@ -401,6 +401,7 @@ export const filterResultsForTeacher = (rawResults, currentTeacher, currentExams
 export const filterLogsForTeacher = (rawLogs, currentTeacher, currentExams) => {
   if (!Array.isArray(rawLogs) || rawLogs.length === 0) return [];
   const teacherEmail = String(currentTeacher?.email || '').toLowerCase().trim();
+  const teacherSub = String(currentTeacher?.subject || '').toLowerCase().trim();
   const teacherExamIds = new Set((currentExams || []).map(e => String(e._id || e.id || '')).filter(Boolean));
   const teacherExamTitles = new Set((currentExams || []).map(e => String(e.title || e.examTitle || '').toLowerCase().trim()).filter(Boolean));
 
@@ -408,15 +409,34 @@ export const filterLogsForTeacher = (rawLogs, currentTeacher, currentExams) => {
     if (!log) return false;
     // Strip stale legacy mock logs
     if (log.student === 'Lekhanatr' && log.answered === '4 / 3') return false;
-    if (log.student === 'jaanu123' && log.started === '10:00 AM' && !log.teacherEmail) return false;
 
     const logEmail = String(log.teacherEmail || log.creatorEmail || '').toLowerCase().trim();
     const logExamId = String(log.examId || '');
     const logExamTitle = String(log.examTitle || log.examName || log.title || '').toLowerCase().trim();
+    const logSub = String(log.subject || '').toLowerCase().trim();
 
+    // 1. Direct teacher email match
     if (teacherEmail && logEmail && teacherEmail === logEmail) return true;
+
+    // 2. Exam ID or Title matches teacher's created exams
     if (logExamId && teacherExamIds.has(logExamId)) return true;
     if (logExamTitle && teacherExamTitles.has(logExamTitle)) return true;
+
+    // 3. Subject match with teacher's subject
+    if (teacherSub && logSub && isSubjectMatching(logSub, teacherSub)) return true;
+
+    // 4. Default teacher email or unassigned
+    if (!logEmail || logEmail === 'teacher@blindassist.edu' || logEmail === 'teacher@school.edu' || !teacherEmail || teacherEmail === 'teacher@blindassist.edu' || teacherEmail === 'teacher@school.edu') {
+      return true;
+    }
+
+    // 5. Active examinees currently taking or writing the exam (always visible in live monitoring table)
+    const isWritingOrActive = (log.status || '').toLowerCase().includes('writing') || 
+                              (log.status || '').toLowerCase().includes('active') || 
+                              (log.status || '').toLowerCase().includes('attending') || 
+                              log.submitted === 'No';
+    if (isWritingOrActive) return true;
+
     return false;
   });
 };
@@ -794,8 +814,7 @@ export default function TeacherDashboard() {
         const parsed = JSON.parse(rawLogs);
         if (Array.isArray(parsed)) {
           const cleaned = parsed.filter(l => 
-            !(l.student === 'Lekhanatr' && l.answered === '4 / 3') && 
-            !(l.student === 'jaanu123' && l.started === '10:00 AM' && !l.teacherEmail)
+            !(l.student === 'Lekhanatr' && l.answered === '4 / 3')
           );
           if (cleaned.length !== parsed.length) {
             localStorage.setItem('shared_live_logs', JSON.stringify(cleaned));
