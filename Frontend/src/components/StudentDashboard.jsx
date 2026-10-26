@@ -244,16 +244,16 @@ export const computeBiometricSimilarity = (biomA, biomB) => {
   if (!Array.isArray(biomA) && !Array.isArray(biomB)) {
     // Eyewear / Glasses / Eye Band Difference Penalty (tolerant to room shadow variations)
     const eyeDiff = Math.abs((biomA.eyeEdgeEnergy || 0) - (biomB.eyeEdgeEnergy || 0));
-    const eyePenalty = eyeDiff > 0.18 ? Math.min(0.20, (eyeDiff - 0.18) * 1.5) : 0;
+    const eyePenalty = eyeDiff > 0.30 ? Math.min(0.08, (eyeDiff - 0.30) * 0.5) : 0;
 
-    // Face Aspect Ratio Difference Penalty
+    // Face Aspect Ratio Difference Penalty (tolerant to looking slightly up/down while reading/writing)
     const aspectDiff = Math.abs((biomA.faceAspect || 1.25) - (biomB.faceAspect || 1.25));
-    const aspectPenalty = aspectDiff > 0.25 ? Math.min(0.18, (aspectDiff - 0.25) * 1.2) : 0;
+    const aspectPenalty = aspectDiff > 0.40 ? Math.min(0.06, (aspectDiff - 0.40) * 0.5) : 0;
 
     // Skin Chrominance Distance Penalty (YCbCr space)
-    // Webcams and phone cameras have different white balances; allow up to 26 units difference
+    // Webcams continuously auto-adjust white balance/exposure; allow up to 45 units difference
     const chromaDist = Math.hypot((biomA.meanCb || 120) - (biomB.meanCb || 120), (biomA.meanCr || 145) - (biomB.meanCr || 145));
-    const chromaPenalty = chromaDist > 26 ? Math.min(0.20, (chromaDist - 26) / 50) : 0;
+    const chromaPenalty = chromaDist > 45 ? Math.min(0.08, (chromaDist - 45) / 100) : 0;
 
     pearson = Math.max(0, pearson - eyePenalty - aspectPenalty - chromaPenalty);
   }
@@ -2193,18 +2193,46 @@ export const isExamAssignedToStudent = (exam, studentEmail, studentName) => {
   const examTitle = String(exam.title || exam.examTitle || '').toLowerCase();
   const examDesc = String(exam.instructions || exam.description || '').toLowerCase();
 
-  // 1. Explicit target email check
-  if (targetEmail) {
-    return cleanEmail && targetEmail === cleanEmail;
+  // 1. Explicit target email match
+  if (targetEmail && cleanEmail && targetEmail === cleanEmail) {
+    return true;
   }
 
-  // 2. Explicit target name check
-  if (targetName) {
-    if (!cleanName) return false;
-    return targetName === cleanName || cleanName.includes(targetName) || targetName.includes(cleanName);
+  // 2. Explicit target name match
+  if (targetName && cleanName) {
+    if (targetName === cleanName || cleanName.includes(targetName) || targetName.includes(cleanName)) {
+      return true;
+    }
   }
 
-  // 3. Assigned students list (if specified)
+  // 3. Name found in exam title or instructions
+  if (cleanName && cleanName.length > 2 && (examTitle.includes(cleanName) || examDesc.includes(cleanName))) {
+    return true;
+  }
+
+  // 4. Personalized exam in title or instructions
+  const personalizedMatch = examTitle.match(/personalized exam for ([^:]+)/i) || 
+                            examTitle.match(/assessment - ([a-z0-9 ]+)/i) ||
+                            examDesc.match(/specifically for ([^.]+)/i);
+  if (personalizedMatch) {
+    const extractedName = personalizedMatch[1].trim().toLowerCase();
+    if (extractedName && extractedName !== 'all' && extractedName !== 'blind students') {
+      if (cleanName && (cleanName === extractedName || cleanName.includes(extractedName) || extractedName.includes(cleanName))) {
+        return true;
+      }
+      return false; // Specifically created for someone else
+    }
+  }
+
+  // 5. If this exam is explicitly targeted to someone else (different email or name specified)
+  if (targetEmail && cleanEmail && targetEmail !== cleanEmail) {
+    return false;
+  }
+  if (targetName && cleanName && targetName !== cleanName && !cleanName.includes(targetName) && !targetName.includes(cleanName)) {
+    return false;
+  }
+
+  // 6. Assigned students list (if specified)
   if (assignedList.length > 0) {
     if (assignedList.includes('all')) return true;
     return assignedList.some(s => 
@@ -2213,29 +2241,8 @@ export const isExamAssignedToStudent = (exam, studentEmail, studentName) => {
     );
   }
 
-  // 4. Personalized exam in title or instructions (e.g. "Personalized Exam for Nayana Ns" or "Assessment - Nayana Ns")
-  const personalizedMatch = examTitle.match(/personalized exam for ([^:]+)/i) || 
-                            examTitle.match(/assessment - ([a-z0-9 ]+)/i) ||
-                            examDesc.match(/specifically for ([^.]+)/i);
-  if (personalizedMatch) {
-    const extractedName = personalizedMatch[1].trim().toLowerCase();
-    if (extractedName && extractedName !== 'all' && extractedName !== 'blind students') {
-      if (!cleanName) return false;
-      return cleanName === extractedName || cleanName.includes(extractedName) || extractedName.includes(cleanName);
-    }
-  }
-
-  // 5. If title contains another student's name (e.g. "Nayana", "Lakshmi", "Jaanu", "Sowmya")
-  const otherNames = ['nayana', 'lakshmi', 'jaanu', 'sowmya'];
-  for (const stu of otherNames) {
-    if (cleanName && !cleanName.includes(stu) && (examTitle.includes(stu) || examDesc.includes(stu))) {
-      return false;
-    }
-  }
-
-  // 6. For newly registered users or unassigned exams without explicit assignment to this student:
-  // Default to FALSE so new users start with strictly 0 upcoming exams and 0 active exams until a teacher assigns one.
-  return false;
+  // 7. General exams (open to all students studying this subject)
+  return true;
 };
 
 export const isNotificationForStudent = (notif, studentEmail, studentName) => {
@@ -2307,14 +2314,14 @@ export const isNotificationForStudent = (notif, studentEmail, studentName) => {
 export const isExamActiveNow = (exam) => {
   if (!exam) return false;
   const status = (exam.status || '').toLowerCase();
-  if (status === 'completed' || status === 'draft') return false;
+  if (status === 'completed') return false;
   if (status === 'active' || status === 'published') return true;
   if (status === 'scheduled') {
     if (!exam.date || exam.date === 'Upcoming') return true;
     const todayStr = new Date().toISOString().split('T')[0];
     if (exam.date <= todayStr) return true;
   }
-  return false;
+  return true;
 };
 
 export const isExamSuccessfullyCompleted = (result) => {
@@ -3176,7 +3183,21 @@ export default function StudentDashboard() {
         return false;
       }
 
-      // 2. Filter by activeSubject
+      // 2. If this exam is explicitly personalized for this student, ALWAYS show it!
+      const isTargetedToMe = Boolean(
+        (ex.targetStudentEmail && studentEmail && ex.targetStudentEmail.toLowerCase().trim() === studentEmail) ||
+        (ex.targetStudentName && studentName && (
+          ex.targetStudentName.toLowerCase().trim() === studentName ||
+          studentName.includes(ex.targetStudentName.toLowerCase().trim()) ||
+          ex.targetStudentName.toLowerCase().trim().includes(studentName)
+        )) ||
+        (studentName && studentName.length > 2 && String(ex.title || '').toLowerCase().includes(studentName))
+      );
+      if (isTargetedToMe) {
+        return true;
+      }
+
+      // 3. Filter general exams by activeSubject
       return isSubjectMatching(ex.subject, activeSubject);
     });
 
@@ -3621,8 +3642,10 @@ export default function StudentDashboard() {
 
       if (isDone) {
         try { rec.stop(); } catch (err) {}
-        speakText("Practice answer recorded. Evaluating your response...");
-        setTimeout(() => handleEvaluatePractice(), 500);
+        setPracticeAnswersByQ(prev => ({ ...prev, [practiceQIdx]: cleanText }));
+        announce(`✅ Recorded Answer: "${cleanText}"`);
+        const promptText = `You answered: "${cleanText}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+        speakText(promptText);
         return;
       }
     };
@@ -3679,10 +3702,14 @@ export default function StudentDashboard() {
           } else if (lower.includes('repeat question') || lower.includes('read question') || lower.includes('say repeat question') || (lower.includes('repeat') && !practiceAnswerInput)) {
             announce("🔄 Repeating Question, Answer & Explanation");
             handleSpeakQuestionAnswerExplanation(currentMat, currentQuestionIdx);
-          } else if (lower.includes('repeat answer') || lower.includes('say your answer again') || lower.includes('repeat your answer') || lower.includes('clear answer') || lower.includes('change answer')) {
+          } else if (lower.includes('repeat answer') || lower.includes('repeat my answer') || lower.includes('repeat your answer') || lower.includes('read answer')) {
+            const currentAns = practiceAnswerInput || practiceAnswersByQ[currentQuestionIdx] || '';
+            const promptText = `You answered: "${currentAns || 'no answer recorded'}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+            speakText(promptText);
+          } else if (lower.includes('say your answer again') || lower.includes('say answer again') || lower.includes('your answer again') || lower.includes('clear answer') || lower.includes('change answer') || lower.includes('re-answer') || lower.includes('re-record')) {
             setPracticeAnswerInput('');
             setPracticeAnswersByQ(prev => ({ ...prev, [currentQuestionIdx]: '' }));
-            speakText("Clearing previous answer. Please speak your practice answer again now.", () => {
+            speakText("Clearing previous answer. Please speak your practice answer again now. When finished, say DONE.", () => {
               setTimeout(() => handleStartVoiceDictationForPractice(), 300);
             });
           } else if (lower.includes('next question') || lower === 'next' || lower.includes('say next question') || lower.includes('forward')) {
@@ -3695,7 +3722,7 @@ export default function StudentDashboard() {
           } else if (lower.includes('previous question') || lower === 'previous' || lower.includes('prev question') || lower.includes('back')) {
             const prevQIdx = (currentQuestionIdx - 1 + totalQ) % totalQ;
             setPracticeQIdx(prevQIdx);
-            setPracticeAnswerInput(practiceAnswersByQ[prevIdx] || '');
+            setPracticeAnswerInput(practiceAnswersByQ[prevQIdx] || '');
             setPracticeFeedback(null);
             announce(`⬅️ Previous Question: ${prevQIdx + 1} of ${totalQ}`);
             handleSpeakQuestionAnswerExplanation(currentMat, prevQIdx);
@@ -3928,10 +3955,13 @@ export default function StudentDashboard() {
 
         if (isDone) {
           try { rec.stop(); } catch (err) {}
-          announce("✅ Answer recorded. Saving and moving to next question.");
-          speakText("Test answer recorded. Saving and moving to next question.", () => {
-            setTimeout(() => handleSaveLessonTestNext(), 400);
-          });
+          const currentTestQ = activeLessonTest?.questions?.[lessonTestQIndex];
+          if (currentTestQ?.id) {
+            setLessonTestAnswers(prev => ({ ...prev, [currentTestQ.id]: cleanText }));
+          }
+          announce(`✅ Recorded Answer: "${cleanText}"`);
+          const promptText = `You answered: "${cleanText}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+          speakText(promptText);
           return;
         }
       };
@@ -5144,7 +5174,7 @@ export default function StudentDashboard() {
           // Head movement tolerance: When student moves or turns face (center/left/right/writing), it matches one of the 3 enrolled angles!
           let isScannedStudentMatch = false;
           if (scannedCenter || scannedLeft || scannedRight || enrolledVector) {
-            isScannedStudentMatch = Boolean(bestScannedSim >= 0.38 || bestOverallSim >= 0.38);
+            isScannedStudentMatch = Boolean(bestScannedSim >= 0.16 || bestOverallSim >= 0.16);
           } else {
             isScannedStudentMatch = true;
           }
@@ -5164,9 +5194,6 @@ export default function StudentDashboard() {
             setIsMultiplePeopleDetected(false);
             isMultiplePeopleDetectedRef.current = false;
             setIsFacePresentInExam(true);
-            setIsScannedStudentWriting(false);
-            setIsOtherPersonDetected(true);
-            isScannedStudentWritingRef.current = false;
           } else {
             // VERIFIED: Scanned student is writing alone!
             isViolation = false;
@@ -5194,10 +5221,13 @@ export default function StudentDashboard() {
         if (isViolation) {
           consecutiveMismatchTicksRef.current++;
 
-          // Immediately update visual UI indicators on the very first violation tick (600ms)
-          setIsScannedStudentWriting(false);
-          setIsOtherPersonDetected(true);
-          isScannedStudentWritingRef.current = false;
+          // Only lock UI and voice inputs if the mismatch is SUSTAINED (at least 6 ticks / ~7.2s continuous)
+          // NEVER lock candidate out on a transient 600ms single frame dip!
+          if (consecutiveMismatchTicksRef.current >= 6) {
+            setIsScannedStudentWriting(false);
+            setIsOtherPersonDetected(true);
+            isScannedStudentWritingRef.current = false;
+          }
 
           // Sustained Violation & Alert Spacing:
           // 1. Requires at least 7 consecutive ticks (~8.4 seconds) of continuous violation
@@ -5444,6 +5474,15 @@ export default function StudentDashboard() {
       speakText(msg);
       return;
     }
+
+    // Auto-align activeSubject if starting a personalized exam in a different subject
+    if (exam.subject && !isSubjectMatching(exam.subject, activeSubject)) {
+      setActiveSubject(exam.subject);
+      try {
+        localStorage.setItem('student_selected_subject', exam.subject);
+      } catch (e) {}
+    }
+
     const todayStr = new Date().toISOString().split('T')[0];
     const isFuture = (exam.status === 'Scheduled') && exam.date && exam.date !== 'Upcoming' && exam.date > todayStr;
     if (isFuture) {
@@ -5536,10 +5575,7 @@ export default function StudentDashboard() {
       updateCurrentAnswer(clean);
       lastSpokenExamAnswerRef.current = clean;
       announce(`✅ Recorded Answer: "${clean}"`);
-      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
-      const promptText = isLastQ
-        ? `You answered: "${clean}". Would you like to repeat your answer, or proceed to submit exam? Tap Repeat Answer or tap Submit Exam.`
-        : `You answered: "${clean}". Would you like to repeat your answer, or proceed to the next question? Tap Repeat Answer or tap Next Question.`;
+      const promptText = `You answered: "${clean}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
       speakText(promptText);
     } else {
       announce("No speech detected for answer.");
@@ -5551,10 +5587,7 @@ export default function StudentDashboard() {
     const clean = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
     if (clean && clean !== lastSpokenExamAnswerRef.current && !isDictatingExamAnswer) {
       lastSpokenExamAnswerRef.current = clean;
-      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
-      const promptText = isLastQ
-        ? `You entered: "${clean}". Would you like to repeat your answer, or submit the exam? Tap Read My Answer or tap Submit Exam.`
-        : `You entered: "${clean}". Would you like to repeat your answer, or proceed to the next question? Tap Read My Answer or tap Save and Next.`;
+      const promptText = `You answered: "${clean}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
       announce(`✅ Recorded Answer: "${clean}"`);
       speakText(promptText);
     }
@@ -5566,10 +5599,7 @@ export default function StudentDashboard() {
       const clean = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
       if (clean) {
         lastSpokenExamAnswerRef.current = clean;
-        const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
-        const promptText = isLastQ
-          ? `You entered: "${clean}". Would you like to repeat your answer, or submit the exam? Tap Read My Answer or tap Submit Exam.`
-          : `You entered: "${clean}". Would you like to repeat your answer, or proceed to the next question? Tap Read My Answer or tap Save and Next.`;
+        const promptText = `You answered: "${clean}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
         announce(`✅ Recorded Answer: "${clean}"`);
         speakText(promptText);
       }
@@ -6046,7 +6076,9 @@ export default function StudentDashboard() {
               localStorage.setItem('shared_exams', JSON.stringify(cleanSavedExams));
             }
 
-            cleanSavedExams.forEach((ex, idx) => {
+            cleanSavedExams.forEach((rawEx, idx) => {
+              const ex = (rawEx && rawEx.data && typeof rawEx.data === 'object' && !Array.isArray(rawEx.data)) ? { ...rawEx.data, ...rawEx } : rawEx;
+              if (!ex) return;
               const semKey = `${String(ex.title || ex.examTitle || 'Theory Assessment').trim().toLowerCase()}::${String(ex.subject || 'Computer Science').trim().toLowerCase()}::${String(ex.targetStudentEmail || '').trim().toLowerCase()}`;
               const examId = String(ex._id || ex.id || `teacher-exam-${idx}`);
               const existing = teacherMap.get(semKey) || {};
@@ -6066,16 +6098,16 @@ export default function StudentDashboard() {
                 time: ex.time || ex.startTime || '10:00 AM',
                 duration: `${ex.duration || ex.durationMinutes || 60} min`,
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
-                status: ex.status || 'Scheduled',
+                status: ex.status || 'Published',
                 instructions: ex.instructions || 'Read all theory questions carefully.',
                 questions: (ex.questions && ex.questions.length > 0)
                   ? ex.questions.map((q, qIdx) => ({
-                      id: qIdx + 1,
-                      text: q.text || q.questionText,
+                      id: q.id || q._id || qIdx + 1,
+                      text: q.text || q.questionText || '',
                       type: q.type || q.questionType || 'Descriptive Theory',
                       options: q.options || [],
                       correctAnswer: q.correctAnswer || '',
-                      marks: q.marks || 5
+                      marks: q.marks || 2
                     }))
                   : (existing.questions || [])
               });
@@ -6097,7 +6129,9 @@ export default function StudentDashboard() {
             });
             const cleanBackend = deduplicateExamsList(rawBackend);
 
-            cleanBackend.forEach((ex, idx) => {
+            cleanBackend.forEach((rawEx, idx) => {
+              const ex = (rawEx && rawEx.data && typeof rawEx.data === 'object' && !Array.isArray(rawEx.data)) ? { ...rawEx.data, ...rawEx } : rawEx;
+              if (!ex) return;
               const semKey = `${String(ex.title || ex.examTitle || 'Theory Assessment').trim().toLowerCase()}::${String(ex.subject || 'Computer Science').trim().toLowerCase()}::${String(ex.targetStudentEmail || '').trim().toLowerCase()}`;
               const existing = teacherMap.get(semKey) || {};
               const examId = String(ex._id || ex.id || existing.id || `teacher-exam-${idx}`);
@@ -6118,16 +6152,16 @@ export default function StudentDashboard() {
                 time: ex.time || ex.startTime || '10:00 AM',
                 duration: `${ex.duration || ex.durationMinutes || 60} min`,
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
-                status: ex.status || 'Scheduled',
+                status: ex.status || 'Published',
                 instructions: ex.instructions || 'Read all theory questions carefully.',
                 questions: (ex.questions && ex.questions.length > 0)
                   ? ex.questions.map((q, qIdx) => ({
-                      id: qIdx + 1,
-                      text: q.text || q.questionText,
+                      id: q.id || q._id || qIdx + 1,
+                      text: q.text || q.questionText || '',
                       type: q.type || q.questionType || 'Descriptive Theory',
                       options: q.options || [],
                       correctAnswer: q.correctAnswer || '',
-                      marks: q.marks || 5
+                      marks: q.marks || 2
                     }))
                   : (existing.questions || [])
               });
@@ -6701,15 +6735,8 @@ export default function StudentDashboard() {
         if (selectedOption) {
           updateCurrentAnswer(selectedOption);
           setMcqConfirmationPending(false);
-          const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
-          const promptText = isLastQ
-            ? `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
-            : `You selected: "${selectedOption}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
-          speakText(promptText, () => {
-            setTimeout(() => {
-              handleStartExamAnswerDictation();
-            }, 400);
-          });
+          const promptText = `You answered: "${selectedOption}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+          speakText(promptText);
           return;
         }
       }
@@ -6717,15 +6744,8 @@ export default function StudentDashboard() {
       // 12. Candidate's Spoken Answer (Default during exam)
       const cleanAnswer = rawText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || rawText;
       updateCurrentAnswer(cleanAnswer);
-      const isLastQ = currentExam && currentQIndex >= currentExam.questions.length - 1;
-      const promptText = isLastQ
-        ? `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Submit Exam' to finish?`
-        : `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Next Question' to save and proceed?`;
-      speakText(promptText, () => {
-        setTimeout(() => {
-          handleStartExamAnswerDictation();
-        }, 400);
-      });
+      const promptText = `You answered: "${cleanAnswer}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+      speakText(promptText);
       return;
     }
 
@@ -6809,15 +6829,8 @@ export default function StudentDashboard() {
       setVivaAnswerInput(cleanAnswer);
       setVivaAnswersRecord(prev => ({ ...prev, [curVivaQIdx]: cleanAnswer }));
       lastSpokenVivaAnswerRef.current = cleanAnswer;
-      const isLastVivaQ = curVivaQIdx >= activeVivaList.length - 1;
-      const promptText = isLastVivaQ
-        ? `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
-        : `You answered: "${cleanAnswer}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
-      speakText(promptText, () => {
-        setTimeout(() => {
-          startVivaDictation(false);
-        }, 400);
-      });
+      const promptText = `You answered: "${cleanAnswer}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+      speakText(promptText);
       return;
     }
 
@@ -6897,8 +6910,7 @@ export default function StudentDashboard() {
       // 7. Done / Finish Answering
       if (transcript === 'done' || transcript === 'say done' || transcript === 'finish') {
         const ans = practiceAnswerInput || '';
-        speakText(`Practice answer recorded: "${ans}". Evaluating your answer now.`);
-        handleEvaluatePractice(ans);
+        speakText(`You answered: "${ans}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`);
         return;
       }
 
@@ -6960,9 +6972,8 @@ export default function StudentDashboard() {
 
       // 6. Done / Finish Answering
       if (transcript === 'done' || transcript === 'say done' || transcript === 'finish') {
-        speakText("Test answer recorded. Saving and moving to next question.", () => {
-          setTimeout(() => handleSaveLessonTestNext(), 300);
-        });
+        const ans = lessonTestInput || '';
+        speakText(`You answered: "${ans}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`);
         return;
       }
 
@@ -7489,10 +7500,10 @@ export default function StudentDashboard() {
 
           // Navigation & Action triggers
           const isNavTrigger = 
-            lower === 'next question' || lower === 'say next question' || lower === 'next' || lower === 'save and next' || lower === 'next viva' ||
-            lower === 'previous question' || lower === 'say previous question' || lower === 'previous' || lower === 'back' ||
-            lower === 'repeat question' || lower === 'say repeat question' || lower === 'read question' || lower === 'repeat the question' || lower === 'repeat' ||
-            lower === 'submit' || lower === 'say submit' || lower === 'submit exam' || lower === 'submit viva' || lower === 'submit test' || lower === 'submit practice' || lower === 'finish exam' || lower === 'finish viva' || lower === 'finish test' || lower === 'finish practice' ||
+            lower === 'next question' || lower === 'say next question' || lower === 'to next question' || lower === 'next' || lower === 'save and next' || lower === 'next viva' ||
+            lower === 'previous question' || lower === 'say previous question' || lower === 'to previous question' || lower === 'previous' || lower === 'back' ||
+            lower === 'repeat question' || lower === 'say repeat question' || lower === 'to repeat question' || lower === 'read question' || lower === 'repeat the question' || lower === 'repeat' ||
+            lower === 'submit' || lower === 'to submit' || lower === 'say submit' || lower === 'submit exam' || lower === 'submit viva' || lower === 'submit test' || lower === 'submit practice' || lower === 'finish exam' || lower === 'finish viva' || lower === 'finish test' || lower === 'finish practice' ||
             lower === 'say your answer' || lower === 'your answer' || lower === 'answer' || lower === 'speak answer' || lower === 'answer by voice' || lower === 'dictate' ||
             lower === 'done' || lower === 'say done' || lower === 'finish' ||
             lower.includes('exit exam');
@@ -7502,10 +7513,17 @@ export default function StudentDashboard() {
             return;
           }
 
-          // Repeat answer / Say your answer again command
-          if (/\b(repeat answer|repeat your answer|repeat my answer|say your answer again|say answer again|your answer again|answer again|re-record|change answer|try again)\b/i.test(lower)) {
+          // Repeat answer / Read answer
+          if (/\b(repeat answer|to repeat answer|repeat my answer|repeat your answer|read answer|read my answer|listen answer)\b/i.test(lower)) {
             closeVoiceAssistant(false);
             executeCommand('repeat answer');
+            return;
+          }
+
+          // Say answer again / re-record
+          if (/\b(say answer again|to say answer again|say your answer again|your answer again|answer again|re-record|change answer|try again|re-answer)\b/i.test(lower)) {
+            closeVoiceAssistant(false);
+            executeCommand('say answer again');
             return;
           }
 
@@ -7561,9 +7579,8 @@ export default function StudentDashboard() {
             }
             if (isDone) {
               closeVoiceAssistant(false);
-              speakText(`Practice answer recorded: "${cleanAns}". Evaluating now.`, () => {
-                setTimeout(() => handleEvaluatePractice(cleanAns), 300);
-              });
+              const promptText = `You answered: "${cleanAns}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+              speakText(promptText);
               return;
             }
             return;
@@ -7574,9 +7591,8 @@ export default function StudentDashboard() {
             }
             if (isDone) {
               closeVoiceAssistant(false);
-              speakText("Test answer recorded. Saving and moving to next question.", () => {
-                setTimeout(() => handleSaveLessonTestNext(), 300);
-              });
+              const promptText = `You answered: "${cleanAns}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+              speakText(promptText);
               return;
             }
             return;
@@ -7646,9 +7662,12 @@ export default function StudentDashboard() {
 
     let promptText = "";
     if (isPromptExamSession) {
+      const hasAnswer = Boolean((currentAnswerInputRef.current || currentAnswerInput || '').trim());
       const totalQ = currentExam?.questions?.length || 1;
       const isLastQ = currentQIndex >= totalQ - 1;
-      if (isLastQ) {
+      if (hasAnswer) {
+        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+      } else if (isLastQ) {
         promptText = "Say repeat question, or next question, or say your answer, and say submit.";
       } else {
         promptText = "Say your answer, or say repeat question, or next question, or say your answer again.";
@@ -7657,8 +7676,11 @@ export default function StudentDashboard() {
       const activeVivaList = resolveCurrentVivaList();
       const totalVivaQ = activeVivaList.length || 1;
       const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
+      const hasVivaAnswer = Boolean((vivaAnswerInput || vivaAnswersRecord[curVivaQIdx] || '').trim());
       const isLastVivaQ = curVivaQIdx >= totalVivaQ - 1;
-      if (isLastVivaQ) {
+      if (hasVivaAnswer) {
+        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+      } else if (isLastVivaQ) {
         promptText = "Say repeat question, or next question, or say your answer, and say submit.";
       } else {
         promptText = "Say your answer and say done when the answer finish, or say repeat question, or next question, or say your answer.";
@@ -7669,8 +7691,11 @@ export default function StudentDashboard() {
         : [{ text: activePracticeMat.practiceQuestion || activePracticeMat.title }];
       const totalQ = questionsList.length;
       const safeQIdx = Math.min(practiceQIdx, totalQ - 1);
+      const hasPracticeAnswer = Boolean((practiceAnswerInput || practiceAnswersByQ[safeQIdx] || '').trim());
       const isLastPracticeQ = safeQIdx >= totalQ - 1;
-      if (isLastPracticeQ) {
+      if (hasPracticeAnswer) {
+        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+      } else if (isLastPracticeQ) {
         promptText = "Say repeat question, or next question, or say your answer, and say submit.";
       } else {
         promptText = "Say your answer, or say repeat question, or next question, or repeat your answer.";
@@ -7678,7 +7703,10 @@ export default function StudentDashboard() {
     } else if (isPromptStudyTestSession) {
       const totalTestQ = activeLessonTest.questions?.length || 1;
       const isLastTestQ = lessonTestQIndex >= totalTestQ - 1;
-      if (isLastTestQ) {
+      const hasTestAnswer = Boolean((lessonTestInput || lessonTestAnswers[activeLessonTest.questions?.[lessonTestQIndex]?.id] || '').trim());
+      if (hasTestAnswer) {
+        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+      } else if (isLastTestQ) {
         promptText = "Say repeat question, or next question, or say your answer, and say submit.";
       } else {
         promptText = "Say your answer, or say repeat question, or next question, or repeat your answer.";
@@ -7818,10 +7846,7 @@ export default function StudentDashboard() {
     if (speakBack && cleanText) {
       setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanText }));
       lastSpokenVivaAnswerRef.current = cleanText;
-      const isLastVivaQ = activeVivaQIdx >= currentVivaQList.length - 1;
-      const promptText = isLastVivaQ
-        ? `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
-        : `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
+      const promptText = `You answered: "${cleanText}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
       speakText(promptText);
     }
   };
@@ -7936,11 +7961,7 @@ export default function StudentDashboard() {
             setVivaAnswersRecord(prev => ({ ...prev, [activeVivaQIdx]: cleanText }));
             lastSpokenVivaAnswerRef.current = cleanText;
 
-            const isLastVivaQ = activeVivaQIdx >= currentVivaQList.length - 1;
-            const promptText = isLastVivaQ
-              ? `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Submit Viva' to finish?`
-              : `You answered: "${cleanText}". Would you like to repeat your answer, or say 'Next Question' to proceed?`;
-
+            const promptText = `You answered: "${cleanText}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
             speakText(promptText);
           }
         };
@@ -9123,17 +9144,22 @@ export default function StudentDashboard() {
                   {(() => {
                     const totalQ = currentExam?.questions?.length || 1;
                     const isLastQ = currentQIndex >= totalQ - 1;
+                    const hasAns = Boolean((currentAnswerInputRef.current || currentAnswerInput || '').trim());
                     return (
-                      <div style={{ background: isLastQ ? '#f0fdf4' : '#e0f2fe', border: isLastQ ? '2px solid #86efac' : '2px solid #bae6fd', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
-                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: isLastQ ? '#166534' : '#0369a1' }}>
-                          {isLastQ 
-                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.' 
-                            : '🗣️ Say your answer, or say repeat question, or next question, or say your answer again.'}
+                      <div style={{ background: hasAns ? '#ecfdf5' : (isLastQ ? '#f0fdf4' : '#e0f2fe'), border: hasAns ? '2px solid #86efac' : (isLastQ ? '2px solid #86efac' : '2px solid #bae6fd'), borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: hasAns ? '#065f46' : (isLastQ ? '#166534' : '#0369a1') }}>
+                          {hasAns
+                            ? '🗣️ Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.'
+                            : (isLastQ 
+                                ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.' 
+                                : '🗣️ Say your answer, or say repeat question, or next question, or say your answer again.')}
                         </p>
-                        <div style={{ fontSize: '12px', fontWeight: '700', color: isLastQ ? '#15803d' : '#0284c7' }}>
-                          {isLastQ
-                            ? 'Commands: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
-                            : 'Commands: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: hasAns ? '#15803d' : (isLastQ ? '#15803d' : '#0284c7') }}>
+                          {hasAns
+                            ? 'Commands: "REPEAT ANSWER" • "SAY ANSWER AGAIN" • "NEXT QUESTION" • "REPEAT QUESTION" • "SUBMIT"'
+                            : (isLastQ
+                                ? 'Commands: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                                : 'Commands: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"')}
                         </div>
                       </div>
                     );
@@ -9262,18 +9288,23 @@ export default function StudentDashboard() {
                     const activeVivaList = resolveCurrentVivaList();
                     const totalVivaQ = activeVivaList.length || 1;
                     const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
+                    const hasVivaAns = Boolean((vivaAnswerInput || vivaAnswersRecord[curVivaQIdx] || '').trim());
                     const isLastVivaQ = curVivaQIdx >= totalVivaQ - 1;
                     return (
-                      <div style={{ background: isLastVivaQ ? '#f0fdf4' : '#f3e8ff', border: isLastVivaQ ? '2px solid #86efac' : '2px solid #e9d5ff', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
-                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: isLastVivaQ ? '#166534' : '#6b21a8' }}>
-                          {isLastVivaQ
-                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
-                            : '🗣️ Say your answer and say done when the answer finish, or say repeat question, or next question, or say your answer.'}
+                      <div style={{ background: hasVivaAns ? '#ecfdf5' : (isLastVivaQ ? '#f0fdf4' : '#f3e8ff'), border: hasVivaAns ? '2px solid #86efac' : (isLastVivaQ ? '2px solid #86efac' : '2px solid #e9d5ff'), borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: hasVivaAns ? '#065f46' : (isLastVivaQ ? '#166534' : '#6b21a8') }}>
+                          {hasVivaAns
+                            ? '🗣️ Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.'
+                            : (isLastVivaQ
+                                ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
+                                : '🗣️ Say your answer and say done when the answer finish, or say repeat question, or next question, or say your answer.')}
                         </p>
-                        <div style={{ fontSize: '12px', fontWeight: '700', color: isLastVivaQ ? '#15803d' : '#7e22ce' }}>
-                          {isLastVivaQ
-                            ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
-                            : 'Say: "ANSWER (Say DONE when finish)" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: hasVivaAns ? '#15803d' : (isLastVivaQ ? '#15803d' : '#7e22ce') }}>
+                          {hasVivaAns
+                            ? 'Say: "REPEAT ANSWER" • "SAY ANSWER AGAIN" • "NEXT QUESTION" • "REPEAT QUESTION" • "SUBMIT"'
+                            : (isLastVivaQ
+                                ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                                : 'Say: "ANSWER (Say DONE when finish)" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"')}
                         </div>
                       </div>
                     );
@@ -9414,18 +9445,27 @@ export default function StudentDashboard() {
                       )}
 
                       {/* Confirmation Prompt */}
-                      <div style={{ background: isLastPracticeQ ? '#f0fdf4' : '#faf5ff', border: isLastPracticeQ ? '2px solid #86efac' : '2px solid #ddd6fe', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
-                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: isLastPracticeQ ? '#166534' : '#6b21a8' }}>
-                          {isLastPracticeQ
-                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
-                            : '🗣️ Say your answer, or say repeat question, or next question, or repeat your answer.'}
-                        </p>
-                        <div style={{ fontSize: '12px', fontWeight: '700', color: isLastPracticeQ ? '#15803d' : '#7e22ce' }}>
-                          {isLastPracticeQ
-                            ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
-                            : 'Say: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
-                        </div>
-                      </div>
+                      {(() => {
+                        const hasPracticeAns = Boolean((practiceAnswerInput || practiceAnswersByQ[safeQIdx] || '').trim());
+                        return (
+                          <div style={{ background: hasPracticeAns ? '#ecfdf5' : (isLastPracticeQ ? '#f0fdf4' : '#faf5ff'), border: hasPracticeAns ? '2px solid #86efac' : (isLastPracticeQ ? '2px solid #86efac' : '2px solid #ddd6fe'), borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                            <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: hasPracticeAns ? '#065f46' : (isLastPracticeQ ? '#166534' : '#6b21a8') }}>
+                              {hasPracticeAns
+                                ? '🗣️ Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.'
+                                : (isLastPracticeQ
+                                    ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
+                                    : '🗣️ Say your answer, or say repeat question, or next question, or repeat your answer.')}
+                            </p>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: hasPracticeAns ? '#15803d' : (isLastPracticeQ ? '#15803d' : '#7e22ce') }}>
+                              {hasPracticeAns
+                                ? 'Say: "REPEAT ANSWER" • "SAY ANSWER AGAIN" • "NEXT QUESTION" • "REPEAT QUESTION" • "SUBMIT"'
+                                : (isLastPracticeQ
+                                    ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                                    : 'Say: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"')}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })() : (() => {
@@ -9461,18 +9501,27 @@ export default function StudentDashboard() {
                       )}
 
                       {/* Confirmation Prompt */}
-                      <div style={{ background: isLastTestQ ? '#f0fdf4' : '#f0fdf4', border: isLastTestQ ? '2px solid #86efac' : '2px solid #bbf7d0', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
-                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: '#166534' }}>
-                          {isLastTestQ
-                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
-                            : '🗣️ Say your answer, or say repeat question, or next question, or repeat your answer.'}
-                        </p>
-                        <div style={{ fontSize: '12px', fontWeight: '700', color: '#15803d' }}>
-                          {isLastTestQ
-                            ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
-                            : 'Say: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
-                        </div>
-                      </div>
+                      {(() => {
+                        const hasTestAns = Boolean((lessonTestInput || lessonTestAnswers[activeLessonTest.questions?.[lessonTestQIndex]?.id] || '').trim());
+                        return (
+                          <div style={{ background: hasTestAns ? '#ecfdf5' : '#f0fdf4', border: hasTestAns ? '2px solid #86efac' : (isLastTestQ ? '2px solid #86efac' : '2px solid #bbf7d0'), borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                            <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: hasTestAns ? '#065f46' : '#166534' }}>
+                              {hasTestAns
+                                ? '🗣️ Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.'
+                                : (isLastTestQ
+                                    ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
+                                    : '🗣️ Say your answer, or say repeat question, or next question, or repeat your answer.')}
+                            </p>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: '#15803d' }}>
+                              {hasTestAns
+                                ? 'Say: "REPEAT ANSWER" • "SAY ANSWER AGAIN" • "NEXT QUESTION" • "REPEAT QUESTION" • "SUBMIT"'
+                                : (isLastTestQ
+                                    ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                                    : 'Say: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"')}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
@@ -10839,9 +10888,9 @@ export default function StudentDashboard() {
                           >
                             <td style={{ padding: '14px 8px', fontWeight: '700', color: '#0f172a' }}>
                               <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '14px' }}>{ex.title || 'Theory Assessment'}</div>
-                              {ex.targetStudentEmail && (
+                              {(ex.targetStudentEmail || ex.targetStudentName || (student.name && ex.title?.toLowerCase().includes(student.name.toLowerCase()))) && (
                                 <span style={{ display: 'inline-block', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '800', marginTop: '4px' }}>
-                                  🎯 Assigned for You
+                                  🎯 Assigned for You ({ex.subject})
                                 </span>
                               )}
                             </td>
@@ -12219,7 +12268,7 @@ export default function StudentDashboard() {
                       style={{ background: ex.targetStudentEmail ? '#f0fdf4' : '#ffffff', border: ex.targetStudentEmail ? '2px solid #86efac' : '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: ex.targetStudentEmail ? '0 4px 12px rgba(22, 163, 74, 0.1)' : 'none' }}
                     >
                       <div>
-                        {ex.targetStudentEmail && (
+                        {(ex.targetStudentEmail || ex.targetStudentName || (student.name && ex.title?.toLowerCase().includes(student.name.toLowerCase()))) && (
                           <span style={{ display: 'inline-block', background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '800', marginBottom: '6px' }}>
                             🎯 Personalized Exam for You ({ex.subject})
                           </span>

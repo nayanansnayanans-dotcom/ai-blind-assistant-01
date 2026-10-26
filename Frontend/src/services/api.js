@@ -303,10 +303,11 @@ export const createExam = async (examData) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(examData),
     });
-    return await response.json();
+    const result = await response.json();
+    return result?.data || result;
   } catch (error) {
     console.warn('Error in createExam:', error);
-    return { success: false, message: 'Server unavailable' };
+    return { success: false, ...examData };
   }
 };
 
@@ -358,10 +359,11 @@ export const updateExam = async (id, examData) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(examData),
     });
-    return await response.json();
+    const result = await response.json();
+    return result?.data || result;
   } catch (error) {
     console.warn('Error in updateExam:', error);
-    return { success: false, message: 'Server unavailable' };
+    return { success: false, ...examData };
   }
 };
 

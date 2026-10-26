@@ -34,13 +34,152 @@ export const formatDateForVoice = (rawDate) => {
   return str;
 };
 
+export const MAIN_SUBJECTS = [
+  "Computer Science",
+  "Physics",
+  "Chemistry",
+  "Mathematics",
+  "Biology",
+  "Commerce",
+  "Social Science",
+  "Engineering"
+];
+
+export const COMPREHENSIVE_SUBJECTS_AND_LANGUAGES = [
+  {
+    category: "💻 Computer Science",
+    mainSubject: "Computer Science",
+    items: [
+      "Computer Science",
+      "Python Programming",
+      "Java Programming",
+      "C / C++ Programming",
+      "Data Structures & Algorithms (DSA)",
+      "Database Management Systems (DBMS)",
+      "Operating Systems (OS)",
+      "Computer Networks (CN)",
+      "Artificial Intelligence & Machine Learning",
+      "Cybersecurity & Cryptography",
+      "Web Technologies & Development",
+      "Mobile Application Development",
+      "Cloud Computing & DevOps",
+      "Software Engineering",
+      "Internet of Things (IoT)",
+      "Information Technology"
+    ]
+  },
+  {
+    category: "⚛️ Physics",
+    mainSubject: "Physics",
+    items: [
+      "Physics",
+      "Mechanics & Laws of Motion",
+      "Thermodynamics & Heat",
+      "Electromagnetism & Circuits",
+      "Optics & Light",
+      "Modern Physics & Quantum",
+      "Astrophysics & Space Science",
+      "Waves & Acoustics",
+      "Nuclear Physics",
+      "Applied Physics"
+    ]
+  },
+  {
+    category: "🧪 Chemistry",
+    mainSubject: "Chemistry",
+    items: [
+      "Chemistry",
+      "Organic Chemistry",
+      "Inorganic Chemistry",
+      "Physical Chemistry",
+      "Biochemistry",
+      "Analytical Chemistry",
+      "Polymers & Environmental Chemistry"
+    ]
+  },
+  {
+    category: "📐 Mathematics",
+    mainSubject: "Mathematics",
+    items: [
+      "Mathematics",
+      "Algebra & Equations",
+      "Calculus & Integration",
+      "Geometry & Coordinate Systems",
+      "Trigonometry",
+      "Statistics & Probability",
+      "Linear Algebra & Matrices",
+      "Discrete Mathematics",
+      "Applied Mathematics"
+    ]
+  },
+  {
+    category: "🧬 Biology",
+    mainSubject: "Biology",
+    items: [
+      "Biology",
+      "Botany & Plant Sciences",
+      "Zoology & Animal Sciences",
+      "Genetics & Heredity",
+      "Biotechnology & Microbiology",
+      "Human Anatomy & Physiology",
+      "Ecology & Environmental Science",
+      "Cell & Molecular Biology"
+    ]
+  },
+  {
+    category: "📊 Commerce",
+    mainSubject: "Commerce",
+    items: [
+      "Commerce",
+      "Accountancy & Financial Accounting",
+      "Business Studies & Management",
+      "Economics (Micro & Macro)",
+      "Financial Management & Markets",
+      "Banking & Insurance",
+      "Marketing & Human Resource Management",
+      "Corporate & Business Law"
+    ]
+  },
+  {
+    category: "📚 Social Science",
+    mainSubject: "Social Science",
+    items: [
+      "Social Science",
+      "History & National Movement",
+      "Geography & Earth Sciences",
+      "Political Science & Civics",
+      "Sociology & Society",
+      "Psychology & Human Behavior",
+      "General Knowledge (GK) & Current Affairs"
+    ]
+  },
+  {
+    category: "⚙️ Engineering",
+    mainSubject: "Engineering",
+    items: [
+      "Engineering",
+      "Electrical & Electronics Engineering",
+      "Electronics & Communication Engineering",
+      "Mechanical Engineering",
+      "Civil Engineering",
+      "Chemical Engineering",
+      "Automobile Engineering"
+    ]
+  }
+];
+
+export const ALL_PREDEFINED_SUBJECTS = [
+  ...MAIN_SUBJECTS,
+  ...COMPREHENSIVE_SUBJECTS_AND_LANGUAGES.flatMap(cat => cat.items)
+];
+
 export const MAIN_SUBJECT_SUB_MAP = {
   "Computer Science": [
     "computer science", "cs", "python", "python programming", "java", "java programming",
     "c++", "c programming", "data structures", "algorithms", "operating systems",
     "database", "sql", "dbms", "computer networks", "cyber security",
     "web development", "machine learning", "artificial intelligence", "ai",
-    "cloud computing", "software engineering", "compiler design"
+    "cloud computing", "software engineering", "compiler design", "information technology"
   ],
   "Mathematics": [
     "mathematics", "math", "maths", "algebra", "calculus", "geometry", "trigonometry",
@@ -50,7 +189,7 @@ export const MAIN_SUBJECT_SUB_MAP = {
     "physics", "applied physics", "mechanics", "thermodynamics", "optics",
     "electromagnetism", "quantum physics", "modern physics", "astrophysics",
     "space science", "astrophysics & space science", "nuclear physics", "atomic physics",
-    "waves and acoustics", "general science", "science"
+    "waves and acoustics"
   ],
   "Chemistry": [
     "chemistry", "organic chemistry", "inorganic chemistry", "physical chemistry",
@@ -86,6 +225,43 @@ export const MAIN_SUBJECT_SUB_MAP = {
   ]
 };
 
+export const getMainSubjectFor = (subjectName) => {
+  if (!subjectName) return null;
+  const s = String(subjectName).trim().toLowerCase();
+  
+  // 1. Direct match with 8 Main Subjects
+  for (const main of MAIN_SUBJECTS) {
+    if (s === main.toLowerCase()) return main;
+  }
+
+  // 2. Exact match in COMPREHENSIVE_SUBJECTS_AND_LANGUAGES items
+  for (const group of COMPREHENSIVE_SUBJECTS_AND_LANGUAGES) {
+    if (group.items.some(item => item.toLowerCase() === s)) {
+      return group.mainSubject;
+    }
+  }
+
+  // 3. Clean string match in COMPREHENSIVE_SUBJECTS_AND_LANGUAGES
+  const clean = s.replace(/[\(\)\[\]\{\}\/\\,\-\._\+★└─]/g, ' ').replace(/\s+/g, ' ').trim();
+  for (const group of COMPREHENSIVE_SUBJECTS_AND_LANGUAGES) {
+    if (group.items.some(item => {
+      const cleanItem = item.toLowerCase().replace(/[\(\)\[\]\{\}\/\\,\-\._\+★└─]/g, ' ').replace(/\s+/g, ' ').trim();
+      return cleanItem === clean;
+    })) {
+      return group.mainSubject;
+    }
+  }
+
+  // 4. Exact word match in MAIN_SUBJECT_SUB_MAP
+  for (const [mainCat, subList] of Object.entries(MAIN_SUBJECT_SUB_MAP)) {
+    if (subList.some(sub => clean === sub || clean === sub.replace(/[\(\)\[\]\{\}\/\\,\-\._\+]/g, ' ').replace(/\s+/g, ' ').trim())) {
+      return mainCat;
+    }
+  }
+
+  return null;
+};
+
 export const isSubjectMatching = (itemSub, targetSub) => {
   if (!targetSub || targetSub === 'ALL' || targetSub === 'All Subjects') return true;
   if (!itemSub || itemSub === 'General' || itemSub === 'All' || itemSub === 'General Assessment' || itemSub === 'Assessment') return true;
@@ -94,35 +270,90 @@ export const isSubjectMatching = (itemSub, targetSub) => {
   const cleanTarget = String(targetSub).toLowerCase().trim();
   if (cleanItem === cleanTarget) return true;
 
-  const strip = s => s.replace(/[\(\)\[\]\{\}\/\\,\-\._\+]/g, ' ').replace(/\s+/g, ' ').trim();
-  const sItem = strip(cleanItem);
-  const sTarget = strip(cleanTarget);
-  if (sItem === sTarget) return true;
+  const mainA = getMainSubjectFor(cleanItem);
+  const mainB = getMainSubjectFor(cleanTarget);
 
-  if (sItem.includes(sTarget) || sTarget.includes(sItem)) return true;
-
-  for (const [mainCategory, subList] of Object.entries(MAIN_SUBJECT_SUB_MAP)) {
-    const mainLower = mainCategory.toLowerCase();
-    const targetIsMain = sTarget === mainLower || sTarget.includes(mainLower) || mainLower.includes(sTarget);
-    const itemIsMain = sItem === mainLower || sItem.includes(mainLower) || mainLower.includes(sItem);
-
-    if (targetIsMain && subList.some(sub => sItem === sub || sItem.includes(sub) || sub.includes(sItem))) {
-      return true;
-    }
-    if (itemIsMain && subList.some(sub => sTarget === sub || sTarget.includes(sub) || sub.includes(sTarget))) {
-      return true;
-    }
-    const itemInSub = subList.some(sub => sItem === sub || sItem.includes(sub) || sub.includes(sItem));
-    const targetInSub = subList.some(sub => sTarget === sub || sTarget.includes(sub) || sub.includes(sTarget));
-    if (itemInSub && targetInSub) {
-      return true;
-    }
+  if (mainA && mainB) {
+    return mainA === mainB;
   }
 
-  return false;
+  return cleanItem === cleanTarget;
 };
 
 export const isSubjectMatch = isSubjectMatching;
+
+export const calculateEndTime = (startTimeStr, durationMinutes = 60) => {
+  if (!startTimeStr) return '11:00';
+  try {
+    let clean = String(startTimeStr).trim();
+    let isPM = /pm/i.test(clean);
+    let isAM = /am/i.test(clean);
+    let timeWithoutModifier = clean.replace(/[ap]m/gi, '').trim();
+    let [hoursStr, minutesStr] = timeWithoutModifier.split(':');
+    let hours = parseInt(hoursStr, 10);
+    let minutes = parseInt(minutesStr || '0', 10);
+
+    if (isNaN(hours)) return '11:00';
+    if (isNaN(minutes)) minutes = 0;
+
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+
+    const totalMinutes = (hours * 60 + minutes + Number(durationMinutes || 60)) % (24 * 60);
+    const endHours = Math.floor(totalMinutes / 60);
+    const endMinutes = totalMinutes % 60;
+
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(endHours)}:${pad(endMinutes)}`;
+  } catch {
+    return '11:00';
+  }
+};
+
+export const calculateDurationFromTimes = (startTimeStr, endTimeStr) => {
+  if (!startTimeStr || !endTimeStr) return 60;
+  try {
+    const parseMins = (str) => {
+      let clean = String(str).trim();
+      let isPM = /pm/i.test(clean);
+      let isAM = /am/i.test(clean);
+      let timeWithoutModifier = clean.replace(/[ap]m/gi, '').trim();
+      let [hStr, mStr] = timeWithoutModifier.split(':');
+      let h = parseInt(hStr, 10);
+      let m = parseInt(mStr || '0', 10);
+      if (isNaN(h)) return 0;
+      if (isNaN(m)) m = 0;
+      if (isPM && h < 12) h += 12;
+      if (isAM && h === 12) h = 0;
+      return h * 60 + m;
+    };
+
+    const startTotal = parseMins(startTimeStr);
+    const endTotal = parseMins(endTimeStr);
+
+    let diff = endTotal - startTotal;
+    if (diff <= 0) {
+      diff += 24 * 60;
+    }
+    return Math.max(5, Math.min(600, diff));
+  } catch {
+    return 60;
+  }
+};
+
+export const formatTimeTo12Hour = (timeStr) => {
+  if (!timeStr) return '';
+  const s = String(timeStr).trim();
+  if (s.includes('AM') || s.includes('PM') || s.includes('am') || s.includes('pm')) return s;
+  const parts = s.split(':');
+  if (parts.length < 2) return s;
+  let h = parseInt(parts[0], 10);
+  const m = parts[1].slice(0, 2);
+  if (isNaN(h)) return s;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ampm}`;
+};
 
 export const filterResultsForTeacher = (rawResults, currentTeacher, currentExams) => {
   if (!Array.isArray(rawResults)) return [];
@@ -240,89 +471,6 @@ const Toggle = ({ label, note, value, onChange }) => (
   </label>
 );
 
-export const COMPREHENSIVE_SUBJECTS_AND_LANGUAGES = [
-  {
-    category: "💻 Computer Science & IT",
-    items: [
-      "Computer Science",
-      "Information Technology",
-      "Artificial Intelligence & Machine Learning",
-      "Data Science & Analytics",
-      "Cybersecurity & Cryptography",
-      "Web Technologies & Development",
-      "Mobile Application Development",
-      "Data Structures & Algorithms (DSA)",
-      "Database Management Systems (DBMS)",
-      "Operating Systems (OS)",
-      "Computer Networks (CN)",
-      "Software Engineering",
-      "Cloud Computing & DevOps",
-      "Internet of Things (IoT)",
-      "Python Programming",
-      "Java Programming",
-      "C / C++ Programming",
-      "Web Accessibility & Assistive Tech"
-    ]
-  },
-  {
-    category: "🔬 Pure Sciences & Mathematics",
-    items: [
-      "Mathematics",
-      "Applied Mathematics",
-      "Physics",
-      "Chemistry",
-      "Biology / Life Sciences",
-      "Biotechnology",
-      "Environmental Science & Ecology",
-      "Statistics & Probability",
-      "General Science",
-      "Astrophysics & Space Science"
-    ]
-  },
-  {
-    category: "📊 Commerce, Management & Economics",
-    items: [
-      "Accountancy",
-      "Business Studies",
-      "Economics (Micro & Macro)",
-      "Commerce",
-      "Financial Management",
-      "Banking & Insurance",
-      "Marketing Management",
-      "Human Resource Management",
-      "Corporate Law"
-    ]
-  },
-  {
-    category: "📚 Humanities, Arts & Social Sciences",
-    items: [
-      "History",
-      "Social Science",
-      "Geography",
-      "Political Science & Civics",
-      "Sociology",
-      "Psychology",
-      "Philosophy",
-      "Public Administration",
-      "Journalism & Mass Media",
-      "General Knowledge (GK) & Current Affairs"
-    ]
-  },
-  {
-    category: "⚙️ Engineering Disciplines",
-    items: [
-      "Electrical & Electronics Engineering",
-      "Electronics & Communication Engineering",
-      "Mechanical Engineering",
-      "Civil Engineering",
-      "Chemical Engineering",
-      "Automobile Engineering"
-    ]
-  }
-];
-
-export const ALL_PREDEFINED_SUBJECTS = COMPREHENSIVE_SUBJECTS_AND_LANGUAGES.flatMap(cat => cat.items);
-
 export const SubjectSelector = ({ value, onChange, placeholder = "Select Subject", id, style }) => {
   const isPredefined = ALL_PREDEFINED_SUBJECTS.includes(value);
   const [isCustom, setIsCustom] = useState(!isPredefined && Boolean(value && value !== 'General'));
@@ -369,11 +517,14 @@ export const SubjectSelector = ({ value, onChange, placeholder = "Select Subject
         <option value="" disabled>{placeholder}</option>
         {COMPREHENSIVE_SUBJECTS_AND_LANGUAGES.map(group => (
           <optgroup key={group.category} label={group.category}>
-            {group.items.map(subj => (
-              <option key={subj} value={subj}>
-                {subj}
-              </option>
-            ))}
+            {group.items.map(subj => {
+              const isMain = subj === group.mainSubject;
+              return (
+                <option key={subj} value={subj} style={{ fontWeight: isMain ? '800' : '500' }}>
+                  {isMain ? `★ ${subj} (Main Subject)` : `  └─ ${subj}`}
+                </option>
+              );
+            })}
           </optgroup>
         ))}
         <optgroup label="✍️ Custom / Other">
@@ -664,6 +815,19 @@ export default function TeacherDashboard() {
           }
         }
       }
+      // Purge legacy mock entries from shared_study_test_results (e.g., UNIT 1 NODE JS)
+      const rawStudyTests = localStorage.getItem('shared_study_test_results');
+      if (rawStudyTests) {
+        const parsed = JSON.parse(rawStudyTests);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(t => 
+            !(String(t.studentName || '').toLowerCase().includes('nayana') && String(t.materialTitle || t.topic || '').toLowerCase().includes('node js'))
+          );
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem('shared_study_test_results', JSON.stringify(cleaned));
+          }
+        }
+      }
     } catch (e) {}
   }, []);
 
@@ -715,12 +879,15 @@ export default function TeacherDashboard() {
     subject: selectedTeacherSubject !== 'ALL' ? selectedTeacherSubject : (teacher?.subject || 'Computer Science'),
     targetStudentEmail: '',
     targetStudentName: '',
+    targetStudentInterestedSubject: '',
     assignedStudents: ['all'],
     date: new Date().toISOString().split('T')[0],
     time: '10:00',
+    startTime: '10:00',
+    endTime: '11:00',
     duration: 60,
     passMark: 40,
-    status: 'Draft',
+    status: 'Published',
     instructions: 'Listen carefully to each question narration. Use voice navigation commands like "Next", "Repeat", or "Option A" to answer.',
     defaultLanguage: 'en',
     allowedLanguages: ['en']
@@ -734,11 +901,48 @@ export default function TeacherDashboard() {
       if (!parsed.targetStudentEmail) parsed.targetStudentEmail = '';
       if (!parsed.targetStudentName) parsed.targetStudentName = '';
       if (!Array.isArray(parsed.assignedStudents)) parsed.assignedStudents = [];
+      if (!parsed.status || parsed.status === 'Draft') parsed.status = 'Published';
+      if (!parsed.startTime) parsed.startTime = parsed.time || '10:00';
+      if (!parsed.endTime) parsed.endTime = calculateEndTime(parsed.startTime, parsed.duration || 60);
       return parsed;
     } catch {
       return initialExamState;
     }
   });
+
+  const handleStartTimeChange = (newStartTime) => {
+    const start = newStartTime || '10:00';
+    const dur = Number(exam.duration || 60);
+    const end = calculateEndTime(start, dur);
+    setExam(prev => ({
+      ...prev,
+      time: start,
+      startTime: start,
+      endTime: end
+    }));
+  };
+
+  const handleEndTimeChange = (newEndTime) => {
+    const end = newEndTime || '11:00';
+    const start = exam.startTime || exam.time || '10:00';
+    const dur = calculateDurationFromTimes(start, end);
+    setExam(prev => ({
+      ...prev,
+      endTime: end,
+      duration: dur
+    }));
+  };
+
+  const handleDurationChange = (newDuration) => {
+    const dur = Math.max(1, Math.min(600, Number(newDuration) || 60));
+    const start = exam.startTime || exam.time || '10:00';
+    const end = calculateEndTime(start, dur);
+    setExam(prev => ({
+      ...prev,
+      duration: dur,
+      endTime: end
+    }));
+  };
 
   const handleSelectTargetStudent = (studentEmail) => {
     if (!studentEmail) {
@@ -755,8 +959,10 @@ export default function TeacherDashboard() {
       ...prev,
       targetStudentEmail: targetStu.email,
       targetStudentName: studentName,
+      targetStudentInterestedSubject: studentSub,
       assignedStudents: [targetStu.email],
       subject: studentSub,
+      status: 'Published',
       title: (prev.title && !prev.title.includes('Assessment') && !prev.title.includes('Unit Test'))
         ? prev.title
         : `${studentSub} Assessment - ${studentName}`
@@ -770,6 +976,7 @@ export default function TeacherDashboard() {
       ...prev,
       targetStudentEmail: '',
       targetStudentName: '',
+      targetStudentInterestedSubject: '',
       assignedStudents: ['all']
     }));
     say('Exam target set to open for all students.');
@@ -2204,8 +2411,9 @@ export default function TeacherDashboard() {
   }, [savedExams, selectedTeacherSubject]);
 
   const subjectQuestionsForExam = useMemo(() => {
-    return questions.filter(q => isSubjectMatch(q.subject || q.topic, selectedTeacherSubject));
-  }, [questions, selectedTeacherSubject]);
+    const targetSub = exam.subject || selectedTeacherSubject;
+    return questions.filter(q => isSubjectMatch(q.subject || q.topic, targetSub));
+  }, [questions, exam.subject, selectedTeacherSubject]);
 
   const filteredStudyMaterials = useMemo(() => {
     return studyMaterials.filter(mat => isSubjectMatch(mat.subject, selectedTeacherSubject));
@@ -2262,19 +2470,31 @@ export default function TeacherDashboard() {
   };
 
   // Exam CRUD Operations
-  const handleSaveExam = async () => {
+  const handleSaveExam = async (forcedStatus = null) => {
     setBusy(true);
     try {
-      const examQuestions = questions.filter(q => selectedQuestionIds.includes(q.id));
+      let examQuestions = questions.filter(q => selectedQuestionIds.includes(q.id));
+      if (examQuestions.length === 0 && subjectQuestionsForExam.length > 0) {
+        examQuestions = subjectQuestionsForExam;
+        setSelectedQuestionIds(subjectQuestionsForExam.map(q => q.id));
+      }
+
+      const finalStatus = forcedStatus || exam.status || 'Published';
+      const finalStartTime = exam.startTime || exam.time || '10:00';
+      const finalDuration = Number(exam.duration || 60);
+      const finalEndTime = exam.endTime || calculateEndTime(finalStartTime, finalDuration);
+
       const payload = {
-        title: exam.title,
-        subject: exam.subject,
-        duration: exam.duration,
-        date: exam.date,
-        time: exam.time,
-        passMark: exam.passMark,
-        instructions: exam.instructions,
-        status: exam.status,
+        title: exam.title || `${exam.subject || 'Subject'} Theory Assessment`,
+        subject: exam.subject || 'Computer Science',
+        duration: finalDuration,
+        date: exam.date || new Date().toISOString().split('T')[0],
+        time: finalStartTime,
+        startTime: finalStartTime,
+        endTime: finalEndTime,
+        passMark: exam.passMark || 40,
+        instructions: exam.instructions || 'Listen carefully to each question narration. Use voice navigation commands like "Next", "Repeat", or "Option A" to answer.',
+        status: finalStatus,
         defaultLanguage: 'en',
         allowedLanguages: ['en'],
         accessibilitySettings: access,
@@ -2283,19 +2503,20 @@ export default function TeacherDashboard() {
           : (exam.assignedStudents && exam.assignedStudents.length > 0 ? exam.assignedStudents : ['all']),
         targetStudentEmail: exam.targetStudentEmail || '',
         targetStudentName: exam.targetStudentName || '',
-        questions: examQuestions.map(q => ({
+        questions: examQuestions.map((q, idx) => ({
+          questionNumber: idx + 1,
           text: q.text,
-          type: q.type,
-          marks: q.marks,
-          difficulty: q.difficulty,
+          type: q.type || 'Descriptive Theory',
+          marks: q.marks || 2,
+          difficulty: q.difficulty || 'Medium',
           options: q.options || [],
           correctAnswer: q.correctAnswer || ''
         }))
       };
 
-      const normTitle = (exam.title || '').trim().toLowerCase();
-      const normSubj = (exam.subject || 'Computer Science').trim().toLowerCase();
-      const normTarget = (exam.targetStudentEmail || '').trim().toLowerCase();
+      const normTitle = (payload.title || '').trim().toLowerCase();
+      const normSubj = (payload.subject || 'Computer Science').trim().toLowerCase();
+      const normTarget = (payload.targetStudentEmail || '').trim().toLowerCase();
 
       const existingExamIndex = savedExams.findIndex(item => 
         (editingExamId && (item._id === editingExamId || item.id === editingExamId)) ||
@@ -2307,17 +2528,35 @@ export default function TeacherDashboard() {
       let nextSaved;
       if (editingExamId || existingExamIndex !== -1) {
         const targetId = editingExamId || savedExams[existingExamIndex]?._id || savedExams[existingExamIndex]?.id;
-        const updated = await updateExam(targetId, payload);
-        nextSaved = savedExams.map((item, idx) => ((item._id === targetId || item.id === targetId || idx === existingExamIndex) ? { ...item, ...payload, ...updated } : item));
+        const res = await updateExam(targetId, payload);
+        const actualUpdated = res?.data || res || payload;
+        const mergedExam = {
+          ...payload,
+          ...actualUpdated,
+          _id: targetId,
+          id: targetId
+        };
+        nextSaved = savedExams.map((item, idx) => ((item._id === targetId || item.id === targetId || idx === existingExamIndex) ? mergedExam : item));
         setSavedExams(deduplicateExamsList(nextSaved));
-        say('Exam updated successfully in MongoDB database.');
+        say(`Exam "${payload.title}" updated successfully and published live.`);
       } else {
-        const created = await createExam(payload);
-        nextSaved = [created, ...savedExams];
+        const res = await createExam(payload);
+        const created = res?.data || res || {};
+        const examId = created._id || created.id || `exam-${Date.now()}`;
+        const newExamObj = {
+          _id: examId,
+          id: examId,
+          ...payload,
+          ...created,
+          creatorEmail: teacher.email || 'teacher@blindassist.edu',
+          teacherEmail: teacher.email || 'teacher@blindassist.edu',
+          teacherName: teacher.fullName || 'Teacher'
+        };
+        nextSaved = [newExamObj, ...savedExams];
         setSavedExams(deduplicateExamsList(nextSaved));
         say(exam.targetStudentName 
-          ? `Personalized exam saved for ${exam.targetStudentName} (${payload.subject}).` 
-          : 'New exam saved successfully to MongoDB database.');
+          ? `Personalized exam published live for ${exam.targetStudentName} (${payload.subject}).` 
+          : 'New exam published successfully to MongoDB database and Student Dashboard.');
       }
       try {
         localStorage.setItem('shared_exams', JSON.stringify(deduplicateExamsList(nextSaved)));
@@ -2329,8 +2568,8 @@ export default function TeacherDashboard() {
             ? `🎯 Personalized Exam for ${exam.targetStudentName}: ${payload.title}` 
             : `🔔 New Exam Scheduled: ${payload.title}`,
           detail: exam.targetStudentName
-            ? `Teacher created a personalized exam '${payload.title}' (${payload.subject}) specifically for ${exam.targetStudentName} based on their interested subject.`
-            : `Teacher scheduled a new exam '${payload.title}' (${payload.subject}) on ${payload.date || 'upcoming date'} at ${payload.time || '10:00 AM'}. Duration: ${payload.duration} mins.`,
+            ? `Teacher published a personalized exam '${payload.title}' (${payload.subject}) specifically for ${exam.targetStudentName}.`
+            : `Teacher published a new exam '${payload.title}' (${payload.subject}) on ${payload.date || 'upcoming date'} at ${payload.time || '10:00 AM'}. Duration: ${payload.duration} mins.`,
           date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           type: 'Exam',
           targetStudentEmail: exam.targetStudentEmail || '',
@@ -2354,6 +2593,22 @@ export default function TeacherDashboard() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleQuickPublishExam = async (examId) => {
+    const target = savedExams.find(x => (x._id || x.id) === examId);
+    if (!target) return;
+    const updatedPayload = { ...target, status: 'Published' };
+    try {
+      await updateExam(examId, updatedPayload);
+    } catch (e) {}
+    const nextSaved = savedExams.map(x => ((x._id || x.id) === examId ? { ...x, status: 'Published' } : x));
+    setSavedExams(deduplicateExamsList(nextSaved));
+    try {
+      localStorage.setItem('shared_exams', JSON.stringify(deduplicateExamsList(nextSaved)));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+    say(`🚀 Exam "${target.title || target.examTitle}" is now Published live to Student Dashboard!`);
   };
 
   const handleEditExam = (savedItem) => {
@@ -2854,114 +3109,93 @@ export default function TeacherDashboard() {
       </div>
 
       {/* DIRECT STUDENT-TEACHER CONNECTION & PENDING EVALUATIONS SUMMARY */}
-      <section className="ea-card" style={{
-        marginTop: '20px',
-        marginBottom: '20px',
-        padding: '20px',
-        borderRadius: '16px',
-        border: (pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) ? '2px solid #f59e0b' : '1.5px solid #10b981',
-        background: (pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) ? '#fffdf5' : '#f0fdf4'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '28px' }}>{(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) ? '⚡' : '✅'}</span>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '17px', color: '#0f172a', fontWeight: '800' }}>
-                {(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0)
-                  ? `Pending Student Evaluations Awaiting Grading (${pendingWrittenExams.length + pendingVivaSubs.length + pendingStudyTests.length})`
-                  : 'Student Evaluations Up to Date'}
-              </h3>
-              <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#64748b' }}>
-                {(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0)
-                  ? 'Candidate submissions are ready for your review and grade publishing.'
-                  : 'All candidate exams and oral vivas have been evaluated and published to student dashboards.'}
-              </p>
+      {(() => {
+        const totalPendingEvals = pendingWrittenExams.length + pendingVivaSubs.length;
+        return (
+          <section className="ea-card" style={{
+            marginTop: '20px',
+            marginBottom: '20px',
+            padding: '20px',
+            borderRadius: '16px',
+            border: totalPendingEvals > 0 ? '2px solid #f59e0b' : '1.5px solid #10b981',
+            background: totalPendingEvals > 0 ? '#fffdf5' : '#f0fdf4'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '28px' }}>{totalPendingEvals > 0 ? '⚡' : '✅'}</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', color: '#0f172a', fontWeight: '800' }}>
+                    {totalPendingEvals > 0
+                      ? `Pending Student Evaluations Awaiting Grading (${totalPendingEvals})`
+                      : 'Student Evaluations Up to Date'}
+                  </h3>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#64748b' }}>
+                    {totalPendingEvals > 0
+                      ? 'Candidate submissions are ready for your review and grade publishing.'
+                      : 'All candidate exams and oral vivas have been evaluated and published to student dashboards.'}
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button 
+                  className="ea-primary"
+                  style={{ background: '#2563eb', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
+                  onClick={() => { setPage('Evaluations'); setEvaluationTab('written'); }}
+                >
+                  📝 Grade Written Exams ({pendingWrittenExams.length}) →
+                </button>
+                <button 
+                  className="ea-primary"
+                  style={{ background: '#7c3aed', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
+                  onClick={() => { setPage('Evaluations'); setEvaluationTab('viva'); }}
+                >
+                  🎙️ Evaluate Oral Vivas ({pendingVivaSubs.length}) →
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button 
-              className="ea-primary"
-              style={{ background: '#2563eb', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
-              onClick={() => { setPage('Evaluations'); setEvaluationTab('written'); }}
-            >
-              📝 Grade Written Exams ({pendingWrittenExams.length}) →
-            </button>
-            <button 
-              className="ea-primary"
-              style={{ background: '#7c3aed', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
-              onClick={() => { setPage('Evaluations'); setEvaluationTab('viva'); }}
-            >
-              🎙️ Evaluate Oral Vivas ({pendingVivaSubs.length}) →
-            </button>
-            {pendingStudyTests.length > 0 && (
-              <button 
-                className="ea-primary"
-                style={{ background: '#059669', fontSize: '13px', padding: '8px 16px', borderRadius: '10px' }}
-                onClick={() => setPage('Study Materials')}
-              >
-                📚 Grade Study Tests ({pendingStudyTests.length}) →
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Breakdown chips when submissions exist */}
-        {(pendingWrittenExams.length > 0 || pendingVivaSubs.length > 0 || pendingStudyTests.length > 0) && (
-          <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-            {pendingWrittenExams.length > 0 && (
-              <div style={{ background: '#fef3c7', borderRadius: '12px', padding: '12px 14px', border: '1px solid #fde68a' }}>
-                <b style={{ color: '#92400e', fontSize: '13px' }}>📝 Written Exams Pending:</b>
-                <div style={{ marginTop: '6px', fontSize: '12px', color: '#78350f', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {pendingWrittenExams.slice(0, 3).map((r, i) => (
-                    <div key={r.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span><strong>{r.student || r.studentName}</strong>: {r.examName || r.examTitle}</span>
-                      <span style={{ color: '#b45309', fontWeight: 'bold' }}>Needs Grading</span>
+            {/* Breakdown chips when submissions exist */}
+            {totalPendingEvals > 0 && (
+              <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                {pendingWrittenExams.length > 0 && (
+                  <div style={{ background: '#fef3c7', borderRadius: '12px', padding: '12px 14px', border: '1px solid #fde68a' }}>
+                    <b style={{ color: '#92400e', fontSize: '13px' }}>📝 Written Exams Pending:</b>
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#78350f', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {pendingWrittenExams.slice(0, 3).map((r, i) => (
+                        <div key={r.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span><strong>{r.student || r.studentName}</strong>: {r.examName || r.examTitle}</span>
+                          <span style={{ color: '#b45309', fontWeight: 'bold' }}>Needs Grading</span>
+                        </div>
+                      ))}
+                      {pendingWrittenExams.length > 3 && (
+                        <span style={{ fontStyle: 'italic', color: '#92400e' }}>+{pendingWrittenExams.length - 3} more awaiting...</span>
+                      )}
                     </div>
-                  ))}
-                  {pendingWrittenExams.length > 3 && (
-                    <span style={{ fontStyle: 'italic', color: '#92400e' }}>+{pendingWrittenExams.length - 3} more awaiting...</span>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {pendingVivaSubs.length > 0 && (
+                  <div style={{ background: '#ede9fe', borderRadius: '12px', padding: '12px 14px', border: '1px solid #ddd6fe' }}>
+                    <b style={{ color: '#5b21b6', fontSize: '13px' }}>🎙️ Spoken Oral Vivas Pending:</b>
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#4c1d95', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {pendingVivaSubs.slice(0, 3).map((s, i) => (
+                        <div key={s.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span><strong>{s.studentName || s.student}</strong>: {s.vivaTitle || s.subject}</span>
+                          <span style={{ color: '#6d28d9', fontWeight: 'bold' }}>Awaiting Score</span>
+                        </div>
+                      ))}
+                      {pendingVivaSubs.length > 3 && (
+                        <span style={{ fontStyle: 'italic', color: '#5b21b6' }}>+{pendingVivaSubs.length - 3} more awaiting...</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-
-            {pendingVivaSubs.length > 0 && (
-              <div style={{ background: '#ede9fe', borderRadius: '12px', padding: '12px 14px', border: '1px solid #ddd6fe' }}>
-                <b style={{ color: '#5b21b6', fontSize: '13px' }}>🎙️ Spoken Oral Vivas Pending:</b>
-                <div style={{ marginTop: '6px', fontSize: '12px', color: '#4c1d95', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {pendingVivaSubs.slice(0, 3).map((s, i) => (
-                    <div key={s.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span><strong>{s.studentName || s.student}</strong>: {s.vivaTitle || s.subject}</span>
-                      <span style={{ color: '#6d28d9', fontWeight: 'bold' }}>Awaiting Score</span>
-                    </div>
-                  ))}
-                  {pendingVivaSubs.length > 3 && (
-                    <span style={{ fontStyle: 'italic', color: '#5b21b6' }}>+{pendingVivaSubs.length - 3} more awaiting...</span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {pendingStudyTests.length > 0 && (
-              <div style={{ background: '#d1fae5', borderRadius: '12px', padding: '12px 14px', border: '1px solid #a7f3d0' }}>
-                <b style={{ color: '#065f46', fontSize: '13px' }}>📚 Study Material Tests Pending:</b>
-                <div style={{ marginTop: '6px', fontSize: '12px', color: '#047857', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {pendingStudyTests.slice(0, 3).map((st, i) => (
-                    <div key={st.id || i} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span><strong>{st.studentName || st.student}</strong>: {st.materialTitle || st.subject}</span>
-                      <span style={{ color: '#059669', fontWeight: 'bold' }}>Needs Review</span>
-                    </div>
-                  ))}
-                  {pendingStudyTests.length > 3 && (
-                    <span style={{ fontStyle: 'italic', color: '#065f46' }}>+{pendingStudyTests.length - 3} more awaiting...</span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
+          </section>
+        );
+      })()}
 
       <div className="ea-two">
         <section className="ea-card">
@@ -3005,6 +3239,14 @@ export default function TeacherDashboard() {
                 </span>
                 <em className={item.status === 'Draft' ? 'draft' : ''}>{item.status || 'Saved'}</em>
                 <div style={{ display: 'flex', gap: '4px' }}>
+                  {item.status === 'Draft' && (
+                    <button 
+                      style={{ fontSize: '11px', padding: '4px 8px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '800' }} 
+                      onClick={() => handleQuickPublishExam(item._id || item.id)}
+                    >
+                      🚀 Publish Now
+                    </button>
+                  )}
                   <button style={{ fontSize: '11px', padding: '4px 8px' }} onClick={() => handleEditExam(item)}>Edit</button>
                   <button style={{ fontSize: '11px', padding: '4px 8px', color: '#dc2626' }} onClick={() => handleDeleteExam(item._id)}>Delete</button>
                 </div>
@@ -3036,59 +3278,82 @@ export default function TeacherDashboard() {
     <>
       <Title
         title={editingExamId ? "Edit Exam" : "Create New Exam"}
-        text="Configure exam details, assign questions from bank, create custom questions, and generate AI questions directly."
+        text="Configure exam details, assign questions from bank, create custom questions, and publish directly to blind students' dashboards."
         action={
-          <button className="ea-primary" onClick={handleSaveExam} disabled={busy}>
-            {busy ? 'Saving...' : editingExamId ? 'Update Exam' : 'Save Exam to Database'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button 
+              className="ea-primary" 
+              onClick={() => handleSaveExam('Published')} 
+              disabled={busy}
+              style={{ background: '#16a34a', border: 'none', color: '#ffffff', fontWeight: '800', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              {busy ? 'Publishing...' : '🚀 Save & Publish Exam to Student Dashboard'}
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleSaveExam('Draft')} 
+              disabled={busy}
+              style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#475569', fontWeight: '700', padding: '10px 14px', borderRadius: '8px', cursor: 'pointer' }}
+            >
+              {editingExamId ? 'Update Draft' : 'Save Draft'}
+            </button>
+          </div>
         }
       />
 
       {/* SECTION 1: EXAM DETAILS & QUESTION SELECTOR */}
       <div className="ea-two" style={{ marginBottom: '24px' }}>
         <section className="ea-card ea-form">
-          {exam.targetStudentEmail && (
-            <div style={{
-              background: '#ecfdf5',
-              border: '2px solid #10b981',
-              borderRadius: '12px',
-              padding: '14px 16px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
-              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '24px' }}>🎯</span>
-                <div>
-                  <strong style={{ fontSize: '14px', color: '#065f46', display: 'block' }}>
-                    Personalized Exam for: {exam.targetStudentName || exam.targetStudentEmail}
-                  </strong>
-                  <span style={{ fontSize: '12px', color: '#047857' }}>
-                    Student's Interested Subject: <strong>{exam.subject}</strong> • This exam is specifically created for {exam.targetStudentName}.
-                  </span>
+          {exam.targetStudentEmail && (() => {
+            const targetStu = registeredStudents.find(s => s.email === exam.targetStudentEmail);
+            const studentPrefSub = targetStu?.interestedSubject || targetStu?.subject || exam.targetStudentInterestedSubject || 'Computer Science';
+            const isMatch = isSubjectMatch(exam.subject, studentPrefSub);
+
+            return (
+              <div style={{
+                background: isMatch ? '#ecfdf5' : '#fef2f2',
+                border: isMatch ? '2px solid #10b981' : '2px solid #ef4444',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                boxShadow: isMatch ? '0 4px 12px rgba(16, 185, 129, 0.15)' : '0 4px 14px rgba(239, 68, 68, 0.15)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>{isMatch ? '🎯' : '❌'}</span>
+                  <div>
+                    <strong style={{ fontSize: '14px', color: isMatch ? '#065f46' : '#991b1b', display: 'block', marginBottom: '2px' }}>
+                      {isMatch 
+                        ? `Personalized Exam for: ${exam.targetStudentName || exam.targetStudentEmail}` 
+                        : `⚠️ Subject Mismatch: Exam Subject Does Not Match Student's Interested Subject`}
+                    </strong>
+                    <span style={{ fontSize: '12px', color: isMatch ? '#047857' : '#b91c1c' }}>
+                      Student's Interested Subject: <strong>{studentPrefSub}</strong> • Selected Exam Subject: <strong>{exam.subject}</strong> • {isMatch ? '✓ Matches student preference' : '❌ Not matched to student interested subject preference'}.
+                    </span>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleClearTargetStudent}
+                  style={{
+                    background: '#ffffff',
+                    border: isMatch ? '1px solid #6ee7b7' : '1px solid #fca5a5',
+                    color: isMatch ? '#047857' : '#b91c1c',
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✕ Revert to All Students
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleClearTargetStudent}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #6ee7b7',
-                  color: '#047857',
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                  fontWeight: '800',
-                  cursor: 'pointer'
-                }}
-              >
-                ✕ Revert to All Students
-              </button>
-            </div>
-          )}
+            );
+          })()}
 
           <Field label="Target Student (Personalized Exam based on Student's Interested Subject)">
             <select
@@ -3125,32 +3390,80 @@ export default function TeacherDashboard() {
           <Field label="Exam Title">
             <input value={exam.title} onChange={e => setExam({ ...exam, title: e.target.value })} placeholder="e.g. Unit Test - Computer Science" />
           </Field>
-          <Field label={exam.targetStudentName ? `Subject / Course (Auto-selected for ${exam.targetStudentName})` : "Subject / Course"}>
-            <SubjectSelector value={exam.subject} onChange={val => setExam({ ...exam, subject: val })} placeholder="Select Subject" />
-            {exam.targetStudentName && (
-              <small style={{ color: '#047857', fontSize: '11px', fontWeight: '700', marginTop: '3px', display: 'block' }}>
-                ✓ Matched to {exam.targetStudentName}'s interested subject preference.
-              </small>
-            )}
+          <Field label={exam.targetStudentName ? `Subject / Course (Target Student: ${exam.targetStudentName})` : "Subject / Course"}>
+            <SubjectSelector 
+              value={exam.subject} 
+              onChange={val => {
+                const targetStu = registeredStudents.find(s => s.email === exam.targetStudentEmail);
+                const stuName = exam.targetStudentName || targetStu?.username || targetStu?.name || '';
+                let newTitle = exam.title;
+                if (stuName && (exam.title.includes('Assessment') || exam.title.includes('Unit Test') || !exam.title)) {
+                  newTitle = `${val} Assessment - ${stuName}`;
+                } else if (!exam.title || exam.title.includes('Assessment')) {
+                  newTitle = `${val} Theory Assessment`;
+                }
+                setExam(prev => ({ ...prev, subject: val, title: newTitle }));
+                setSelectedQuestionIds([]);
+                setNewQuestion(prev => ({ ...prev, subject: val }));
+                setBulkSubject(val);
+                setAi(prev => ({ ...prev, topic: val }));
+              }} 
+              placeholder="Select Subject" 
+            />
+            {exam.targetStudentName && (() => {
+              const targetStu = registeredStudents.find(s => s.email === exam.targetStudentEmail);
+              const studentPrefSub = targetStu?.interestedSubject || targetStu?.subject || exam.targetStudentInterestedSubject || 'Computer Science';
+              const isMatch = isSubjectMatch(exam.subject, studentPrefSub);
+
+              if (isMatch) {
+                return (
+                  <small style={{ color: '#047857', fontSize: '11px', fontWeight: '700', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', padding: '6px 10px', borderRadius: '6px', border: '1px solid #86efac' }}>
+                    ✓ Matched to {exam.targetStudentName}'s interested subject preference ({studentPrefSub}).
+                  </small>
+                );
+              }
+              return (
+                <small style={{ color: '#991b1b', fontSize: '11px', fontWeight: '800', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', padding: '6px 10px', borderRadius: '6px', border: '1px solid #fca5a5' }}>
+                  ❌ Not matched to {exam.targetStudentName}'s interested subject preference ({studentPrefSub}). Student prefers {studentPrefSub}, but this exam is for {exam.subject}.
+                </small>
+              );
+            })()}
           </Field>
           <Field label="Exam Date">
             <input type="date" value={exam.date} onChange={e => setExam({ ...exam, date: e.target.value })} />
           </Field>
-          <Field label="Start Time">
-            <input type="time" value={exam.time} onChange={e => setExam({ ...exam, time: e.target.value })} />
+          <Field label="Exam Start Time">
+            <input 
+              type="time" 
+              value={exam.startTime || exam.time || '10:00'} 
+              onChange={e => handleStartTimeChange(e.target.value)} 
+            />
           </Field>
-          <Field label="Duration (Minutes)">
-            <input type="number" value={exam.duration} onChange={e => setExam({ ...exam, duration: Number(e.target.value) })} />
+          <Field label="Exam End Time">
+            <input 
+              type="time" 
+              value={exam.endTime || calculateEndTime(exam.startTime || exam.time || '10:00', exam.duration || 60)} 
+              onChange={e => handleEndTimeChange(e.target.value)} 
+            />
+          </Field>
+          <Field label="Exam Duration (Minutes)">
+            <input 
+              type="number" 
+              min="1" 
+              max="300" 
+              value={exam.duration} 
+              onChange={e => handleDurationChange(e.target.value)} 
+            />
           </Field>
           <Field label="Pass Mark (%)">
             <input type="number" value={exam.passMark} onChange={e => setExam({ ...exam, passMark: Number(e.target.value) })} />
           </Field>
           <Field label="Exam Status">
             <select value={exam.status} onChange={e => setExam({ ...exam, status: e.target.value })}>
-              <option value="Draft">Draft</option>
-              <option value="Scheduled">Scheduled</option>
-              <option value="Published">Published</option>
-              <option value="Completed">Completed</option>
+              <option value="Published">Published (Live on Student Dashboard)</option>
+              <option value="Scheduled">Scheduled (Upcoming on Student Dashboard)</option>
+              <option value="Draft">Draft (Hidden from Students)</option>
+              <option value="Completed">Completed (Archived)</option>
             </select>
           </Field>
           <Field label="Instructions for Blind Students (Narrated via Voice)">
@@ -3183,13 +3496,14 @@ export default function TeacherDashboard() {
             )}
           </div>
           <p style={{ fontSize: '12px', margin: '0 0 10px 0', color: '#475569' }}>
-            Total Selected: <b style={{ color: selectedQuestionIds.length > 0 ? '#16a34a' : '#64748b' }}>{selectedQuestionIds.length} of {subjectQuestionsForExam.length} questions {selectedTeacherSubject !== 'ALL' ? `(${selectedTeacherSubject})` : ''}</b> ({totalExamMarks} total marks)
+            Total Selected: <b style={{ color: selectedQuestionIds.length > 0 ? '#16a34a' : '#64748b' }}>{selectedQuestionIds.length} of {subjectQuestionsForExam.length} questions ({exam.subject || selectedTeacherSubject})</b> ({totalExamMarks} total marks)
           </p>
 
           <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'grid', gap: '8px', margin: '10px 0' }}>
             {subjectQuestionsForExam.length === 0 ? (
               <div style={{ padding: '24px 12px', textAlign: 'center', color: '#64748b', fontSize: '13px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
-                No questions found for {selectedTeacherSubject !== 'ALL' ? `"${selectedTeacherSubject}"` : 'Question Bank'} yet. Use the <b>Question Builder</b> below or AI generator to add questions for {selectedTeacherSubject !== 'ALL' ? selectedTeacherSubject : 'this subject'}.
+                <p style={{ margin: '0 0 8px 0', fontWeight: '700' }}>No questions found for "{exam.subject || selectedTeacherSubject}" yet.</p>
+                <p style={{ margin: 0, fontSize: '12px' }}>Use the <b>Question Builder</b> below to create questions, or click "Save & Publish" to publish this assessment.</p>
               </div>
             ) : (
               subjectQuestionsForExam.map(q => (
@@ -3208,8 +3522,12 @@ export default function TeacherDashboard() {
             )}
           </div>
 
-          <button style={{ width: '100%', background: '#9333ea', color: '#ffffff', padding: '12px', borderRadius: '10px', fontWeight: '800', border: 'none', cursor: 'pointer', marginTop: '16px' }} onClick={handleSaveExam} disabled={busy}>
-            {busy ? 'Saving...' : '💾 Save Exam to Database'}
+          <button 
+            style={{ width: '100%', background: '#16a34a', color: '#ffffff', padding: '12px', borderRadius: '10px', fontWeight: '800', border: 'none', cursor: 'pointer', marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px', boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)' }} 
+            onClick={() => handleSaveExam('Published')} 
+            disabled={busy}
+          >
+            {busy ? 'Publishing...' : '🚀 Save & Publish Exam to Student Dashboard'}
           </button>
         </aside>
       </div>
@@ -3891,9 +4209,30 @@ export default function TeacherDashboard() {
       <Title title="Schedule & Assign Students" text="Set window opening times and assign student cohorts or accommodations." />
       <div className="ea-two">
         <section className="ea-card ea-form">
-          <Field label="Open Date"><input type="date" value={exam.date} onChange={e => setExam({ ...exam, date: e.target.value })} /></Field>
-          <Field label="Open Time"><input type="time" value={exam.time} onChange={e => setExam({ ...exam, time: e.target.value })} /></Field>
-          <Field label="Exam Duration (Minutes)"><input type="number" value={exam.duration} onChange={e => setExam({ ...exam, duration: Number(e.target.value) })} /></Field>
+          <Field label="Exam Date"><input type="date" value={exam.date} onChange={e => setExam({ ...exam, date: e.target.value })} /></Field>
+          <Field label="Exam Start Time">
+            <input 
+              type="time" 
+              value={exam.startTime || exam.time || '10:00'} 
+              onChange={e => handleStartTimeChange(e.target.value)} 
+            />
+          </Field>
+          <Field label="Exam End Time">
+            <input 
+              type="time" 
+              value={exam.endTime || calculateEndTime(exam.startTime || exam.time || '10:00', exam.duration || 60)} 
+              onChange={e => handleEndTimeChange(e.target.value)} 
+            />
+          </Field>
+          <Field label="Exam Duration (Minutes)">
+            <input 
+              type="number" 
+              min="1" 
+              max="300" 
+              value={exam.duration} 
+              onChange={e => handleDurationChange(e.target.value)} 
+            />
+          </Field>
           <Field label="Pass Mark (%)"><input type="number" value={exam.passMark} onChange={e => setExam({ ...exam, passMark: Number(e.target.value) })} /></Field>
         </section>
 
@@ -6501,9 +6840,14 @@ export default function TeacherDashboard() {
                       )}
                       {COMPREHENSIVE_SUBJECTS_AND_LANGUAGES.map(cat => (
                         <optgroup key={cat.category} label={cat.category}>
-                          {cat.items.map(sub => (
-                            <option key={sub} value={sub}>{sub}</option>
-                          ))}
+                          {cat.items.map(sub => {
+                            const isMain = sub === cat.mainSubject;
+                            return (
+                              <option key={sub} value={sub} style={{ fontWeight: isMain ? '800' : '500' }}>
+                                {isMain ? `★ ${sub} (Main Subject)` : `  └─ ${sub}`}
+                              </option>
+                            );
+                          })}
                         </optgroup>
                       ))}
                     </select>
@@ -7305,12 +7649,16 @@ export default function TeacherDashboard() {
               }}
             >
               <option value="ALL">🌐 All Subjects (Show All)</option>
-              {COMPREHENSIVE_SUBJECTS_AND_LANGUAGES.map(cat => (
-                <optgroup key={cat.category} label={cat.category}>
-                  {cat.items.map(sub => (
-                    <option key={sub} value={sub}>{sub}</option>
-                  ))}
-                </optgroup>
+              {MAIN_SUBJECTS.map(mainSub => (
+                <option key={mainSub} value={mainSub}>
+                  {mainSub === 'Computer Science' ? '💻' :
+                   mainSub === 'Physics' ? '⚛️' :
+                   mainSub === 'Chemistry' ? '🧪' :
+                   mainSub === 'Mathematics' ? '📐' :
+                   mainSub === 'Biology' ? '🧬' :
+                   mainSub === 'Commerce' ? '📊' :
+                   mainSub === 'Social Science' ? '📚' : '⚙️'} {mainSub}
+                </option>
               ))}
             </select>
           </div>
