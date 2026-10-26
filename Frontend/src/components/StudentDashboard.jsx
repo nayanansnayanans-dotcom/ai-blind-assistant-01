@@ -2877,7 +2877,6 @@ export default function StudentDashboard() {
     } catch (e) {}
     return [];
   });
-  const [activePopupNotif, setActivePopupNotif] = useState(null);
   const seenNotifIdsRef = React.useRef(new Set());
 
   // Active Exam state
@@ -3077,6 +3076,8 @@ export default function StudentDashboard() {
   const [practiceQIdx, setPracticeQIdx] = useState(0);
   const [practiceAnswerInput, setPracticeAnswerInput] = useState('');
   const [practiceFeedback, setPracticeFeedback] = useState(null);
+  const [practiceAnswersByQ, setPracticeAnswersByQ] = useState({});
+  const [practiceSubmittedMap, setPracticeSubmittedMap] = useState({});
   const [studyQuery, setStudyQuery] = useState('');
   const [aiStudyResponse, setAiStudyResponse] = useState('');
 
@@ -3531,6 +3532,18 @@ export default function StudentDashboard() {
       reportText += `No oral viva submissions found yet for ${activeSubject}. `;
     }
 
+    // 3. Study Material Practice & Test Evaluations by Respected Teacher
+    const studentEmailKey = (student.email || studentProfile.email || '').toLowerCase().trim();
+    const evaluatedStudyResults = (studyTestResultsList || []).filter(s => 
+      s && (s.studentEmail === studentEmailKey || s.studentName === student.name) && (s.evaluated || s.teacherScore !== null)
+    );
+    if (evaluatedStudyResults.length > 0) {
+      const latestStudy = evaluatedStudyResults[0];
+      const sTeacher = latestStudy.evaluatedBy || 'your respected teacher';
+      const scoreVal = latestStudy.teacherScore !== null && latestStudy.teacherScore !== undefined ? latestStudy.teacherScore : latestStudy.score;
+      reportText += `Study material ${latestStudy.isPractice ? 'practice' : 'test'} result evaluated by respected teacher ${sTeacher}: For ${latestStudy.materialTitle}, your score is ${scoreVal} out of 10. Teacher remarks: "${latestStudy.teacherFeedback || 'Good effort.'}". `;
+    }
+
     announce(reportText);
     speakText(reportText);
   };
@@ -3658,25 +3671,42 @@ export default function StudentDashboard() {
 
           const questionsList = (currentMat.questions && currentMat.questions.length > 0) ? currentMat.questions : [currentMat];
           const totalQ = questionsList.length;
+          const isLastQ = currentQuestionIdx >= totalQ - 1;
 
-          if (lower.includes('repeat question') || lower.includes('repeat') || lower.includes('again') || lower.includes('read again') || lower.includes('listen again')) {
+          if (lower === 'submit' || lower.includes('submit practice') || lower.includes('say submit') || lower.includes('submit test') || lower.includes('finish practice')) {
+            announce("🚀 Submitting practice answers to teacher");
+            handleSubmitPracticeToTeacher();
+          } else if (lower.includes('repeat question') || lower.includes('read question') || lower.includes('say repeat question') || (lower.includes('repeat') && !practiceAnswerInput)) {
             announce("🔄 Repeating Question, Answer & Explanation");
             handleSpeakQuestionAnswerExplanation(currentMat, currentQuestionIdx);
-          } else if (lower.includes('next question') || lower === 'next' || lower.includes('forward') || lower.includes('next q')) {
+          } else if (lower.includes('repeat answer') || lower.includes('say your answer again') || lower.includes('repeat your answer') || lower.includes('clear answer') || lower.includes('change answer')) {
+            setPracticeAnswerInput('');
+            setPracticeAnswersByQ(prev => ({ ...prev, [currentQuestionIdx]: '' }));
+            speakText("Clearing previous answer. Please speak your practice answer again now.", () => {
+              setTimeout(() => handleStartVoiceDictationForPractice(), 300);
+            });
+          } else if (lower.includes('next question') || lower === 'next' || lower.includes('say next question') || lower.includes('forward')) {
             const nextQIdx = (currentQuestionIdx + 1) % totalQ;
             setPracticeQIdx(nextQIdx);
+            setPracticeAnswerInput(practiceAnswersByQ[nextQIdx] || '');
+            setPracticeFeedback(null);
             announce(`➡️ Next Question: ${nextQIdx + 1} of ${totalQ}`);
             handleSpeakQuestionAnswerExplanation(currentMat, nextQIdx);
-          } else if (lower.includes('previous question') || lower === 'previous' || lower.includes('prev question') || lower.includes('back') || lower.includes('last question') || lower.includes('prior question')) {
+          } else if (lower.includes('previous question') || lower === 'previous' || lower.includes('prev question') || lower.includes('back')) {
             const prevQIdx = (currentQuestionIdx - 1 + totalQ) % totalQ;
             setPracticeQIdx(prevQIdx);
+            setPracticeAnswerInput(practiceAnswersByQ[prevIdx] || '');
+            setPracticeFeedback(null);
             announce(`⬅️ Previous Question: ${prevQIdx + 1} of ${totalQ}`);
             handleSpeakQuestionAnswerExplanation(currentMat, prevQIdx);
-          } else if (lower.includes('dictate') || lower.includes('answer') || lower.includes('speak answer') || lower.includes('start dictation')) {
+          } else if (lower.includes('dictate') || lower.includes('say your answer') || lower.includes('your answer') || lower.includes('answer') || lower.includes('speak answer') || lower.includes('start dictation')) {
             announce("🎙️ Starting Voice Dictation for your practice answer");
             handleStartVoiceDictationForPractice();
           } else {
-            speakText(`Recognized "${rawText}". Please say REPEAT to hear again, NEXT QUESTION for next question, PREVIOUS QUESTION for previous question, or DICTATE to speak your answer.`, () => {
+            const guidance = isLastQ
+              ? "Say repeat question, or next question, or say your answer, and say submit."
+              : "Say your answer, or say repeat question, or next question, or repeat your answer.";
+            speakText(guidance, () => {
               setTimeout(() => listenForQuestionNavigationCommand(currentMat, currentQuestionIdx), 400);
             });
           }
@@ -3766,7 +3796,11 @@ export default function StudentDashboard() {
 
     const isLongQ = (currentQ.type === 'Long answer' || currentQ.type === 'Descriptive Theory');
     const qTypeSpeech = isLongQ ? 'Long answer question' : 'Short answer question';
-    const fullMsg = `Question ${targetIdx + 1} of ${questionsList.length}, ${qTypeSpeech}. ${qText}. One-line short answer: ${ansText}. Detailed long answer explanation: ${expText}. Would you like to repeat, go to next question, previous question, or start voice dictation? Say REPEAT, NEXT QUESTION, PREVIOUS QUESTION, or DICTATE.`;
+    const isLastQ = targetIdx >= questionsList.length - 1;
+    const promptEnd = isLastQ
+      ? "Say repeat question, or next question, or say your answer, and say submit."
+      : "Say your answer, or say repeat question, or next question, or repeat your answer.";
+    const fullMsg = `Question ${targetIdx + 1} of ${questionsList.length}, ${qTypeSpeech}. ${qText}. One-line short answer: ${ansText}. Detailed long answer explanation: ${expText}. ${promptEnd}`;
 
     announce(`🔊 Reading Question ${targetIdx + 1} of ${questionsList.length} for ${targetMat.title}`);
     speakText(fullMsg, () => {
@@ -3979,6 +4013,91 @@ export default function StudentDashboard() {
     } catch (e) {}
 
     const completionMsg = `Study material test submitted to your teacher. Your teacher will evaluate your answers and award your marks. Your score will be displayed in your dashboard once evaluated.`;
+    announce("✅ " + completionMsg);
+    speakText(completionMsg);
+  };
+
+  // Submit Study Material Practice to Teacher for Manual Evaluation
+  const handleSubmitPracticeToTeacher = () => {
+    if (!activePracticeMat) return;
+    const studentEmail = (student.email || studentProfile.email || '').toLowerCase().trim();
+    const studentName = student.name || 'Student';
+
+    const questionsList = (activePracticeMat.questions && activePracticeMat.questions.length > 0)
+      ? activePracticeMat.questions
+      : [{
+          id: 1,
+          text: activePracticeMat.practiceQuestion || `Explain core concepts of ${activePracticeMat.title}`,
+          oneLineAnswer: activePracticeMat.oneLineAnswer || activePracticeMat.practiceAnswer || activePracticeMat.correctAnswer || activePracticeMat.detail,
+          explanation: activePracticeMat.explanation || activePracticeMat.textContent
+        }];
+
+    const safeQIdx = Math.min(practiceQIdx, questionsList.length - 1);
+    const finalAnswersMap = { ...practiceAnswersByQ, [safeQIdx]: practiceAnswerInput || practiceAnswersByQ[safeQIdx] || '' };
+
+    const answersList = questionsList.map((q, idx) => ({
+      questionId: q.id || idx + 1,
+      questionText: q.text || q.question || `Question ${idx + 1}`,
+      studentAnswer: (finalAnswersMap[idx] || (idx === safeQIdx ? practiceAnswerInput : '') || '').trim() || 'No answer submitted',
+      expectedAnswer: q.oneLineAnswer || q.correctAnswer || q.answer || activePracticeMat.practiceAnswer || activePracticeMat.oneLineAnswer || '',
+      explanation: q.explanation || activePracticeMat.explanation || ''
+    }));
+
+    const practiceSubmissionData = {
+      id: `study_practice_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      testId: `practice_${activePracticeMat.id}`,
+      isPractice: true,
+      studentName: studentName,
+      studentId: student.studentId || 'Reg-001',
+      studentEmail: studentEmail,
+      materialTitle: `${activePracticeMat.title} (Practice)`,
+      subject: activePracticeMat.subject || activeSubject || 'General',
+      teacherEmail: activePracticeMat.teacherEmail || '',
+      teacherName: activePracticeMat.teacherName || '',
+      answersList: answersList,
+      answers: answersList.map(a => `${a.questionText}: ${a.studentAnswer}`).join(' | '),
+      date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      submittedAt: new Date().toISOString(),
+      evaluated: false,
+      status: 'Pending Teacher Evaluation',
+      gradeStatus: 'Pending Evaluation',
+      teacherScore: null,
+      score: practiceFeedback?.score !== undefined ? practiceFeedback.score : null,
+      total: 10,
+      percentage: null,
+      teacherFeedback: '',
+      evaluatedBy: '',
+      evaluatedAt: null
+    };
+
+    try {
+      const existingShared = JSON.parse(localStorage.getItem('shared_study_test_results') || '[]');
+      const filtered = Array.isArray(existingShared) ? existingShared.filter(s => 
+        !(s && (s.studentEmail === studentEmail || s.studentName === studentName) && (s.materialTitle === practiceSubmissionData.materialTitle || s.testId === practiceSubmissionData.testId))
+      ) : [];
+      const updatedShared = [practiceSubmissionData, ...filtered];
+      localStorage.setItem('shared_study_test_results', JSON.stringify(updatedShared));
+      setStudyTestResultsList(updatedShared);
+
+      // Notification for teacher
+      const notifObj = {
+        id: `notif_${Date.now()}`,
+        title: `📚 New Study Practice Submitted: ${studentName}`,
+        detail: `${studentName} submitted study material practice answers for "${activePracticeMat.title}" (${activePracticeMat.subject || activeSubject}). Awaiting your manual evaluation.`,
+        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        type: 'Study Material',
+        read: false
+      };
+      const rawNotifs = localStorage.getItem('shared_notifications');
+      const existingNotifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+      localStorage.setItem('shared_notifications', JSON.stringify([notifObj, ...existingNotifs]));
+
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    setPracticeSubmittedMap(prev => ({ ...prev, [activePracticeMat.id]: true }));
+
+    const completionMsg = `Study material practice submitted to your teacher for manual evaluation. Your teacher will evaluate your answers and award your marks. Your score will be displayed once evaluated.`;
     announce("✅ " + completionMsg);
     speakText(completionMsg);
   };
@@ -6161,13 +6280,11 @@ export default function StudentDashboard() {
               localStorage.setItem('shared_notifications', JSON.stringify(cleanNotifs));
             }
 
-            // Detect new teacher update notifications and announce alert aloud
+            // Record seen notifications without intrusive popups
             cleanNotifs.forEach(n => {
               const notifIdStr = String(n.id);
               if (!seenNotifIdsRef.current.has(notifIdStr)) {
                 seenNotifIdsRef.current.add(notifIdStr);
-                setActivePopupNotif(n);
-                speakText(`Notification Alert! ${n.title}. ${n.detail || n.message || ''}`);
               }
             });
           }
@@ -6704,6 +6821,161 @@ export default function StudentDashboard() {
       return;
     }
 
+    // -------------------------------------------------------------------------
+    // STRICT STUDY MATERIALS PRACTICE & TEST MODE:
+    // When student is in practice mode or taking test in Study Materials,
+    // Voice Assistant handles only practice/test questions, answers, repeats & submit.
+    // -------------------------------------------------------------------------
+    const isStudentInStudyPractice = Boolean(activeTab === 'Study Materials' && activePracticeMat);
+    const isStudentInStudyTest = Boolean(activeTab === 'Study Materials' && activeLessonTest);
+
+    if (isStudentInStudyPractice) {
+      const questionsList = (activePracticeMat.questions && activePracticeMat.questions.length > 0)
+        ? activePracticeMat.questions
+        : [{
+            text: activePracticeMat.practiceQuestion || `Explain core concepts of ${activePracticeMat.title}`,
+            oneLineAnswer: activePracticeMat.oneLineAnswer || activePracticeMat.practiceAnswer || activePracticeMat.correctAnswer || activePracticeMat.detail,
+            explanation: activePracticeMat.explanation || activePracticeMat.textContent
+          }];
+      const totalQ = questionsList.length;
+      const safeQIdx = Math.min(practiceQIdx, totalQ - 1);
+
+      // 1. Submit Practice to Teacher
+      if (transcript === 'submit' || transcript.includes('submit practice') || transcript.includes('submit test') || transcript.includes('say submit') || transcript.includes('finish practice') || transcript.includes('complete practice')) {
+        handleSubmitPracticeToTeacher();
+        return;
+      }
+
+      // 2. Next Question
+      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('say next question') || transcript.includes('save and next')) {
+        const nextIdx = (safeQIdx + 1) % totalQ;
+        setPracticeQIdx(nextIdx);
+        setPracticeAnswerInput(practiceAnswersByQ[nextIdx] || '');
+        setPracticeFeedback(null);
+        handleSpeakQuestionAnswerExplanation(activePracticeMat, nextIdx);
+        return;
+      }
+
+      // 3. Previous Question
+      if (transcript === 'previous' || transcript === 'back' || transcript.includes('previous question') || transcript.includes('go back')) {
+        const prevIdx = (safeQIdx - 1 + totalQ) % totalQ;
+        setPracticeQIdx(prevIdx);
+        setPracticeAnswerInput(practiceAnswersByQ[prevIdx] || '');
+        setPracticeFeedback(null);
+        handleSpeakQuestionAnswerExplanation(activePracticeMat, prevIdx);
+        return;
+      }
+
+      // 4. Repeat Question
+      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say repeat question') || transcript.includes('say question') || (transcript === 'repeat' && !practiceAnswerInput)) {
+        handleSpeakQuestionAnswerExplanation(activePracticeMat, safeQIdx);
+        return;
+      }
+
+      // 5. Repeat Answer / Say Your Answer Again
+      if (transcript.includes('repeat answer') || transcript.includes('say your answer again') || transcript.includes('say answer again') || transcript.includes('your answer again') || transcript.includes('answer again') || transcript.includes('repeat my answer') || transcript.includes('repeat your answer') || transcript.includes('change answer') || transcript.includes('re-answer') || transcript.includes('clear answer') || (transcript === 'repeat' && practiceAnswerInput)) {
+        setPracticeAnswerInput('');
+        setPracticeAnswersByQ(prev => ({ ...prev, [safeQIdx]: '' }));
+        speakText("Clearing previous answer. Please speak your practice answer again now.", () => {
+          setTimeout(() => {
+            handleStartVoiceDictationForPractice();
+          }, 300);
+        });
+        return;
+      }
+
+      // 6. Say Your Answer / Answer Practice
+      if (transcript === 'answer' || transcript === 'say your answer' || transcript === 'your answer' || transcript === 'speak answer' || transcript.includes('dictate') || transcript.includes('start answer')) {
+        speakText("Please speak your practice answer now. When finished, say DONE.", () => {
+          setTimeout(() => {
+            handleStartVoiceDictationForPractice();
+          }, 300);
+        });
+        return;
+      }
+
+      // 7. Done / Finish Answering
+      if (transcript === 'done' || transcript === 'say done' || transcript === 'finish') {
+        const ans = practiceAnswerInput || '';
+        speakText(`Practice answer recorded: "${ans}". Evaluating your answer now.`);
+        handleEvaluatePractice(ans);
+        return;
+      }
+
+      // 8. Evaluate Practice
+      if (transcript.includes('evaluate') || transcript.includes('check answer')) {
+        handleEvaluatePractice();
+        return;
+      }
+
+      // 9. Close Practice
+      if (transcript.includes('close practice') || transcript.includes('stop practice') || transcript.includes('close modal') || transcript.includes('exit practice')) {
+        setActivePracticeMat(null);
+        setPracticeFeedback(null);
+        setPracticeAnswerInput('');
+        speakText("Closed study practice mode.");
+        return;
+      }
+    }
+
+    if (isStudentInStudyTest) {
+      // 1. Submit Test to Teacher
+      if (transcript === 'submit' || transcript.includes('submit test') || transcript.includes('say submit') || transcript.includes('finish test') || transcript.includes('complete test')) {
+        handleSubmitLessonTest();
+        return;
+      }
+
+      // 2. Next Question / Save and Next
+      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('say next question') || transcript.includes('save and next')) {
+        handleSaveLessonTestNext();
+        return;
+      }
+
+      // 3. Repeat Question
+      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say repeat question') || transcript.includes('say question') || (transcript === 'repeat' && !lessonTestInput)) {
+        speakText(`Question ${lessonTestQIndex + 1}: ${activeLessonTest.questions[lessonTestQIndex]?.text}`);
+        return;
+      }
+
+      // 4. Repeat Answer / Say Your Answer Again
+      if (transcript.includes('repeat answer') || transcript.includes('say your answer again') || transcript.includes('say answer again') || transcript.includes('your answer again') || transcript.includes('answer again') || transcript.includes('repeat my answer') || transcript.includes('repeat your answer') || transcript.includes('change answer') || transcript.includes('re-answer') || transcript.includes('clear answer') || (transcript === 'repeat' && lessonTestInput)) {
+        setLessonTestInput('');
+        speakText("Clearing previous answer. Please speak your test answer again now.", () => {
+          setTimeout(() => {
+            handleStartLessonTestDictation();
+          }, 300);
+        });
+        return;
+      }
+
+      // 5. Say Your Answer / Answer Test
+      if (transcript === 'answer' || transcript === 'say your answer' || transcript === 'your answer' || transcript === 'speak answer' || transcript.includes('dictate') || transcript.includes('start answer')) {
+        speakText("Please speak your test answer now. When finished, say DONE.", () => {
+          setTimeout(() => {
+            handleStartLessonTestDictation();
+          }, 300);
+        });
+        return;
+      }
+
+      // 6. Done / Finish Answering
+      if (transcript === 'done' || transcript === 'say done' || transcript === 'finish') {
+        speakText("Test answer recorded. Saving and moving to next question.", () => {
+          setTimeout(() => handleSaveLessonTestNext(), 300);
+        });
+        return;
+      }
+
+      // 7. Close Test
+      if (transcript.includes('close test') || transcript.includes('stop test') || transcript.includes('exit test')) {
+        setActiveLessonTest(null);
+        setLessonTestFeedback(null);
+        setLessonTestInput('');
+        speakText("Closed study test mode.");
+        return;
+      }
+    }
+
     // Voice Profile Wizard Trigger
     if (transcript.includes('fill profile') || transcript.includes('voice profile') || transcript.includes('fill details') || transcript.includes('fill student profile') || transcript.includes('setup profile') || transcript.includes('edit profile by voice') || transcript.includes('profile by voice')) {
       closeVoiceAssistant(false);
@@ -7094,7 +7366,7 @@ export default function StudentDashboard() {
 
     setTimeout(() => {
       voiceAssistantIsClosingRef.current = false;
-    }, 1500);
+    }, 250);
   };
 
   // Keyboard Spacebar listener to activate Voice Assistant, Escape to dismiss
@@ -7121,7 +7393,7 @@ export default function StudentDashboard() {
   }, [isVoiceListening, isVoiceAssistantEnabled, isVoiceProfileWizardOpen]);
 
   // Voice Assistant command trigger: speaks prompt, streams live speech transcript
-  const triggerVoiceCommand = async () => {
+  const triggerVoiceCommand = async (forceRestart = false) => {
     if (!isVoiceAssistantEnabled || isVoiceDisabled()) {
       announce("⚠️ Voice Assistant is disabled. Enable it from the top header.");
       return;
@@ -7139,14 +7411,12 @@ export default function StudentDashboard() {
       }
     }
 
-    if (isVoiceListeningRef.current || voiceAssistantIsClosingRef.current) return;
+    if (isVoiceListeningRef.current && !forceRestart) return;
     voiceAssistantIsClosingRef.current = false;
     cancelSpeech();
     setIsVoiceListening(true);
     isVoiceListeningRef.current = true;
     setLiveVoiceTranscript('');
-
-    if (voiceAssistantIsClosingRef.current || !isVoiceListeningRef.current) return;
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -7159,16 +7429,24 @@ export default function StudentDashboard() {
 
       try {
         if (activeVoiceRecognitionRef.current) {
-          try { activeVoiceRecognitionRef.current.abort(); } catch (e) {}
+          try { 
+            activeVoiceRecognitionRef.current.onstart = null;
+            activeVoiceRecognitionRef.current.onresult = null;
+            activeVoiceRecognitionRef.current.onerror = null;
+            activeVoiceRecognitionRef.current.onend = null;
+            activeVoiceRecognitionRef.current.abort(); 
+          } catch (e) {}
+          activeVoiceRecognitionRef.current = null;
         }
 
         const recognition = new SpeechRecognition();
         activeVoiceRecognitionRef.current = recognition;
 
-        const activeExamSpeechLang = 'en-IN';
+        const activeExamSpeechLang = navigator.language || 'en-US';
         recognition.lang = activeExamSpeechLang;
         recognition.continuous = true;
         recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
 
         recognition.onstart = () => {
           if (voiceAssistantIsClosingRef.current || !isVoiceListeningRef.current) {
@@ -7214,8 +7492,8 @@ export default function StudentDashboard() {
             lower === 'next question' || lower === 'say next question' || lower === 'next' || lower === 'save and next' || lower === 'next viva' ||
             lower === 'previous question' || lower === 'say previous question' || lower === 'previous' || lower === 'back' ||
             lower === 'repeat question' || lower === 'say repeat question' || lower === 'read question' || lower === 'repeat the question' || lower === 'repeat' ||
-            lower === 'submit' || lower === 'say submit' || lower === 'submit exam' || lower === 'submit viva' || lower === 'finish exam' || lower === 'finish viva' ||
-            lower === 'say your answer' || lower === 'your answer' || lower === 'answer' || lower === 'speak answer' || lower === 'answer by voice' ||
+            lower === 'submit' || lower === 'say submit' || lower === 'submit exam' || lower === 'submit viva' || lower === 'submit test' || lower === 'submit practice' || lower === 'finish exam' || lower === 'finish viva' || lower === 'finish test' || lower === 'finish practice' ||
+            lower === 'say your answer' || lower === 'your answer' || lower === 'answer' || lower === 'speak answer' || lower === 'answer by voice' || lower === 'dictate' ||
             lower === 'done' || lower === 'say done' || lower === 'finish' ||
             lower.includes('exit exam');
           if (isNavTrigger) {
@@ -7225,7 +7503,7 @@ export default function StudentDashboard() {
           }
 
           // Repeat answer / Say your answer again command
-          if (/\b(repeat answer|repeat my answer|say your answer again|say answer again|your answer again|answer again|re-record|change answer|try again)\b/i.test(lower)) {
+          if (/\b(repeat answer|repeat your answer|repeat my answer|say your answer again|say answer again|your answer again|answer again|re-record|change answer|try again)\b/i.test(lower)) {
             closeVoiceAssistant(false);
             executeCommand('repeat answer');
             return;
@@ -7236,6 +7514,8 @@ export default function StudentDashboard() {
 
           const isStudentInActiveExam = Boolean((currentExam || isExamActive) && !examSubmitted && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive));
           const isStudentInActiveViva = Boolean(activeTab === 'AI Oral Viva Simulator');
+          const isStudentInStudyPractice = Boolean(activeTab === 'Study Materials' && activePracticeMat);
+          const isStudentInStudyTest = Boolean(activeTab === 'Study Materials' && activeLessonTest);
 
           if (isStudentInActiveExam) {
             const cleanAns = cleanText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || cleanText;
@@ -7273,6 +7553,33 @@ export default function StudentDashboard() {
             }
             // Continuous listening: DO NOT EXIT in the middle!
             return;
+          } else if (isStudentInStudyPractice) {
+            const cleanAns = cleanText.replace(/^(answer|my answer is|practice answer is)\s*/i, '').trim() || cleanText;
+            if (cleanAns) {
+              setPracticeAnswerInput(cleanAns);
+              setPracticeAnswersByQ(prev => ({ ...prev, [practiceQIdx]: cleanAns }));
+            }
+            if (isDone) {
+              closeVoiceAssistant(false);
+              speakText(`Practice answer recorded: "${cleanAns}". Evaluating now.`, () => {
+                setTimeout(() => handleEvaluatePractice(cleanAns), 300);
+              });
+              return;
+            }
+            return;
+          } else if (isStudentInStudyTest) {
+            const cleanAns = cleanText.replace(/^(answer|my answer is|test answer is)\s*/i, '').trim() || cleanText;
+            if (cleanAns) {
+              setLessonTestInput(cleanAns);
+            }
+            if (isDone) {
+              closeVoiceAssistant(false);
+              speakText("Test answer recorded. Saving and moving to next question.", () => {
+                setTimeout(() => handleSaveLessonTestNext(), 300);
+              });
+              return;
+            }
+            return;
           } else {
             if (isDone) {
               closeVoiceAssistant(false);
@@ -7292,6 +7599,11 @@ export default function StudentDashboard() {
 
         recognition.onerror = (e) => {
           console.warn('SpeechRecognition error:', e);
+          if (e.error === 'not-allowed') {
+            announce("Microphone access denied. Please allow microphone permissions in your browser.");
+            closeVoiceAssistant(false);
+            return;
+          }
           if (voiceAssistantIsClosingRef.current) {
             try { recognition.abort(); } catch (err) {}
           }
@@ -7299,16 +7611,12 @@ export default function StudentDashboard() {
 
         recognition.onend = () => {
           if (isVoiceListeningRef.current && !voiceAssistantIsClosingRef.current) {
-            // User has NOT said DONE yet: continuously keep listening without exiting!
-            try {
-              recognition.start();
-            } catch (err) {
-              setTimeout(() => {
-                if (isVoiceListeningRef.current && !voiceAssistantIsClosingRef.current) {
-                  try { recognition.start(); } catch (e) {}
-                }
-              }, 250);
-            }
+            // Re-instantiate fresh recognition safely so Chrome continuously keeps listening!
+            setTimeout(() => {
+              if (isVoiceListeningRef.current && !voiceAssistantIsClosingRef.current) {
+                startMicrophoneRecognition();
+              }
+            }, 100);
             return;
           }
           activeVoiceRecognitionRef.current = null;
@@ -7328,14 +7636,13 @@ export default function StudentDashboard() {
     const safeStartMic = () => {
       if (micStarted || voiceAssistantIsClosingRef.current || !isVoiceListeningRef.current) return;
       micStarted = true;
-      setTimeout(() => {
-        if (voiceAssistantIsClosingRef.current || !isVoiceListeningRef.current) return;
-        startMicrophoneRecognition();
-      }, 300);
+      startMicrophoneRecognition();
     };
 
     const isPromptExamSession = Boolean((currentExam || isExamActive) && !examSubmitted && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam' || isExamActive));
     const isPromptVivaSession = Boolean(activeTab === 'AI Oral Viva Simulator');
+    const isPromptStudyPracticeSession = Boolean(activeTab === 'Study Materials' && activePracticeMat);
+    const isPromptStudyTestSession = Boolean(activeTab === 'Study Materials' && activeLessonTest);
 
     let promptText = "";
     if (isPromptExamSession) {
@@ -7356,6 +7663,28 @@ export default function StudentDashboard() {
       } else {
         promptText = "Say your answer and say done when the answer finish, or say repeat question, or next question, or say your answer.";
       }
+    } else if (isPromptStudyPracticeSession) {
+      const questionsList = (activePracticeMat.questions && activePracticeMat.questions.length > 0)
+        ? activePracticeMat.questions
+        : [{ text: activePracticeMat.practiceQuestion || activePracticeMat.title }];
+      const totalQ = questionsList.length;
+      const safeQIdx = Math.min(practiceQIdx, totalQ - 1);
+      const isLastPracticeQ = safeQIdx >= totalQ - 1;
+      if (isLastPracticeQ) {
+        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
+      } else {
+        promptText = "Say your answer, or say repeat question, or next question, or repeat your answer.";
+      }
+    } else if (isPromptStudyTestSession) {
+      const totalTestQ = activeLessonTest.questions?.length || 1;
+      const isLastTestQ = lessonTestQIndex >= totalTestQ - 1;
+      if (isLastTestQ) {
+        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
+      } else {
+        promptText = "Say your answer, or say repeat question, or next question, or repeat your answer.";
+      }
+    } else if (activeTab === 'Study Materials') {
+      promptText = "Study Materials and Audio Lessons. Say Listen Lesson to hear audio lessons, or say Practice with Voice AI, or take lesson test.";
     } else if (activeTab === 'My Exams' || (activeTab === 'AI Exam Assistant' && !currentExam)) {
       promptText = "Written Exams portal. Say START EXAM to start writing your exam, or choose an exam to begin.";
     } else {
@@ -7369,7 +7698,7 @@ export default function StudentDashboard() {
     });
 
     if (voiceFallbackTimeoutRef.current) clearTimeout(voiceFallbackTimeoutRef.current);
-    const fallbackTimeout = Math.max(2500, promptText.length * 75);
+    const fallbackTimeout = Math.min(2000, Math.max(900, promptText.length * 30));
     voiceFallbackTimeoutRef.current = setTimeout(safeStartMic, fallbackTimeout);
   };
 
@@ -7382,12 +7711,11 @@ export default function StudentDashboard() {
       e.target.closest('textarea') || 
       e.target.closest('select') || 
       e.target.closest('[role="button"]') ||
-      isVoiceListeningRef.current || 
       isVoiceProfileWizardOpen
     ) {
       return;
     }
-    triggerVoiceCommand();
+    triggerVoiceCommand(true);
   };
 
   // Initial Voice Welcome Greeting on Dashboard mount
@@ -7889,39 +8217,105 @@ export default function StudentDashboard() {
     speakText("Oral viva exams are evaluated manually by your teacher. Tap the answer box to speak your answer, and click Submit Viva Exam when you are finished.");
   };
 
-  const handleEvaluatePractice = () => {
+  const handleEvaluatePractice = (overrideAns) => {
     if (!activePracticeMat) return;
-    const studentAns = (practiceAnswerInput || '').trim();
+    const studentAns = (overrideAns !== undefined ? overrideAns : (practiceAnswerInput || '')).trim();
     if (!studentAns) {
       speakText("Please speak or type your practice answer before evaluation.");
       return;
     }
-    const targetAns = (activePracticeMat.practiceAnswer || activePracticeMat.textContent || activePracticeMat.detail || '').toLowerCase();
-    const words = studentAns.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-    let matched = 0;
+
+    const questionsList = (activePracticeMat.questions && activePracticeMat.questions.length > 0)
+      ? activePracticeMat.questions
+      : [{
+          id: 1,
+          text: activePracticeMat.practiceQuestion || `Explain core concepts of ${activePracticeMat.title}`,
+          oneLineAnswer: activePracticeMat.oneLineAnswer || activePracticeMat.practiceAnswer || activePracticeMat.correctAnswer || activePracticeMat.detail,
+          explanation: activePracticeMat.explanation || activePracticeMat.textContent
+        }];
+    const safeQIdx = Math.min(practiceQIdx, questionsList.length - 1);
+    const currentQ = questionsList[safeQIdx] || questionsList[0];
+
+    const expectedShort = (currentQ.oneLineAnswer || currentQ.correctAnswer || currentQ.answer || activePracticeMat.oneLineAnswer || activePracticeMat.practiceAnswer || activePracticeMat.correctAnswer || activePracticeMat.detail || '').trim();
+    const expectedLong = (currentQ.explanation || activePracticeMat.explanation || activePracticeMat.textContent || activePracticeMat.detail || '').trim();
+    const targetRefText = `${expectedShort} ${expectedLong} ${activePracticeMat.title || ''}`.toLowerCase();
+
+    // 1. Detect gibberish / nonsense input (e.g., 'asdfghjkl', keyboard mashing, repeated characters)
+    const lowerAns = studentAns.toLowerCase();
+    const isKeyboardRowMash = /(?:asdf|sdfg|dfgh|fghj|ghjk|hjkl|jkl;|qwerty|werty|ertyu|rtyui|tyuio|yuio|zxcv|xcvb|cvbn|vbnm)/i.test(lowerAns);
+    const hasRepeatedChars = /(.)\1{3,}/.test(lowerAns);
+    const cleanWordTokens = lowerAns.replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(Boolean);
+    const wordsWithVowels = cleanWordTokens.filter(w => /[aeiouy]/.test(w));
+    const isVowellessGibberish = cleanWordTokens.length > 0 && wordsWithVowels.length === 0;
+
+    const stopWords = new Set([
+      'the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'in', 'of', 'to', 'for', 'with', 'it', 'this', 
+      'that', 'as', 'by', 'from', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 
+      'does', 'did', 'but', 'not', 'you', 'your', 'my', 'their', 'our', 'what', 'when', 'where', 'who', 'how', 
+      'why', 'can', 'could', 'should', 'would', 'will', 'shall', 'then', 'so', 'just', 'more', 'about', 'some',
+      'there', 'their', 'all', 'any', 'into', 'also', 'such', 'than', 'over', 'after', 'before'
+    ]);
+
+    // Extract significant keywords from expected answer
+    const refTokens = targetRefText.replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    const uniqueRefKeywords = Array.from(new Set(refTokens));
+
+    // Extract significant keywords from student answer
+    const studentTokens = cleanWordTokens.filter(w => w.length >= 3 && !stopWords.has(w));
+    const uniqueStudentKeywords = Array.from(new Set(studentTokens));
+
+    // Match keywords
     const keywordsFound = [];
-    words.forEach(w => {
-      if (targetAns.includes(w)) {
-        matched++;
-        if (!keywordsFound.includes(w)) keywordsFound.push(w);
+    uniqueRefKeywords.forEach(kw => {
+      if (uniqueStudentKeywords.some(sw => sw.includes(kw) || kw.includes(sw) || (sw.length > 4 && kw.startsWith(sw.slice(0, 4))))) {
+        keywordsFound.push(kw);
       }
     });
 
-    const ratio = words.length > 0 ? matched / words.length : 0;
-    let score = 8;
-    if (ratio > 0.4 || studentAns.length > 25) score = 9;
-    if (ratio > 0.7) score = 10;
-    if (studentAns.length < 8 && matched === 0) score = 5;
+    const isGibberish = isKeyboardRowMash || hasRepeatedChars || isVowellessGibberish;
 
-    let feedbackMsg = "Good effort! Your response demonstrates understanding of the lesson material.";
-    if (score >= 9) feedbackMsg = "Excellent response! Outstanding clarity and accurate conceptual understanding.";
-    else if (score >= 7) feedbackMsg = "Very good practice attempt. You covered key concepts from the study material.";
-    else feedbackMsg = "Good attempt. Listen to the lesson narration again to refine your understanding.";
+    let score = 0;
+    let feedbackMsg = "";
+    const matchedCount = keywordsFound.length;
+    const refCount = Math.max(1, uniqueRefKeywords.length);
+    const matchRatio = matchedCount / refCount;
 
-    const evalResult = { score, feedbackMsg, keywordsFound };
+    if (isGibberish || cleanWordTokens.length === 0) {
+      score = 0;
+      feedbackMsg = "Incorrect answer. Your response appears to be unrecognized text or random typing. Please speak the definition or explanation accurately.";
+    } else if (matchedCount === 0) {
+      score = 1;
+      feedbackMsg = "Incorrect answer. Your response did not cover any key concepts or definitions for this question. Review the teacher's reference answer.";
+    } else if (matchedCount === 1 && matchRatio < 0.25) {
+      score = 3;
+      feedbackMsg = `Partial attempt. You mentioned "${keywordsFound[0]}", but missed other core concepts from the study material.`;
+    } else if (matchRatio < 0.4 || matchedCount < 3) {
+      score = 5;
+      feedbackMsg = `Fair attempt. You mentioned key ideas like ${keywordsFound.slice(0, 3).join(', ')}. Review the teacher's reference answer to cover all points.`;
+    } else if (matchRatio < 0.7 || matchedCount < 5) {
+      score = 7;
+      feedbackMsg = `Good practice attempt! You covered important concepts: ${keywordsFound.slice(0, 4).join(', ')}.`;
+    } else if (matchRatio < 0.85) {
+      score = 9;
+      feedbackMsg = "Excellent response! Outstanding clarity and accurate conceptual understanding covering all core definitions.";
+    } else {
+      score = 10;
+      feedbackMsg = "Perfect answer! Comprehensive and precise coverage of the entire study material concept.";
+    }
+
+    const expectedAns = expectedShort || activePracticeMat.practiceAnswer || activePracticeMat.detail;
+    const evalResult = {
+      score,
+      status: score >= 8 ? 'Excellent' : score >= 5 ? 'Good Effort' : 'Needs Improvement',
+      feedbackMsg,
+      keywordsFound,
+      expectedAns
+    };
+
     setPracticeFeedback(evalResult);
-    const expectedAns = activePracticeMat.practiceAnswer || activePracticeMat.textContent || activePracticeMat.detail;
-    speakText(`Voice Practice Score: ${score} out of 10. ${feedbackMsg} Teacher's expected reference answer is: ${expectedAns}`);
+
+    const voiceStatus = score >= 8 ? 'Excellent.' : score >= 5 ? 'Good effort.' : 'Needs improvement.';
+    speakText(`Voice Practice Score: ${score} out of 10. ${voiceStatus} ${feedbackMsg} Teacher's expected reference answer is: ${expectedAns}`);
   };
 
   // Braille Simulator State (6 Dots)
@@ -8979,6 +9373,230 @@ export default function StudentDashboard() {
                   </button>
                 </div>
               </div>
+            ) : (activeTab === 'Study Materials' && (activePracticeMat || activeLessonTest)) ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '14px 0 20px 0' }}>
+                {activePracticeMat ? (() => {
+                  const questionsList = (activePracticeMat.questions && activePracticeMat.questions.length > 0)
+                    ? activePracticeMat.questions
+                    : [{
+                        text: activePracticeMat.practiceQuestion || `Explain core concepts of ${activePracticeMat.title}`,
+                        oneLineAnswer: activePracticeMat.oneLineAnswer || activePracticeMat.practiceAnswer || activePracticeMat.correctAnswer || activePracticeMat.detail
+                      }];
+                  const safeQIdx = Math.min(practiceQIdx, questionsList.length - 1);
+                  const currentQ = questionsList[safeQIdx] || questionsList[0];
+                  const isLastPracticeQ = safeQIdx >= questionsList.length - 1;
+                  return (
+                    <div style={{ background: '#f5f3ff', border: '2px solid #c4b5fd', padding: '16px 20px', borderRadius: '16px', textAlign: 'left' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '800', color: '#6d28d9', textTransform: 'uppercase', background: '#ede9fe', padding: '3px 10px', borderRadius: '6px' }}>
+                          Study Practice: Q{safeQIdx + 1} of {questionsList.length}
+                        </span>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: practiceAnswerInput ? '#15803d' : '#b45309' }}>
+                          {practiceAnswerInput ? '✓ Answer Recorded' : '○ Waiting for Answer'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                        <strong>Practice Question:</strong> {currentQ.text || currentQ.question || activePracticeMat.practiceQuestion || activePracticeMat.title}
+                      </p>
+                      {practiceAnswerInput ? (
+                        <div style={{ background: '#ffffff', border: '1px solid #ddd6fe', borderRadius: '10px', padding: '12px 14px', marginBottom: '10px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: '800', color: '#6d28d9', marginBottom: '4px' }}>
+                            ✓ Your Practice Answer:
+                          </div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', fontStyle: 'italic', lineHeight: 1.4 }}>
+                            "{practiceAnswerInput}"
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 14px', marginBottom: '10px', color: '#92400e', fontSize: '13px', fontWeight: '600' }}>
+                          No practice answer spoken yet. Tap "Say Your Answer" to dictate.
+                        </div>
+                      )}
+
+                      {/* Confirmation Prompt */}
+                      <div style={{ background: isLastPracticeQ ? '#f0fdf4' : '#faf5ff', border: isLastPracticeQ ? '2px solid #86efac' : '2px solid #ddd6fe', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: isLastPracticeQ ? '#166534' : '#6b21a8' }}>
+                          {isLastPracticeQ
+                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
+                            : '🗣️ Say your answer, or say repeat question, or next question, or repeat your answer.'}
+                        </p>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: isLastPracticeQ ? '#15803d' : '#7e22ce' }}>
+                          {isLastPracticeQ
+                            ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                            : 'Say: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })() : (() => {
+                  const totalTestQ = activeLessonTest.questions?.length || 1;
+                  const isLastTestQ = lessonTestQIndex >= totalTestQ - 1;
+                  const currentQ = activeLessonTest.questions[lessonTestQIndex];
+                  return (
+                    <div style={{ background: '#f0fdf4', border: '2px solid #86efac', padding: '16px 20px', borderRadius: '16px', textAlign: 'left' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', background: '#dcfce7', padding: '3px 10px', borderRadius: '6px' }}>
+                          Study Test: Q{lessonTestQIndex + 1} of {totalTestQ}
+                        </span>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: lessonTestInput ? '#15803d' : '#b45309' }}>
+                          {lessonTestInput ? '✓ Answer Recorded' : '○ Waiting for Answer'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                        <strong>Test Question:</strong> {currentQ?.text || ''}
+                      </p>
+                      {lessonTestInput ? (
+                        <div style={{ background: '#ffffff', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px 14px', marginBottom: '10px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: '800', color: '#15803d', marginBottom: '4px' }}>
+                            ✓ Your Test Answer:
+                          </div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', fontStyle: 'italic', lineHeight: 1.4 }}>
+                            "{lessonTestInput}"
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 14px', marginBottom: '10px', color: '#92400e', fontSize: '13px', fontWeight: '600' }}>
+                          No test answer spoken yet. Tap "Say Your Answer" to dictate.
+                        </div>
+                      )}
+
+                      {/* Confirmation Prompt */}
+                      <div style={{ background: isLastTestQ ? '#f0fdf4' : '#f0fdf4', border: isLastTestQ ? '2px solid #86efac' : '2px solid #bbf7d0', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: '#166534' }}>
+                          {isLastTestQ
+                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
+                            : '🗣️ Say your answer, or say repeat question, or next question, or repeat your answer.'}
+                        </p>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: '#15803d' }}>
+                          {isLastTestQ
+                            ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                            : 'Say: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Live Speech Detected Transcript */}
+                {liveVoiceTranscript && (
+                  <div style={{ background: '#eff6ff', border: '1px dashed #3b82f6', padding: '10px 16px', borderRadius: '10px', textAlign: 'center' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#1d4ed8', display: 'block', marginBottom: '2px' }}>LIVE SPEECH RECOGNIZED:</span>
+                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>"{liveVoiceTranscript}"</span>
+                  </div>
+                )}
+
+                {/* Direct Action Buttons for Study Materials Practice & Test */}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      if (activePracticeMat) {
+                        handleEvaluatePractice(practiceAnswerInput);
+                      } else {
+                        handleSaveLessonTestNext();
+                      }
+                    }}
+                    style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    ✓ Finish (Say "DONE")
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      if (activePracticeMat) {
+                        setPracticeAnswerInput('');
+                        speakText("Clearing previous answer. Please speak your practice answer again now.", () => {
+                          setTimeout(() => handleStartVoiceDictationForPractice(), 300);
+                        });
+                      } else {
+                        setLessonTestInput('');
+                        speakText("Clearing previous answer. Please speak your test answer again now.", () => {
+                          setTimeout(() => handleStartLessonTestDictation(), 300);
+                        });
+                      }
+                    }}
+                    style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🔄 Repeat Answer
+                  </button>
+                  {(() => {
+                    const isLastQ = activePracticeMat
+                      ? (practiceQIdx >= ((activePracticeMat.questions?.length || 1) - 1))
+                      : (lessonTestQIndex >= ((activeLessonTest?.questions?.length || 1) - 1));
+                    return isLastQ ? (
+                      <button 
+                        type="button"
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          closeVoiceAssistant(false); 
+                          if (activePracticeMat) {
+                            handleSubmitPracticeToTeacher();
+                          } else {
+                            handleSubmitLessonTest();
+                          }
+                        }}
+                        style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(22, 163, 74, 0.4)' }}
+                      >
+                        🚀 Submit to Teacher (Say "SUBMIT")
+                      </button>
+                    ) : (
+                      <button 
+                        type="button"
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          closeVoiceAssistant(false); 
+                          if (activePracticeMat) {
+                            const qList = (activePracticeMat.questions && activePracticeMat.questions.length > 0) ? activePracticeMat.questions : [activePracticeMat];
+                            const nextIdx = (practiceQIdx + 1) % qList.length;
+                            setPracticeQIdx(nextIdx);
+                            setPracticeAnswerInput(practiceAnswersByQ[nextIdx] || '');
+                            handleSpeakQuestionAnswerExplanation(activePracticeMat, nextIdx);
+                          } else {
+                            handleSaveLessonTestNext();
+                          }
+                        }}
+                        style={{ background: '#9333ea', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        Next Question ➡️
+                      </button>
+                    );
+                  })()}
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      if (activePracticeMat) {
+                        handleSpeakQuestionAnswerExplanation(activePracticeMat, practiceQIdx);
+                      } else {
+                        speakText(`Question ${lessonTestQIndex + 1}: ${activeLessonTest.questions[lessonTestQIndex]?.text}`);
+                      }
+                    }}
+                    style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    📖 Repeat Question
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      closeVoiceAssistant(false); 
+                      if (activePracticeMat) {
+                        handleStartVoiceDictationForPractice();
+                      } else {
+                        handleStartLessonTestDictation();
+                      }
+                    }}
+                    style={{ background: '#ede9fe', color: '#6b21a8', border: '1px solid #ddd6fe', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🎙️ Say Your Answer
+                  </button>
+                </div>
+              </div>
             ) : (
               <>
                 {/* Default Dashboard Live Speech Transcript */}
@@ -9490,49 +10108,6 @@ export default function StudentDashboard() {
         isOpen={isElevenLabsModalOpen} 
         onClose={() => setIsElevenLabsModalOpen(false)} 
       />
-
-      {/* REAL-TIME TEACHER NOTIFICATION POPUP BANNER FOR BLIND STUDENTS */}
-      {activePopupNotif && (
-        <div style={{
-          position: 'fixed', top: '24px', right: '24px', zIndex: 999999,
-          background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-          border: '3px solid #38bdf8', color: '#ffffff', padding: '22px 24px', borderRadius: '20px',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.35)', maxWidth: '440px', width: '90%',
-          fontFamily: "'Inter', system-ui, sans-serif"
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', padding: '3px 10px', borderRadius: '8px', fontWeight: '900', textTransform: 'uppercase' }}>
-              🔔 TEACHER UPDATE NOTIFICATION
-            </span>
-            <button 
-              onClick={(e) => { e.stopPropagation(); setActivePopupNotif(null); }} 
-              style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer', fontWeight: '800' }}
-            >
-              ✕
-            </button>
-          </div>
-          <h3 style={{ fontSize: '16px', margin: '4px 0 8px 0', fontWeight: '800', color: '#ffffff' }}>
-            {activePopupNotif.title}
-          </h3>
-          <p style={{ fontSize: '13px', margin: '0 0 16px 0', color: '#e0f2fe', lineHeight: 1.5, fontWeight: '600' }}>
-            {activePopupNotif.detail}
-          </p>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button 
-              onClick={(e) => { e.stopPropagation(); setActiveTab('Notifications'); setActivePopupNotif(null); speakText("Opening Notifications tab."); }} 
-              style={{ background: '#ffffff', color: '#0369a1', border: 'none', padding: '8px 14px', borderRadius: '10px', fontWeight: '800', fontSize: '12px', cursor: 'pointer' }}
-            >
-              View Notifications Tab
-            </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); speakText(`Notification: ${activePopupNotif.title}. ${activePopupNotif.detail}`); }} 
-              style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '8px 14px', borderRadius: '10px', fontWeight: '800', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-            >
-              <Volume2 size={14} /> Replay Audio
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* LEFT SIDEBAR */}
       <aside style={{ width: '270px', background: '#0f172a', color: '#ffffff', display: 'flex', flexDirection: 'column', padding: '20px 16px', flexShrink: 0 }}>
@@ -12217,7 +12792,7 @@ export default function StudentDashboard() {
                     {/* Actions */}
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                       <button 
-                        onClick={handleEvaluatePractice}
+                        onClick={() => handleEvaluatePractice()}
                         style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontWeight: '800', fontSize: '15px', cursor: 'pointer', flex: 1 }}
                       >
                         ✨ Evaluate Practice Answer
@@ -12236,23 +12811,39 @@ export default function StudentDashboard() {
                           e.stopPropagation();
                           const newIdx = (safeQIdx - 1 + questionsList.length) % questionsList.length;
                           setPracticeQIdx(newIdx);
+                          setPracticeAnswerInput(practiceAnswersByQ[newIdx] || '');
+                          setPracticeFeedback(null);
                           handleSpeakQuestionAnswerExplanation(activePracticeMat, newIdx);
                         }}
                         style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '14px 16px', borderRadius: '12px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                       >
                         ⬅️ Previous Q
                       </button>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const newIdx = (safeQIdx + 1) % questionsList.length;
-                          setPracticeQIdx(newIdx);
-                          handleSpeakQuestionAnswerExplanation(activePracticeMat, newIdx);
-                        }}
-                        style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '14px 16px', borderRadius: '12px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        Next Q ➡️
-                      </button>
+                      {safeQIdx >= questionsList.length - 1 ? (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSubmitPracticeToTeacher();
+                          }}
+                          style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '14px 20px', borderRadius: '12px', fontWeight: '900', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(22, 163, 74, 0.3)' }}
+                        >
+                          🚀 Submit Practice to Teacher (Say "SUBMIT")
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newIdx = (safeQIdx + 1) % questionsList.length;
+                            setPracticeQIdx(newIdx);
+                            setPracticeAnswerInput(practiceAnswersByQ[newIdx] || '');
+                            setPracticeFeedback(null);
+                            handleSpeakQuestionAnswerExplanation(activePracticeMat, newIdx);
+                          }}
+                          style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '14px 16px', borderRadius: '12px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          Next Q ➡️
+                        </button>
+                      )}
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
@@ -12264,23 +12855,51 @@ export default function StudentDashboard() {
                       </button>
                     </div>
 
-                    {/* Evaluation Feedback Card */}
+                    {/* Evaluation Feedback Card with Accurate Badges */}
                     {practiceFeedback && (
-                      <div style={{ background: '#f0fdf4', border: '2px solid #bbf7d0', padding: '20px', borderRadius: '16px', marginTop: '20px' }}>
+                      <div style={{
+                        background: practiceFeedback.score >= 8 ? '#f0fdf4' : practiceFeedback.score >= 5 ? '#eff6ff' : '#fef2f2',
+                        border: `2px solid ${practiceFeedback.score >= 8 ? '#bbf7d0' : practiceFeedback.score >= 5 ? '#bfdbfe' : '#fecaca'}`,
+                        padding: '20px',
+                        borderRadius: '16px',
+                        marginTop: '20px'
+                      }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                          <h4 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: '#166534' }}>
+                          <h4 style={{
+                            margin: 0,
+                            fontSize: '17px',
+                            fontWeight: '800',
+                            color: practiceFeedback.score >= 8 ? '#166534' : practiceFeedback.score >= 5 ? '#1e40af' : '#991b1b'
+                          }}>
                             Practice Score: {practiceFeedback.score} / 10
                           </h4>
-                          <span style={{ fontSize: '12px', background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '12px', fontWeight: '800' }}>
-                            {practiceFeedback.score >= 8 ? '🌟 Excellent' : '👍 Good Effort'}
+                          <span style={{
+                            fontSize: '12px',
+                            background: practiceFeedback.score >= 8 ? '#dcfce7' : practiceFeedback.score >= 5 ? '#dbeafe' : '#fee2e2',
+                            color: practiceFeedback.score >= 8 ? '#15803d' : practiceFeedback.score >= 5 ? '#1d4ed8' : '#b91c1c',
+                            padding: '4px 10px',
+                            borderRadius: '12px',
+                            fontWeight: '800'
+                          }}>
+                            {practiceFeedback.score >= 8 ? '🌟 Excellent' : practiceFeedback.score >= 5 ? '👍 Good Effort' : '⚠️ Needs Improvement'}
                           </span>
                         </div>
-                        <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#166534', fontWeight: '600' }}>
+                        <p style={{
+                          margin: '0 0 10px 0',
+                          fontSize: '14px',
+                          color: practiceFeedback.score >= 8 ? '#166534' : practiceFeedback.score >= 5 ? '#1e3a8a' : '#7f1d1d',
+                          fontWeight: '600'
+                        }}>
                           {practiceFeedback.feedbackMsg}
                         </p>
                         {practiceFeedback.keywordsFound && practiceFeedback.keywordsFound.length > 0 && (
-                          <div style={{ fontSize: '12px', color: '#15803d' }}>
+                          <div style={{ fontSize: '12px', color: '#15803d', marginBottom: '6px' }}>
                             Key Terms Matched: <strong>{practiceFeedback.keywordsFound.join(', ')}</strong>
+                          </div>
+                        )}
+                        {practiceFeedback.expectedAns && (
+                          <div style={{ fontSize: '13px', background: '#ffffff', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', color: '#334155' }}>
+                            💡 <strong>Teacher's Expected Reference Answer:</strong> {practiceFeedback.expectedAns}
                           </div>
                         )}
                       </div>

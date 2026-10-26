@@ -5489,9 +5489,14 @@ export default function TeacherDashboard() {
                         </span>
                         <div>
                           <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block' }}>{st.studentName}</strong>
-                          <span style={{ fontSize: '12px', color: isEvaluated ? '#15803d' : '#92400e', fontWeight: '700' }}>
-                            Study Material: <b>{st.materialTitle}</b> ({st.subject}) • Submitted: {st.date}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '12px', color: isEvaluated ? '#15803d' : '#92400e', fontWeight: '700' }}>
+                              Study Material: <b>{st.materialTitle}</b> ({st.subject}) • Submitted: {st.date}
+                            </span>
+                            <span style={{ fontSize: '10px', background: st.isPractice ? '#f3e8ff' : '#e0f2fe', color: st.isPractice ? '#7e22ce' : '#0284c7', border: `1px solid ${st.isPractice ? '#d8b4fe' : '#bae6fd'}`, padding: '2px 8px', borderRadius: '6px', fontWeight: '800' }}>
+                              {st.isPractice ? '🎯 Practice Attempt' : '📝 Topic Test'}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
