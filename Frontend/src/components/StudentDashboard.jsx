@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { fetchExams, fetchResults, postAssistanceRequest, updateStudentSubject } from '../services/api';
-import { speakIn, cancelSpeech, formatSpokenName, getBuiltinVoices, speakBuiltinTTS, speakHover, resetHoverSpeech, isTTSActive } from './speech';
+import { speakIn, cancelSpeech, formatSpokenName, getBuiltinVoices, speakBuiltinTTS, speakHover, resetHoverSpeech, isTTSActive, isVoiceDisabled, setVoiceDisabled } from './speech';
 import { 
   speakWithElevenLabs, 
   cancelElevenLabsSpeech, 
@@ -2890,14 +2890,41 @@ export default function StudentDashboard() {
   const [examTimeRemaining, setExamTimeRemaining] = useState(5400); // 90 minutes in seconds
 
   // Voice Assistant Master State (Enable / Disable)
-  const [isVoiceAssistantEnabled, setIsVoiceAssistantEnabled] = useState(() => {
-    try {
-      const saved = localStorage.getItem('student_voice_assistant_enabled');
-      return saved !== 'false';
-    } catch (e) {
-      return true;
-    }
-  });
+  const [isVoiceAssistantEnabled, setIsVoiceAssistantEnabled] = useState(() => !isVoiceDisabled());
+
+  // Listen to global voice enable / disable state changes across tabs or pages
+  useEffect(() => {
+    const handleVoiceSync = () => {
+      const disabled = isVoiceDisabled();
+      setIsVoiceAssistantEnabled(!disabled);
+      if (disabled) {
+        cancelSpeech();
+        if (activeVoiceRecognitionRef.current) {
+          try { activeVoiceRecognitionRef.current.abort(); } catch (e) {}
+          activeVoiceRecognitionRef.current = null;
+        }
+        if (examAnswerRecognitionRef.current) {
+          try { examAnswerRecognitionRef.current.abort(); } catch (e) {}
+          examAnswerRecognitionRef.current = null;
+        }
+        if (vivaRecognitionRef.current) {
+          try { vivaRecognitionRef.current.abort(); } catch (e) {}
+          vivaRecognitionRef.current = null;
+        }
+        setIsDictatingExamAnswer(false);
+        setIsVoiceListening(false);
+        isVoiceListeningRef.current = false;
+        voiceAssistantIsClosingRef.current = true;
+        setIsVoiceAssistantModalOpen(false);
+      }
+    };
+    window.addEventListener('voice_state_changed', handleVoiceSync);
+    window.addEventListener('storage', handleVoiceSync);
+    return () => {
+      window.removeEventListener('voice_state_changed', handleVoiceSync);
+      window.removeEventListener('storage', handleVoiceSync);
+    };
+  }, []);
 
   // Voice Assistant Global Modal state
   const [isVoiceListening, setIsVoiceListening] = useState(false);
@@ -3363,21 +3390,37 @@ export default function StudentDashboard() {
   const toggleVoiceAssistantEnabled = () => {
     const nextVal = !isVoiceAssistantEnabled;
     setIsVoiceAssistantEnabled(nextVal);
+    setVoiceDisabled(!nextVal);
     try {
       localStorage.setItem('student_voice_assistant_enabled', String(nextVal));
+      localStorage.setItem('voice_assistant_disabled', String(!nextVal));
     } catch (e) {}
     setAccessibility(prev => ({ ...prev, ttsEnabled: nextVal, sttEnabled: nextVal }));
 
     if (!nextVal) {
       cancelSpeech();
+      if (activeVoiceRecognitionRef.current) {
+        try { activeVoiceRecognitionRef.current.abort(); } catch (e) {}
+        activeVoiceRecognitionRef.current = null;
+      }
       if (examAnswerRecognitionRef.current) {
         try { examAnswerRecognitionRef.current.abort(); } catch (e) {}
+        examAnswerRecognitionRef.current = null;
+      }
+      if (vivaRecognitionRef.current) {
+        try { vivaRecognitionRef.current.abort(); } catch (e) {}
+        vivaRecognitionRef.current = null;
       }
       setIsDictatingExamAnswer(false);
+      setIsVoiceListening(false);
+      isVoiceListeningRef.current = false;
+      voiceAssistantIsClosingRef.current = true;
+      setIsVoiceAssistantModalOpen(false);
       announce("🔇 Voice Assistant disabled.");
     } else {
-      announce("🔊 Voice Assistant enabled (ElevenLabs AI Voice active).");
-      speakIn("Voice Assistant enabled. ElevenLabs AI Voice is active and ready.", 'en-US');
+      voiceAssistantIsClosingRef.current = false;
+      announce("🔊 Voice Assistant enabled.");
+      speakIn("Voice Assistant enabled.", 'en-US', { force: true });
     }
   };
 
@@ -3392,7 +3435,7 @@ export default function StudentDashboard() {
   };
 
   const speakText = async (text, onEndCallback = null, langOverride = null) => {
-    if (!isVoiceAssistantEnabled || !accessibility.ttsEnabled || !text) return;
+    if (!isVoiceAssistantEnabled || isVoiceDisabled() || !accessibility.ttsEnabled || !text) return;
     const cleaned = cleanTextForSpeech(text);
     if (!cleaned) return;
 
@@ -3448,30 +3491,66 @@ export default function StudentDashboard() {
     speakText(screenContext);
   };
 
-  // Feature 6: Audio Performance & Progress Report
-  const handleReadPerformanceReport = () => {
-    if (!filteredResults.length && !studentVivaResults.length) {
-      const msg = `Performance Report for ${student.name}: No completed exam or viva results recorded yet for ${activeSubject}. Complete an exam or viva to hear your score summary.`;
-      announce(msg);
-      speakText(msg);
-      return;
-    }
-    let reportText = `Performance Summary Report for ${student.name} in ${activeSubject}. `;
-    if (filteredResults.length) {
-      reportText += `You have completed ${filteredResults.length} written exams with an overall score average of ${overallProgress} percent. Most recent exam: ${filteredResults[0]?.examName}, score: ${filteredResults[0]?.score} out of ${filteredResults[0]?.total}. Teacher note: ${filteredResults[0]?.feedback || 'Completed successfully'}. `;
-    }
-    if (studentVivaResults.length) {
-      reportText += `You have ${studentVivaResults.length} oral viva voce submissions. `;
-      const evaluatedViva = studentVivaResults.find(v => v.status === 'Evaluated' || v.teacherScore !== null);
-      if (evaluatedViva) {
-        reportText += `Latest evaluated viva: ${evaluatedViva.vivaTitle || evaluatedViva.subject}, score: ${evaluatedViva.teacherScore} out of 10. Grade: ${evaluatedViva.gradeStatus || 'Pass'}. Feedback: ${evaluatedViva.teacherFeedback || 'Good performance'}. `;
+  // Dedicated Results & Performances Voice Narration requested by user:
+  // "opened results and performances and it should say the written exam result by the respected teacher and also viva by respected teacher"
+  const speakResultsAndPerformancesReport = () => {
+    let reportText = "Opened Results and Performances. ";
+
+    // 1. Written Exam Result by Respected Teacher
+    if (filteredResults.length > 0) {
+      const evaluatedWritten = filteredResults.find(r => r.status === 'Corrected & Graded' || Boolean(r.evaluatedAt));
+      if (evaluatedWritten) {
+        const teacher = evaluatedWritten.evaluatedBy || evaluatedWritten.teacherName || 'your respected teacher';
+        const pct = evaluatedWritten.percentage || Math.round(((evaluatedWritten.score || 0) / (evaluatedWritten.total || 100)) * 100);
+        reportText += `Written exam result evaluated by respected teacher ${teacher}: For ${evaluatedWritten.examName}, your score is ${evaluatedWritten.score} out of ${evaluatedWritten.total}, percentage ${pct} percent. Teacher evaluation note: "${evaluatedWritten.feedback || 'Good attempt and successfully reviewed by teacher'}". `;
       } else {
-        reportText += `Your viva submissions are currently awaiting teacher evaluation. `;
+        const latestWritten = filteredResults[0];
+        reportText += `Written exam result for ${latestWritten.examName}: Score is ${latestWritten.score} out of ${latestWritten.total}. Awaiting grading and feedback by your respected teacher. `;
       }
+      if (filteredResults.length > 1) {
+        reportText += `You have completed a total of ${filteredResults.length} written exams with an overall score average of ${overallProgress} percent. `;
+      }
+    } else {
+      reportText += `No written exam submissions found yet for ${activeSubject}. `;
     }
+
+    // 2. Oral Viva by Respected Teacher
+    if (studentVivaResults.length > 0) {
+      const evaluatedViva = studentVivaResults.find(v => v.status === 'Evaluated' || (v.teacherScore !== null && v.teacherScore !== undefined));
+      if (evaluatedViva) {
+        const vTeacher = evaluatedViva.evaluatedBy || evaluatedViva.teacherName || 'your respected teacher';
+        reportText += `Oral viva result evaluated by respected teacher ${vTeacher}: For ${evaluatedViva.vivaTitle || evaluatedViva.subject || 'viva assessment'}, your score is ${evaluatedViva.teacherScore} out of 10, grade ${evaluatedViva.gradeStatus || 'Pass'}. Respected teacher feedback: "${evaluatedViva.teacherFeedback || 'Good oral performance'}". `;
+      } else {
+        const latestViva = studentVivaResults[0];
+        reportText += `Oral viva submission for ${latestViva.vivaTitle || latestViva.subject || 'oral viva'} has been submitted and is awaiting evaluation by your respected teacher. `;
+      }
+      if (studentVivaResults.length > 1) {
+        reportText += `You have a total of ${studentVivaResults.length} oral viva recordings recorded. `;
+      }
+    } else {
+      reportText += `No oral viva submissions found yet for ${activeSubject}. `;
+    }
+
     announce(reportText);
     speakText(reportText);
   };
+
+  // Feature 6: Audio Performance & Progress Report
+  const handleReadPerformanceReport = () => {
+    speakResultsAndPerformancesReport();
+  };
+
+  const lastAnnouncedTabRef = useRef('');
+  useEffect(() => {
+    if (activeTab === 'Results & Performance') {
+      if (lastAnnouncedTabRef.current !== 'Results & Performance') {
+        lastAnnouncedTabRef.current = 'Results & Performance';
+        speakResultsAndPerformancesReport();
+      }
+    } else {
+      lastAnnouncedTabRef.current = activeTab;
+    }
+  }, [activeTab]);
 
   // Feature 2: AI Voice Tutor Concept Summarizer
   const handleGenerateAiConceptSummary = (mat) => {
@@ -3939,7 +4018,9 @@ export default function StudentDashboard() {
       if (!active) return;
       if (hasSpokenMountFeaturesRef.current) return;
       hasSpokenMountFeaturesRef.current = true;
-      speakDashboardWelcome();
+      if (!isVoiceDisabled()) {
+        speakDashboardWelcome();
+      }
     }, 700);
     return () => {
       active = false;
@@ -3953,10 +4034,10 @@ export default function StudentDashboard() {
 
     const describe = (el) => {
       if (!el) return null;
-      const target = el.closest('button, a, input, select, textarea, [role="button"], [role="tab"], [role="option"], [aria-label], [title], [data-speech], h1, h2, h3, h4, label, li, tr, .card, [class*="card"]');
+      const target = el.closest('button, a, input, select, textarea, [role="button"], [role="tab"], [role="option"], [aria-label], [title], [data-speech], [data-narrate], h1, h2, h3, h4, label, li, tr, .card, [class*="card"]');
       if (!target) return null;
 
-      const customSpeech = target.getAttribute('data-speech');
+      const customSpeech = target.getAttribute('data-speech') || target.getAttribute('data-narrate');
       if (customSpeech) return { target, text: customSpeech };
 
       const aria = target.getAttribute('aria-label') || target.getAttribute('title');
@@ -3981,19 +4062,28 @@ export default function StudentDashboard() {
     };
 
     const onPointerOver = (e) => {
-      if (isVoiceListeningRef.current) return;
+      if (isVoiceDisabled() || isVoiceListeningRef.current) return;
       const info = describe(e.target);
       if (!info || !info.text) return;
       if (info.target === lastSpokenEl) return;
       lastSpokenEl = info.target;
-      speakHover(info.text, 90);
+      speakHover(info.text, 80);
+    };
+
+    const onPointerOut = (e) => {
+      if (!e.relatedTarget || !document.contains(e.relatedTarget)) {
+        lastSpokenEl = null;
+        resetHoverSpeech();
+      }
     };
 
     document.addEventListener('mouseover', onPointerOver);
     document.addEventListener('focusin', onPointerOver);
+    document.addEventListener('mouseout', onPointerOut);
     return () => {
       document.removeEventListener('mouseover', onPointerOver);
       document.removeEventListener('focusin', onPointerOver);
+      document.removeEventListener('mouseout', onPointerOut);
       resetHoverSpeech();
     };
   }, []);
@@ -6864,7 +6954,11 @@ export default function StudentDashboard() {
     }
     else if (transcript.includes('result') || transcript.includes('marks') || transcript.includes('score') || transcript.includes('performance') || transcript.includes('report card')) {
       setActiveTab('Results & Performance');
-      speakText(`Opening Results and Performance. Your overall progress is ${overallProgress} percent.`);
+      speakResultsAndPerformancesReport();
+    }
+    else if (transcript.includes('written exam') || transcript.includes('written test') || transcript.includes('take written exam')) {
+      setActiveTab('AI Exam Assistant');
+      speakText(`Opening AI Exam Assistant for written examinations in ${activeSubject}.`);
     }
     else if (transcript.includes('certificate') || transcript.includes('award') || transcript.includes('diploma')) {
       setActiveTab('Certificates');
@@ -6996,7 +7090,7 @@ export default function StudentDashboard() {
 
   // Voice Assistant command trigger: speaks prompt, streams live speech transcript
   const triggerVoiceCommand = async () => {
-    if (!isVoiceAssistantEnabled) {
+    if (!isVoiceAssistantEnabled || isVoiceDisabled()) {
       announce("⚠️ Voice Assistant is disabled. Enable it from the top header.");
       return;
     }
@@ -8812,24 +8906,40 @@ export default function StudentDashboard() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginBottom: '20px' }}>
                   <button 
                     onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('start exam'); }}
+                    onMouseEnter={() => speakHover("Start Written Exam button. Click to begin your online examination.")}
+                    data-speech="Start Written Exam button. Click to begin your online examination."
+                    data-narrate="Start Written Exam button. Click to begin your online examination."
+                    aria-label="Start Written Exam button"
                     style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
                   >
-                    🚀 Start Exam
+                    🚀 Start Written Exam
                   </button>
                   <button 
                     onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('results'); }}
+                    onMouseEnter={() => speakHover("My Results and Performance button. Click to open your exam and viva scores.")}
+                    data-speech="My Results and Performance button. Click to open your exam and viva scores."
+                    data-narrate="My Results and Performance button. Click to open your exam and viva scores."
+                    aria-label="My Results and Performance button"
                     style={{ background: '#16a34a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
                   >
                     📊 My Results
                   </button>
                   <button 
                     onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('viva'); }}
+                    onMouseEnter={() => speakHover("Viva Practice button. Click to open AI oral viva simulator.")}
+                    data-speech="Viva Practice button. Click to open AI oral viva simulator."
+                    data-narrate="Viva Practice button. Click to open AI oral viva simulator."
+                    aria-label="Viva Practice button"
                     style={{ background: '#9333ea', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
                   >
                     🎙️ Viva Practice
                   </button>
                   <button 
                     onClick={(e) => { e.stopPropagation(); closeVoiceAssistant(false); executeCommand('emergency'); }}
+                    onMouseEnter={() => speakHover("Emergency SOS button. Click to send immediate alert to your teacher or proctor.")}
+                    data-speech="Emergency SOS button. Click to send immediate alert to your teacher or proctor."
+                    data-narrate="Emergency SOS button. Click to send immediate alert to your teacher or proctor."
+                    aria-label="Emergency SOS button"
                     style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
                   >
                     🚨 Emergency SOS
@@ -9353,22 +9463,31 @@ export default function StudentDashboard() {
         {/* Navigation Items */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
           {[
-            { id: 'Dashboard', label: 'Dashboard', icon: <Home size={18} /> },
-            { id: 'AI Exam Assistant', label: 'AI Exam Assistant', icon: <BotIcon /> },
-            { id: 'AI Oral Viva Simulator', label: 'AI Oral Viva Simulator', icon: <Sparkles size={18} /> },
-            { id: 'My Exams', label: 'My Exams', icon: <FileText size={18} /> },
-            { id: 'Results & Performance', label: 'Results & Performance', icon: <BarChart2 size={18} /> },
-            { id: 'Certificates', label: 'Voice Certificates', icon: <Award size={18} /> },
-            { id: 'Study Materials', label: 'Study Materials', icon: <BookOpen size={18} /> },
-            { id: 'Voice Assistant', label: 'Voice Assistant', icon: <Mic size={18} /> },
-            { id: 'Accessibility Settings', label: 'Accessibility Settings', icon: <Eye size={18} /> },
-            { id: 'Notifications', label: 'Notifications', icon: <Bell size={18} /> },
-            { id: 'Profile', label: 'Profile', icon: <User size={18} /> }
+            { id: 'Dashboard', label: 'Dashboard', desc: 'Dashboard overview tab. View upcoming exams and academic progress.', icon: <Home size={18} /> },
+            { id: 'AI Exam Assistant', label: 'AI Exam Assistant', desc: 'AI Exam Assistant tab. Access written exam portal with audio questions and voice answers.', icon: <BotIcon /> },
+            { id: 'AI Oral Viva Simulator', label: 'AI Oral Viva Simulator', desc: 'AI Oral Viva Simulator tab. Practice spoken oral viva interviews with teacher evaluation.', icon: <Sparkles size={18} /> },
+            { id: 'My Exams', label: 'My Exams', desc: 'My Exams tab. View your scheduled and active written exams.', icon: <FileText size={18} /> },
+            { id: 'Results & Performance', label: 'Results & Performance', desc: 'Results and Performance tab. View written exam and viva evaluation reports by your teacher.', icon: <BarChart2 size={18} /> },
+            { id: 'Certificates', label: 'Voice Certificates', desc: 'Voice Certificates tab. View and download earned completion certificates.', icon: <Award size={18} /> },
+            { id: 'Study Materials', label: 'Study Materials', desc: 'Study Materials tab. Audio lessons and accessible study guides.', icon: <BookOpen size={18} /> },
+            { id: 'Voice Assistant', label: 'Voice Assistant', desc: 'Voice Assistant settings and quick dictation guide.', icon: <Mic size={18} /> },
+            { id: 'Accessibility Settings', label: 'Accessibility Settings', desc: 'Accessibility Settings tab. Configure voice speed and visual contrast.', icon: <Eye size={18} /> },
+            { id: 'Notifications', label: 'Notifications', desc: 'Notifications tab. View teacher updates and announcements.', icon: <Bell size={18} /> },
+            { id: 'Profile', label: 'Profile', desc: 'Student Profile tab. View registration details and switch subject interest.', icon: <User size={18} /> }
           ].map(item => (
             <button
               key={item.id}
-              onClick={() => { setActiveTab(item.id); speakText(`Opening ${item.label}`); }}
-              onMouseEnter={() => speakHover(`${item.label} tab`)}
+              onClick={() => { 
+                setActiveTab(item.id); 
+                if (item.id !== 'Results & Performance') {
+                  speakText(`Opening ${item.label}`); 
+                }
+              }}
+              onMouseEnter={() => speakHover(item.desc || `${item.label} tab`)}
+              data-speech={item.desc || `${item.label} tab`}
+              data-narrate={item.desc || `${item.label} tab`}
+              aria-label={item.desc || `${item.label} tab`}
+              title={item.label}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -9426,6 +9545,10 @@ export default function StudentDashboard() {
             <button 
               onClick={handleEmergencyAssistAlert}
               onMouseEnter={() => speakHover("Emergency SOS button. Send immediate alert to your teacher or proctor.")}
+              data-speech="Emergency SOS button. Send immediate alert to your teacher or proctor."
+              data-narrate="Emergency SOS button. Send immediate alert to your teacher or proctor."
+              aria-label="Emergency SOS button. Send immediate alert to your teacher or proctor."
+              title="Emergency SOS button. Send immediate alert to your teacher or proctor."
               style={{ background: '#ef4444', color: '#ffffff', border: 'none', padding: '10px 16px', borderRadius: '10px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.25)' }}
             >
               <AlertCircle size={16} /> 🚨 Emergency SOS
@@ -9753,7 +9876,10 @@ export default function StudentDashboard() {
             </button>
             <button 
               onClick={() => executeCommand('emergency')}
-              onMouseEnter={() => speakHover("Emergency SOS command chip. Send urgent alert.")}
+              onMouseEnter={() => speakHover("Emergency SOS command chip. Send urgent alert to teacher.")}
+              data-speech="Emergency SOS command chip. Send urgent alert to teacher."
+              data-narrate="Emergency SOS command chip. Send urgent alert to teacher."
+              aria-label="Emergency SOS command chip. Send urgent alert to teacher."
               style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
               title="Click or say 'emergency' or 'sos'"
             >
@@ -9911,11 +10037,11 @@ export default function StudentDashboard() {
 
                 {/* Stat Cards (5 Cards) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px' }}>
-                  <StatCard icon={<Calendar size={22} color="#0284c7" />} bg="#f0f9ff" border="#bae6fd" label="Upcoming Exams" value={filteredExams.length.toString()} action="View Schedule →" onClick={() => setActiveTab('My Exams')} />
-                  <StatCard icon={<FileText size={22} color="#16a34a" />} bg="#f0fdf4" border="#bbf7d0" label="Active Exams" value={filteredExams.filter(e => isExamActiveNow(e)).length.toString()} action="Start Exam →" onClick={() => { const activeEx = filteredExams.find(e => isExamActiveNow(e)); if (activeEx) startExamHandler(activeEx); else speakText("No active exams right now. Please check back when your teacher assigns an assessment."); }} />
-                  <StatCard icon={<Sparkles size={22} color="#0284c7" />} bg="#f0fdf4" border="#86efac" label="Oral Vivas" value={filteredOralVivas.length.toString()} action="Start Viva →" onClick={() => { setActiveTab('AI Oral Viva Simulator'); speakText(`Opening Oral Viva Simulator. You have ${filteredOralVivas.length} active oral vivas.`); }} />
-                  <StatCard icon={<BarChart2 size={22} color="#9333ea" />} bg="#faf5ff" border="#e9d5ff" label="Completed Exams" value={filteredResults.length.toString()} action="View Results →" onClick={() => setActiveTab('Results & Performance')} />
-                  <StatCard icon={<Award size={22} color="#ea580c" />} bg="#fff7ed" border="#ffedd5" label="Overall Progress" value={filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'} action="View Details →" onClick={() => setActiveTab('Results & Performance')} progress={filteredResults.length > 0 ? overallProgress : 0} />
+                  <StatCard icon={<Calendar size={22} color="#0284c7" />} bg="#f0f9ff" border="#bae6fd" label="Upcoming Exams" value={filteredExams.length.toString()} action="View Schedule →" onClick={() => setActiveTab('My Exams')} speechText={`Upcoming Written Exams: ${filteredExams.length}. Click to view schedule.`} />
+                  <StatCard icon={<FileText size={22} color="#16a34a" />} bg="#f0fdf4" border="#bbf7d0" label="Active Written Exams" value={filteredExams.filter(e => isExamActiveNow(e)).length.toString()} action="Start Exam →" onClick={() => { const activeEx = filteredExams.find(e => isExamActiveNow(e)); if (activeEx) startExamHandler(activeEx); else speakText("No active exams right now. Please check back when your teacher assigns an assessment."); }} speechText={`Active Written Exams: ${filteredExams.filter(e => isExamActiveNow(e)).length}. Click to start your written exam.`} />
+                  <StatCard icon={<Sparkles size={22} color="#0284c7" />} bg="#f0fdf4" border="#86efac" label="Oral Vivas" value={filteredOralVivas.length.toString()} action="Start Viva →" onClick={() => { setActiveTab('AI Oral Viva Simulator'); speakText(`Opening Oral Viva Simulator. You have ${filteredOralVivas.length} active oral vivas.`); }} speechText={`Oral Vivas: ${filteredOralVivas.length}. Click to start your oral viva.`} />
+                  <StatCard icon={<BarChart2 size={22} color="#9333ea" />} bg="#faf5ff" border="#e9d5ff" label="Completed Exams" value={filteredResults.length.toString()} action="View Results →" onClick={() => setActiveTab('Results & Performance')} speechText={`Completed Written Exams: ${filteredResults.length}. Click to view results and teacher evaluations.`} />
+                  <StatCard icon={<Award size={22} color="#ea580c" />} bg="#fff7ed" border="#ffedd5" label="Overall Progress" value={filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'} action="View Details →" onClick={() => setActiveTab('Results & Performance')} progress={filteredResults.length > 0 ? overallProgress : 0} speechText={`Overall Progress: ${filteredResults.length > 0 ? `${overallProgress}%` : 'N/A'}. Click to view results and performance.`} />
                 </div>
 
                 {/* AI Exam Assistant Center Card */}
@@ -9942,9 +10068,14 @@ export default function StudentDashboard() {
                     </div>
                     <button 
                       onClick={() => { const target = filteredExams.find(e => isExamActiveNow(e)) || filteredExams[0]; if (target) startExamHandler(target); else speakText("No exams scheduled."); }}
+                      onMouseEnter={() => speakHover(`Start Written Exam button for ${activeSubject}. Click to begin your online written examination.`)}
+                      data-speech={`Start Written Exam button for ${activeSubject}. Click to begin your online written examination.`}
+                      data-narrate={`Start Written Exam button for ${activeSubject}. Click to begin your online written examination.`}
+                      aria-label={`Start Written Exam button for ${activeSubject}`}
+                      title={`Start Written Exam for ${activeSubject}`}
                       style={{ background: '#7c3aed', color: '#ffffff', border: 'none', padding: '12px 28px', borderRadius: '10px', fontWeight: '800', fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)' }}
                     >
-                      ▶ &nbsp; Start {activeSubject} Exam
+                      ▶ &nbsp; Start {activeSubject} Written Exam
                     </button>
                   </div>
 
@@ -11419,7 +11550,13 @@ export default function StudentDashboard() {
               <div style={{ display: 'grid', gap: '16px' }}>
                 {filteredExams.length > 0 ? (
                   filteredExams.map(ex => (
-                    <div key={ex.id} style={{ background: ex.targetStudentEmail ? '#f0fdf4' : '#ffffff', border: ex.targetStudentEmail ? '2px solid #86efac' : '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: ex.targetStudentEmail ? '0 4px 12px rgba(22, 163, 74, 0.1)' : 'none' }}>
+                    <div 
+                      key={ex.id} 
+                      onMouseEnter={() => speakHover(`Written Exam: ${ex.title}. Subject: ${ex.subject}. Status: ${ex.status}. Duration: ${ex.duration}.`)}
+                      data-speech={`Written Exam: ${ex.title}. Subject: ${ex.subject}. Status: ${ex.status}. Duration: ${ex.duration}.`}
+                      data-narrate={`Written Exam: ${ex.title}. Subject: ${ex.subject}. Status: ${ex.status}.`}
+                      style={{ background: ex.targetStudentEmail ? '#f0fdf4' : '#ffffff', border: ex.targetStudentEmail ? '2px solid #86efac' : '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: ex.targetStudentEmail ? '0 4px 12px rgba(22, 163, 74, 0.1)' : 'none' }}
+                    >
                       <div>
                         {ex.targetStudentEmail && (
                           <span style={{ display: 'inline-block', background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '800', marginBottom: '6px' }}>
@@ -11434,8 +11571,15 @@ export default function StudentDashboard() {
                           Status: {ex.status}
                         </small>
                       </div>
-                      <button onClick={() => startExamHandler(ex)} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-                        {ex.status === 'Active' ? 'Start Exam' : 'View Schedule'}
+                      <button 
+                        onClick={() => startExamHandler(ex)} 
+                        onMouseEnter={() => speakHover(`${ex.status === 'Active' ? 'Start Written Exam' : 'View Schedule'} button for ${ex.title}`)}
+                        data-speech={`${ex.status === 'Active' ? 'Start Written Exam' : 'View Schedule'} button for ${ex.title}`}
+                        data-narrate={`${ex.status === 'Active' ? 'Start Written Exam' : 'View Schedule'} button for ${ex.title}`}
+                        aria-label={`${ex.status === 'Active' ? 'Start Written Exam' : 'View Schedule'} button for ${ex.title}`}
+                        style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        {ex.status === 'Active' ? 'Start Written Exam' : 'View Schedule'}
                       </button>
                     </div>
                   ))
@@ -11474,6 +11618,10 @@ export default function StudentDashboard() {
                 <button
                   type="button"
                   onClick={() => setStudentResultsFilter('all')}
+                  onMouseEnter={() => speakHover(`All assessments filter button. Showing ${filteredResults.length + studentVivaResults.length} total assessments.`)}
+                  data-speech={`All assessments filter button. Showing ${filteredResults.length + studentVivaResults.length} total assessments.`}
+                  data-narrate={`All assessments filter button. Showing ${filteredResults.length + studentVivaResults.length} total assessments.`}
+                  aria-label="All assessments filter"
                   style={{
                     background: studentResultsFilter === 'all' ? '#0369a1' : '#f1f5f9',
                     color: studentResultsFilter === 'all' ? '#ffffff' : '#334155',
@@ -11490,6 +11638,11 @@ export default function StudentDashboard() {
                 <button
                   type="button"
                   onClick={() => setStudentResultsFilter('written')}
+                  onMouseEnter={() => speakHover(`Written Exams filter button. Currently showing ${filteredResults.length} completed written exams and teacher evaluations.`)}
+                  data-speech={`Written Exams filter button. Currently showing ${filteredResults.length} completed written exams and teacher evaluations.`}
+                  data-narrate={`Written Exams filter button. Currently showing ${filteredResults.length} completed written exams and teacher evaluations.`}
+                  aria-label="Written Exams filter button"
+                  title="Written Exams"
                   style={{
                     background: studentResultsFilter === 'written' ? '#0284c7' : '#f1f5f9',
                     color: studentResultsFilter === 'written' ? '#ffffff' : '#334155',
@@ -11506,6 +11659,11 @@ export default function StudentDashboard() {
                 <button
                   type="button"
                   onClick={() => setStudentResultsFilter('viva')}
+                  onMouseEnter={() => speakHover(`Oral Viva Voce filter button. Currently showing ${studentVivaResults.length} oral viva recordings and teacher scores.`)}
+                  data-speech={`Oral Viva Voce filter button. Currently showing ${studentVivaResults.length} oral viva recordings and teacher scores.`}
+                  data-narrate={`Oral Viva Voce filter button. Currently showing ${studentVivaResults.length} oral viva recordings and teacher scores.`}
+                  aria-label="Oral Viva Voce filter button"
+                  title="Oral Viva Voce"
                   style={{
                     background: studentResultsFilter === 'viva' ? '#7c3aed' : '#f1f5f9',
                     color: studentResultsFilter === 'viva' ? '#ffffff' : '#334155',
@@ -11537,6 +11695,10 @@ export default function StudentDashboard() {
                     <button
                       type="button"
                       onClick={() => setActiveTab('AI Exam Assistant')}
+                      onMouseEnter={() => speakHover("Take Written Exam button. Open AI Exam Assistant to begin your written assessment.")}
+                      data-speech="Take Written Exam button. Open AI Exam Assistant to begin your written assessment."
+                      data-narrate="Take Written Exam button. Open AI Exam Assistant to begin your written assessment."
+                      aria-label="Take Written Exam"
                       style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
                     >
                       📝 Take Written Exam
@@ -11544,6 +11706,10 @@ export default function StudentDashboard() {
                     <button
                       type="button"
                       onClick={() => setActiveTab('AI Oral Viva Simulator')}
+                      onMouseEnter={() => speakHover("Take Oral Viva button. Open AI Oral Viva Simulator to practice.")}
+                      data-speech="Take Oral Viva button. Open AI Oral Viva Simulator to practice."
+                      data-narrate="Take Oral Viva button. Open AI Oral Viva Simulator to practice."
+                      aria-label="Take Oral Viva"
                       style={{ background: '#7c3aed', color: '#ffffff', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
                     >
                       🎙️ Take Oral Viva
@@ -11561,6 +11727,9 @@ export default function StudentDashboard() {
                       return (
                         <div
                           key={res.id || `written_res_${rIdx}`}
+                          onMouseEnter={() => speakHover(`Written Exam result for ${res.examName}. Score: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}.`)}
+                          data-speech={`Written Exam result for ${res.examName}. Score: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}. Teacher note: ${res.feedback || (isEvaluated ? 'Exam evaluated by teacher with full technical review.' : 'Pending teacher review.')}`}
+                          data-narrate={`Written Exam result for ${res.examName}. Score: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}.`}
                           style={{
                             background: isEvaluated ? '#f0fdf4' : '#ffffff',
                             border: isEvaluated ? '1.5px solid #86efac' : '1.5px solid #fde68a',
@@ -11611,8 +11780,12 @@ export default function StudentDashboard() {
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                speakText(`Teacher Feedback for ${res.examName}: ${res.feedback || 'Exam completed successfully.'}`);
+                                speakText(`Teacher Feedback for ${res.examName} by respected teacher ${evaluatorTitle}: ${res.feedback || 'Exam evaluated by teacher with full technical review.'}`);
                               }}
+                              onMouseEnter={() => speakHover(`Listen teacher evaluation feedback button for ${res.examName} by respected teacher ${evaluatorTitle}.`)}
+                              data-speech={`Listen teacher evaluation feedback button for ${res.examName} by respected teacher ${evaluatorTitle}.`}
+                              data-narrate={`Listen teacher evaluation feedback button for ${res.examName} by respected teacher ${evaluatorTitle}.`}
+                              aria-label={`Listen teacher evaluation feedback for ${res.examName}`}
                               style={{ background: '#e0f2fe', color: '#0284c7', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                             >
                               <Volume2 size={14} /> 🔊 Listen Feedback
@@ -11632,6 +11805,9 @@ export default function StudentDashboard() {
                       return (
                         <div
                           key={vSub.id || `viva_res_${vIdx}`}
+                          onMouseEnter={() => speakHover(`Oral Viva result for ${vSub.vivaTitle || vSub.subject || 'Oral Viva'}. ${isEvaluated ? `Score: ${vSub.teacherScore} out of 10. Evaluated by respected teacher ${evaluatorTitle}.` : 'Awaiting teacher evaluation.'}`)}
+                          data-speech={`Oral Viva result for ${vSub.vivaTitle || vSub.subject || 'Oral Viva'}. ${isEvaluated ? `Score: ${vSub.teacherScore} out of 10. Grade: ${vSub.gradeStatus || 'Pass'}. Evaluated by respected teacher ${evaluatorTitle}. Feedback: ${vSub.teacherFeedback || 'Good performance.'}` : 'Awaiting teacher evaluation.'}`}
+                          data-narrate={`Oral Viva result for ${vSub.vivaTitle || vSub.subject || 'Oral Viva'}. ${isEvaluated ? `Score: ${vSub.teacherScore} out of 10. Evaluated by respected teacher ${evaluatorTitle}.` : 'Awaiting teacher evaluation.'}`}
                           style={{
                             background: isEvaluated ? '#f0fdf4' : '#ffffff',
                             border: isEvaluated ? '1.5px solid #86efac' : '1.5px solid #ddd6fe',
@@ -11699,8 +11875,12 @@ export default function StudentDashboard() {
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  speakText(`Teacher Viva Feedback: ${vSub.teacherFeedback || 'Good performance in oral examination.'}`);
+                                  speakText(`Teacher Viva Feedback by respected teacher ${evaluatorTitle}: ${vSub.teacherFeedback || 'Good performance in oral examination.'}`);
                                 }}
+                                onMouseEnter={() => speakHover(`Listen teacher viva evaluation feedback by respected teacher ${evaluatorTitle}.`)}
+                                data-speech={`Listen teacher viva evaluation feedback by respected teacher ${evaluatorTitle}.`}
+                                data-narrate={`Listen teacher viva evaluation feedback by respected teacher ${evaluatorTitle}.`}
+                                aria-label="Listen teacher viva feedback"
                                 style={{ background: '#dcfce7', color: '#15803d', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: '800', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                               >
                                 <Volume2 size={14} /> 🔊 Listen Feedback
@@ -13429,11 +13609,15 @@ export default function StudentDashboard() {
 }
 
 // Helper Components
-function StatCard({ icon, bg, border, label, value, action, onClick, progress }) {
+function StatCard({ icon, bg, border, label, value, action, onClick, progress, speechText }) {
+  const narration = speechText || `${label}: ${value}. Click to ${action ? action.replace('→', '').trim() : 'view details'}`;
   return (
     <button 
       onClick={onClick}
-      onMouseEnter={() => speakHover(`${label}: ${value}. Click to ${action ? action.replace('→', '').trim() : 'view details'}`)}
+      onMouseEnter={() => speakHover(narration)}
+      data-speech={narration}
+      data-narrate={narration}
+      aria-label={narration}
       className="stat-3d card-3d"
       style={{
         background: bg,
@@ -13464,10 +13648,14 @@ function StatCard({ icon, bg, border, label, value, action, onClick, progress })
 }
 
 function ActionBadge({ icon, title, sub, onClick }) {
+  const narration = `${title}. ${sub || ''}`;
   return (
     <button 
       onClick={onClick}
-      onMouseEnter={() => speakHover(`${title}. ${sub || ''}`)}
+      onMouseEnter={() => speakHover(narration)}
+      data-speech={narration}
+      data-narrate={narration}
+      aria-label={narration}
       style={{
         background: '#ffffff',
         border: '1px solid #ddd6fe',

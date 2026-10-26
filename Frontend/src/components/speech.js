@@ -68,6 +68,48 @@ let keepAliveTimer = null;
 let currentSpeechToken = 0;
 let cachedNonGoogleVoices = [];
 
+// Global Voice Assistant Mute / Disable State
+let isVoiceGloballyDisabled = false;
+
+try {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('voice_assistant_disabled') || localStorage.getItem('student_voice_assistant_enabled');
+    if (stored === 'true' && localStorage.getItem('voice_assistant_disabled') === 'true') {
+      isVoiceGloballyDisabled = true;
+    } else if (localStorage.getItem('student_voice_assistant_enabled') === 'false') {
+      isVoiceGloballyDisabled = true;
+    }
+  }
+} catch (e) {}
+
+export function isVoiceDisabled() {
+  if (typeof window !== 'undefined') {
+    if (window.isVoiceGloballyDisabled !== undefined) {
+      return Boolean(window.isVoiceGloballyDisabled);
+    }
+    try {
+      if (localStorage.getItem('voice_assistant_disabled') === 'true') return true;
+      if (localStorage.getItem('student_voice_assistant_enabled') === 'false') return true;
+    } catch (e) {}
+  }
+  return isVoiceGloballyDisabled;
+}
+
+export function setVoiceDisabled(disabled) {
+  isVoiceGloballyDisabled = Boolean(disabled);
+  if (typeof window !== 'undefined') {
+    window.isVoiceGloballyDisabled = isVoiceGloballyDisabled;
+    try {
+      localStorage.setItem('voice_assistant_disabled', String(isVoiceGloballyDisabled));
+      localStorage.setItem('student_voice_assistant_enabled', String(!isVoiceGloballyDisabled));
+    } catch (e) {}
+    if (isVoiceGloballyDisabled) {
+      cancelSpeech();
+    }
+    window.dispatchEvent(new Event('voice_state_changed'));
+  }
+}
+
 // Pre-warm and strictly filter out Google TTS voices
 function refreshNonGoogleVoices() {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
@@ -118,14 +160,18 @@ if (typeof window !== 'undefined') {
   }
 }
 
+let isSystemNarrating = false;
+let isBrowserSpeaking = false;
+
 export function isTTSActive() {
   const elevenPlaying = isElevenLabsPlaying();
-  const synthSpeaking = typeof window !== 'undefined' && 'speechSynthesis' in window && !!window.speechSynthesis.speaking;
-  return elevenPlaying || synthSpeaking;
+  return elevenPlaying || isSystemNarrating;
 }
 
 export function cancelSpeech() {
   currentSpeechToken++;
+  isSystemNarrating = false;
+  isBrowserSpeaking = false;
   cancelElevenLabsSpeech();
   if (synthesisSafetyTimer) {
     clearTimeout(synthesisSafetyTimer);
@@ -157,6 +203,12 @@ export function cancelSpeech() {
  * Operates reliably when connected to HDMI displays and external sound systems.
  */
 export function speakBrowserSpeech(text, lang = 'en-US', options = {}) {
+  if (isVoiceDisabled() && !options.force) {
+    cancelSpeech();
+    if (options.onEnd) options.onEnd();
+    return false;
+  }
+
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     if (options.onEnd) options.onEnd();
     return false;
@@ -246,6 +298,7 @@ export function speakBrowserSpeech(text, lang = 'en-US', options = {}) {
   const finish = (success) => {
     if (hasEnded) return;
     hasEnded = true;
+    isBrowserSpeaking = false;
     if (synthesisSafetyTimer) {
       clearTimeout(synthesisSafetyTimer);
       synthesisSafetyTimer = null;
@@ -262,6 +315,9 @@ export function speakBrowserSpeech(text, lang = 'en-US', options = {}) {
     }
   };
 
+  utterance.onstart = () => {
+    isBrowserSpeaking = true;
+  };
   utterance.onend = () => finish(true);
   utterance.onerror = (e) => {
     if (e.error !== 'interrupted' && e.error !== 'canceled') {
@@ -325,12 +381,26 @@ export function speakBrowserSpeech(text, lang = 'en-US', options = {}) {
  * 4. 100% resilient when connected to HDMI displays and external sound systems.
  */
 export async function speakIn(text, lang = 'en-US', options = {}) {
+  // STRICT RULE: If voice assistant is disabled, NEVER speak anything!
+  if (isVoiceDisabled() && !options.force) {
+    cancelSpeech();
+    if (options.onEnd) options.onEnd();
+    return false;
+  }
+
   cancelSpeech();
   const myToken = currentSpeechToken;
+  isSystemNarrating = true;
 
-
+  const wrappedOnEnd = () => {
+    if (myToken === currentSpeechToken) {
+      isSystemNarrating = false;
+    }
+    if (options.onEnd) options.onEnd();
+  };
 
   if (!text) {
+    isSystemNarrating = false;
     if (options.onEnd) options.onEnd();
     return false;
   }
@@ -341,7 +411,7 @@ export async function speakIn(text, lang = 'en-US', options = {}) {
   
   if (config.enabled && hasKey) {
     try {
-      const success = await speakWithElevenLabs(text, options);
+      const success = await speakWithElevenLabs(text, { ...options, onEnd: wrappedOnEnd });
       if (myToken !== currentSpeechToken) return false;
       if (success) {
         return true;
@@ -355,7 +425,7 @@ export async function speakIn(text, lang = 'en-US', options = {}) {
   if (myToken !== currentSpeechToken) return false;
 
   // 2. Clear, natural non-Google speech engine
-  return speakBrowserSpeech(text, lang, { ...options, token: myToken });
+  return speakBrowserSpeech(text, lang, { ...options, onEnd: wrappedOnEnd, token: myToken });
 }
 
 
@@ -367,10 +437,11 @@ let lastGlobalHoverText = '';
  * High-responsiveness Hover-to-Speech / Cursor Screen Reader
  * Immediately cancels previous speech and speaks the newly hovered element cleanly.
  */
-export function speakHover(text, delay = 150) {
-  if (typeof window === 'undefined' || !text) return;
-  // If voice assistant / TTS is currently active speaking narration or answers, DO NOT interrupt!
-  if (isTTSActive()) return;
+export function speakHover(text, delay = 80) {
+  if (typeof window === 'undefined' || !text || isVoiceDisabled()) return;
+  // If system narration (e.g. reading exam question or results) is in progress, DO NOT interrupt!
+  if (isSystemNarrating || isElevenLabsPlaying()) return;
+
   const clean = cleanTextForElevenLabs(text);
   if (!clean || clean === lastGlobalHoverText) return;
 
@@ -379,9 +450,9 @@ export function speakHover(text, delay = 150) {
   }
 
   globalHoverTimer = setTimeout(() => {
-    if (isTTSActive()) return;
+    if (isSystemNarrating || isElevenLabsPlaying()) return;
     lastGlobalHoverText = clean;
-    speakBrowserSpeech(clean, 'en-US');
+    speakBrowserSpeech(clean, 'en-US', { rate: 1.05 });
   }, delay);
 }
 

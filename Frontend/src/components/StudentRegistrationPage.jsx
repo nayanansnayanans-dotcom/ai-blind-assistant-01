@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Eye, EyeOff, CheckCircle, Mic, Lock, Mail, User, Phone, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle, Mic, Lock, Mail, User, Phone, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { speakIn, cancelSpeech, isTTSActive, formatSpokenEmail, parseSpokenEmail } from './speech';
+import { speakIn, cancelSpeech, isTTSActive, formatSpokenEmail, parseSpokenEmail, isVoiceDisabled, setVoiceDisabled } from './speech';
 import ProjectLogo from './ProjectLogo.jsx';
 import { registerUser, sendRegistrationOtpApi, verifyRegistrationOtpApi } from '../services/api';
 
 export default function StudentRegistrationPage() {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Voice Assistant Master State
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => !isVoiceDisabled());
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -66,17 +69,51 @@ export default function StudentRegistrationPage() {
     window.isVoiceAssistantActive = false;
   };
 
-  const speak = (text, onEndCallback = null) => {
+  const speak = (text, onEndCallback = null, force = false) => {
+    if (isVoiceDisabled() && !force) return;
     stopRecognition();
     cancelSpeech();
     speakIn(text, 'en-US', { 
       rate: 0.88, 
+      force,
       onEnd: () => {
         if (!isManuallyClosedRef.current && onEndCallback) {
           onEndCallback();
         }
       }
     });
+  };
+
+  useEffect(() => {
+    const handleVoiceSync = () => {
+      setIsVoiceEnabled(!isVoiceDisabled());
+    };
+    window.addEventListener('voice_state_changed', handleVoiceSync);
+    window.addEventListener('storage', handleVoiceSync);
+    return () => {
+      window.removeEventListener('voice_state_changed', handleVoiceSync);
+      window.removeEventListener('storage', handleVoiceSync);
+    };
+  }, []);
+
+  const toggleVoiceAssistant = (e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const nextVal = !isVoiceEnabled;
+    setIsVoiceEnabled(nextVal);
+    setVoiceDisabled(!nextVal);
+    if (!nextVal) {
+      isManuallyClosedRef.current = true;
+      stopRecognition();
+      cancelSpeech();
+      setIsListening(false);
+      window.isVoiceAssistantActive = false;
+    } else {
+      isManuallyClosedRef.current = false;
+      speak("Voice Assistant enabled.", null, true);
+    }
   };
 
   useEffect(() => {
@@ -104,15 +141,19 @@ export default function StudentRegistrationPage() {
 
   useEffect(() => {
     const greetingTimer = setTimeout(() => {
-      speak("Student Registration Portal. Tap anywhere on screen or press Spacebar to activate voice assistant.");
+      if (!isVoiceDisabled()) {
+        speak("Student Registration Portal. Tap anywhere on screen or press Spacebar to activate voice assistant.");
+      }
     }, 450);
 
     const triggerAction = () => {
+      if (isVoiceDisabled()) return;
       isManuallyClosedRef.current = false;
       triggerVoiceRegistration('firstName');
     };
 
     const handleKeyDown = (e) => {
+      if (isVoiceDisabled()) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (e.code === 'Space' || (e.altKey && e.code === 'KeyS')) {
         e.preventDefault();
@@ -121,6 +162,7 @@ export default function StudentRegistrationPage() {
     };
 
     const handleGlobalClick = (e) => {
+      if (isVoiceDisabled()) return;
       if (e.target.closest('input') || e.target.closest('button') || e.target.closest('a') || e.target.closest('textarea') || e.target.closest('select')) {
         return;
       }
@@ -139,6 +181,7 @@ export default function StudentRegistrationPage() {
   }, []);
 
   const triggerVoiceRegistration = async (targetField = 'firstName') => {
+    if (isVoiceDisabled()) return;
     isManuallyClosedRef.current = false;
     stopRecognition();
     cancelSpeech();
@@ -518,6 +561,7 @@ export default function StudentRegistrationPage() {
   };
 
   const handleTapScreenAnywhere = (e) => {
+    if (isVoiceDisabled()) return;
     if (isListening) return;
     if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a') || e.target.closest('form')) {
       return;
@@ -887,7 +931,7 @@ export default function StudentRegistrationPage() {
           padding: '36px 32px', borderRadius: '24px', boxShadow: '0 20px 40px -15px rgba(0,0,0,0.08)', boxSizing: 'border-box'
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '16px' }}>
           <ProjectLogo size="large" />
           <h1 style={{ fontSize: '22px', color: '#0369a1', margin: '8px 0 2px 0', fontWeight: '900' }}>
             🎓 Student Account Registration
@@ -897,25 +941,64 @@ export default function StudentRegistrationPage() {
           </p>
         </div>
 
+        {/* Master Voice Assistant Enable / Disable Toggle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          <button
+            type="button"
+            onClick={toggleVoiceAssistant}
+            style={{
+              background: isVoiceEnabled ? '#ecfdf5' : '#fef2f2',
+              color: isVoiceEnabled ? '#047857' : '#b91c1c',
+              border: isVoiceEnabled ? '2px solid #a7f3d0' : '2px solid #fecaca',
+              padding: '10px 20px',
+              borderRadius: '12px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: isVoiceEnabled ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 8px rgba(239, 68, 68, 0.15)',
+              transition: 'all 0.2s ease'
+            }}
+            title={isVoiceEnabled ? 'Click to Disable Voice Assistant' : 'Click to Enable Voice Assistant'}
+          >
+            {isVoiceEnabled ? <Volume2 size={16} color="#059669" /> : <VolumeX size={16} color="#b91c1c" />}
+            <span>{isVoiceEnabled ? '🟢 Voice: Enabled' : '🔴 Voice: Disabled'}</span>
+          </button>
+        </div>
+
         {/* Voice Assistant Banner */}
         <div 
-          onClick={() => triggerVoiceRegistration('all')}
+          onClick={() => {
+            if (!isVoiceEnabled) {
+              toggleVoiceAssistant();
+              return;
+            }
+            triggerVoiceRegistration('all');
+          }}
           style={{
-            padding: '12px 16px', borderRadius: '14px', background: '#f0f9ff',
-            border: '1px solid #0284c7', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px', borderRadius: '14px', 
+            background: isVoiceEnabled ? '#f0f9ff' : '#fef2f2',
+            border: isVoiceEnabled ? '1px solid #0284c7' : '1px solid #fca5a5', 
+            marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             cursor: 'pointer'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ background: '#0284c7', padding: '8px', borderRadius: '50%', color: '#ffffff' }}>
-              <Mic size={18} />
+            <div style={{ background: isVoiceEnabled ? '#0284c7' : '#ef4444', padding: '8px', borderRadius: '50%', color: '#ffffff' }}>
+              {isVoiceEnabled ? <Mic size={18} /> : <VolumeX size={18} />}
             </div>
             <div>
-              <b style={{ fontSize: '13px', color: '#0284c7', display: 'block' }}>Tap Screen Anywhere to Activate Voice</b>
-              <small style={{ fontSize: '11px', color: '#64748b' }}>Step-by-step guided registration & voice confirmation</small>
+              <b style={{ fontSize: '13px', color: isVoiceEnabled ? '#0284c7' : '#b91c1c', display: 'block' }}>
+                {isVoiceEnabled ? 'Tap Screen Anywhere to Activate Voice' : 'Voice Assistant Disabled — Tap to Enable'}
+              </b>
+              <small style={{ fontSize: '11px', color: isVoiceEnabled ? '#64748b' : '#ef4444' }}>
+                {isVoiceEnabled ? 'Step-by-step guided registration & voice confirmation' : 'Click here or toggle above to re-enable voice'}
+              </small>
             </div>
           </div>
-          <Sparkles size={18} color="#0284c7" />
+          {isVoiceEnabled && <Sparkles size={18} color="#0284c7" />}
         </div>
 
         {errorMessage && (

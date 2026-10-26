@@ -21,7 +21,7 @@ import {
   X,
   MousePointer
 } from 'lucide-react';
-import { speakIn, cancelSpeech } from './speech';
+import { speakIn, cancelSpeech, isVoiceDisabled, setVoiceDisabled } from './speech';
 import ProjectLogo from './ProjectLogo.jsx';
 import { sendContactMessageApi } from '../services/api';
 
@@ -29,6 +29,7 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   // Voice Assistant States for Students
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => !isVoiceDisabled());
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPlayingWelcome, setIsPlayingWelcome] = useState(false);
@@ -46,6 +47,31 @@ export default function HomePage() {
   const hoverTimeoutRef = useRef(null);
   const lastHoverTextRef = useRef('');
   const hoverSpeechEnabledRef = useRef(true);
+
+  useEffect(() => {
+    const handleVoiceSync = () => {
+      setIsVoiceEnabled(!isVoiceDisabled());
+    };
+    window.addEventListener('voice_state_changed', handleVoiceSync);
+    window.addEventListener('storage', handleVoiceSync);
+    return () => {
+      window.removeEventListener('voice_state_changed', handleVoiceSync);
+      window.removeEventListener('storage', handleVoiceSync);
+    };
+  }, []);
+
+  const toggleVoiceAssistant = () => {
+    const nextVal = !isVoiceEnabled;
+    setIsVoiceEnabled(nextVal);
+    setVoiceDisabled(!nextVal);
+    if (!nextVal) {
+      stopAllAudio();
+      setVoiceStatus('🔇 Voice Assistant disabled. Tap "Voice: Disabled" to turn on.');
+    } else {
+      setVoiceStatus('🎙️ Voice Assistant enabled and ready!');
+      speak('Voice Assistant enabled.', null, true);
+    }
+  };
 
   useEffect(() => {
     hoverSpeechEnabledRef.current = hoverSpeechEnabled;
@@ -94,10 +120,12 @@ export default function HomePage() {
     }
   };
 
-  const speak = (textToSpeak, onEndCallback = null) => {
+  const speak = (textToSpeak, onEndCallback = null, force = false) => {
+    if (isVoiceDisabled() && !force) return;
     stopRecognition();
     setIsSpeaking(true);
     speakIn(textToSpeak, 'en-US', {
+      force,
       onEnd: () => {
         setIsSpeaking(false);
         if (onEndCallback) onEndCallback();
@@ -120,6 +148,7 @@ export default function HomePage() {
   // Says aloud what any button, link, card, or input is when hovered or focused
   // =========================================================================
   const handleHoverSpeak = (text) => {
+    if (isVoiceDisabled()) return;
     if (!hoverSpeechEnabledRef.current) return;
     if (isListening) return; // Do not interrupt microphone when student is speaking
     if (!text || text === lastHoverTextRef.current) return;
@@ -131,6 +160,7 @@ export default function HomePage() {
     setHoveredElementLabel(text);
 
     hoverTimeoutRef.current = setTimeout(() => {
+      if (isVoiceDisabled()) return;
       lastHoverTextRef.current = text;
       // Slightly snappier rate (1.05) so hover voice feedback is immediate & responsive
       speakIn(text, 'en-US', { rate: 1.05 });
@@ -191,6 +221,7 @@ export default function HomePage() {
     "Tap anywhere on your screen now to speak your command!";
 
   const playWelcomeAndFeatures = (force = false) => {
+    if (isVoiceDisabled() && !force) return;
     if (isPlayingWelcomeRef.current && !force) return;
 
     stopRecognition();
@@ -202,6 +233,7 @@ export default function HomePage() {
     setVoiceStatus('🔊 Welcome to VisionAssist AI: Narrating platform features aloud. Tap anywhere or press Spacebar to speak a command!');
 
     speakIn(WELCOME_AND_FEATURES_SPEECH, 'en-US', {
+      force,
       onEnd: () => {
         setIsSpeaking(false);
         setIsPlayingWelcome(false);
@@ -213,6 +245,7 @@ export default function HomePage() {
 
   // Full Audio Instructions for Blind Students
   const readStudentInstructionsAloud = () => {
+    if (isVoiceDisabled()) return;
     stopRecognition();
     cancelSpeech();
     setIsPlayingWelcome(false);
@@ -293,6 +326,11 @@ export default function HomePage() {
 
   // Start Speech Recognition for Student Voice Commands
   const startStudentVoiceListening = (withPrompt = true) => {
+    if (isVoiceDisabled()) {
+      setVoiceStatus('🔇 Voice Assistant is disabled. Tap "Voice: Disabled" to enable.');
+      return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       speak('Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge or type your voice command.');
@@ -349,6 +387,8 @@ export default function HomePage() {
   // Global Tap Anywhere Screen Listener to Activate Welcome or Voice Assistant
   useEffect(() => {
     const handleGlobalScreenTap = (e) => {
+      if (isVoiceDisabled()) return;
+
       // Don't trigger if clicking interactive inputs, buttons, or links
       if (e.target.closest('input') || e.target.closest('button') || e.target.closest('a') || e.target.closest('textarea') || e.target.closest('select')) {
         return;
@@ -381,6 +421,8 @@ export default function HomePage() {
   // Keyboard Spacebar listener to activate Voice Assistant hands-free
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
+      if (isVoiceDisabled()) return;
+
       const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
       if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select' || document.activeElement?.isContentEditable) {
         return;
@@ -409,7 +451,7 @@ export default function HomePage() {
   useEffect(() => {
     // 1. Attempt to speak immediately on mount (works in refreshed tabs / allowed contexts)
     const greetingTimer = setTimeout(() => {
-      if (!hasSpokenWelcomeRef.current) {
+      if (!isVoiceDisabled() && !hasSpokenWelcomeRef.current) {
         playWelcomeAndFeatures();
       }
     }, 450);
@@ -418,6 +460,7 @@ export default function HomePage() {
     // If the browser blocks speech synthesis until first user gesture,
     // listen for the very first interaction anywhere on window and trigger welcome immediately!
     const unlockOnFirstInteraction = () => {
+      if (isVoiceDisabled()) return;
       if (!hasSpokenWelcomeRef.current) {
         try {
           if ('speechSynthesis' in window) {
@@ -485,6 +528,35 @@ export default function HomePage() {
         </div>
 
         <nav style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Master Voice Enable / Disable Button */}
+          <button 
+            type="button"
+            onClick={toggleVoiceAssistant}
+            style={{
+              background: isVoiceEnabled ? '#ecfdf5' : '#fef2f2',
+              color: isVoiceEnabled ? '#047857' : '#b91c1c',
+              border: isVoiceEnabled ? '2px solid #a7f3d0' : '2px solid #fecaca',
+              padding: '8px 14px',
+              borderRadius: '10px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: isVoiceEnabled ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 8px rgba(239, 68, 68, 0.15)',
+              transition: 'all 0.2s ease'
+            }}
+            data-narrate={isVoiceEnabled ? 'Voice Assistant is currently enabled. Click to disable audio voice.' : 'Voice Assistant is currently disabled. Click to enable audio voice.'}
+            onMouseEnter={() => handleHoverSpeak(isVoiceEnabled ? 'Voice Assistant is currently enabled. Click to disable speech.' : 'Voice Assistant is currently disabled. Click to enable speech.')}
+            onFocus={() => handleHoverSpeak(isVoiceEnabled ? 'Voice Assistant is currently enabled. Click to disable speech.' : 'Voice Assistant is currently disabled. Click to enable speech.')}
+            onMouseLeave={handleHoverLeave}
+            title={isVoiceEnabled ? 'Click to Disable Voice Assistant' : 'Click to Enable Voice Assistant'}
+          >
+            {isVoiceEnabled ? <Volume2 size={16} color="#059669" /> : <VolumeX size={16} color="#b91c1c" />}
+            <span>{isVoiceEnabled ? '🟢 Voice: Enabled' : '🔴 Voice: Disabled'}</span>
+          </button>
+
           <Link 
             to="/" 
             style={navLinkStyleActive}
@@ -648,6 +720,34 @@ export default function HomePage() {
           </div>
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Master Voice Assistant Enable / Disable Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleVoiceAssistant}
+              style={{
+                backgroundColor: isVoiceEnabled ? '#ecfdf5' : '#fef2f2',
+                color: isVoiceEnabled ? '#047857' : '#b91c1c',
+                border: isVoiceEnabled ? '2px solid #a7f3d0' : '2px solid #fecaca',
+                padding: '10px 16px',
+                borderRadius: '12px',
+                fontWeight: '800',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: isVoiceEnabled ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 8px rgba(239, 68, 68, 0.15)'
+              }}
+              data-narrate={isVoiceEnabled ? 'Voice Assistant is enabled. Click to disable voice assistant.' : 'Voice Assistant is disabled. Click to enable voice assistant.'}
+              onMouseEnter={() => handleHoverSpeak(isVoiceEnabled ? 'Voice Assistant is enabled. Click to disable voice.' : 'Voice Assistant is disabled. Click to enable voice.')}
+              onFocus={() => handleHoverSpeak(isVoiceEnabled ? 'Voice Assistant is enabled. Click to disable voice.' : 'Voice Assistant is disabled. Click to enable voice.')}
+              onMouseLeave={handleHoverLeave}
+              title={isVoiceEnabled ? 'Disable Voice Assistant' : 'Enable Voice Assistant'}
+            >
+              {isVoiceEnabled ? <Volume2 size={16} color="#059669" /> : <VolumeX size={16} color="#b91c1c" />}
+              <span>Voice: <strong>{isVoiceEnabled ? 'Enabled 🟢' : 'Disabled 🔴'}</strong></span>
+            </button>
+
             {/* Cursor Hover Speech Toggle Button */}
             <button
               type="button"

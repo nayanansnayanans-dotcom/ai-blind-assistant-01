@@ -95,6 +95,15 @@ export const checkServerElevenLabsKey = async () => {
  * Speak text exclusively using ElevenLabs AI Voice
  */
 export const speakWithElevenLabs = async (text, options = {}) => {
+  // STRICT RULE: If voice assistant is globally disabled, do not speak
+  try {
+    if (typeof window !== 'undefined' && (localStorage.getItem('voice_assistant_disabled') === 'true' || localStorage.getItem('student_voice_assistant_enabled') === 'false') && !options.force) {
+      cancelElevenLabsSpeech();
+      if (options.onEnd) options.onEnd();
+      return false;
+    }
+  } catch (e) {}
+
   // 1. Immediately cancel any currently active audio utterance
   cancelElevenLabsSpeech();
   const mySessionId = ++speechSessionId;
