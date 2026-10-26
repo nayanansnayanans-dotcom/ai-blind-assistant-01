@@ -6482,13 +6482,13 @@ export default function StudentDashboard() {
       }
 
       // 2. Submit Exam
-      if (transcript === 'submit' || transcript.includes('submit exam') || transcript.includes('finish exam') || transcript.includes('complete exam')) {
+      if (transcript === 'submit' || transcript.includes('submit exam') || transcript.includes('say submit') || transcript.includes('finish exam') || transcript.includes('complete exam')) {
         handleSubmitExam();
         return;
       }
 
       // 3. Next Question / Save and Next
-      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('save and next') || transcript.includes('go to next')) {
+      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('say next question') || transcript.includes('save and next') || transcript.includes('go to next')) {
         handleSaveAndNext();
         return;
       }
@@ -6500,19 +6500,35 @@ export default function StudentDashboard() {
       }
 
       // 5. Repeat / Read Question
-      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say question') || transcript === 'repeat the question' || transcript === 'read the question' || (transcript === 'repeat' && !currentAnswerInput)) {
+      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say repeat question') || transcript.includes('say question') || transcript === 'repeat the question' || transcript === 'read the question' || (transcript === 'repeat' && !currentAnswerInput)) {
         handleReadExamQuestionStepByStep(currentQIndex);
         return;
       }
 
-      // 6. Repeat / Clear Answer
-      if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || transcript.includes('re-answer') || transcript.includes('re-record') || transcript.includes('clear answer') || (transcript === 'repeat' && currentAnswerInput)) {
+      // 6. Repeat Answer / Say Your Answer Again
+      if (transcript.includes('repeat answer') || transcript.includes('say your answer again') || transcript.includes('say answer again') || transcript.includes('your answer again') || transcript.includes('answer again') || transcript.includes('repeat my answer') || transcript.includes('change answer') || transcript.includes('re-answer') || transcript.includes('re-record') || transcript.includes('clear answer') || (transcript === 'repeat' && currentAnswerInput)) {
         updateCurrentAnswer('');
         speakText("Clearing previous answer. Please speak your answer again now.", () => {
           setTimeout(() => {
             handleStartExamAnswerDictation();
           }, 300);
         });
+        return;
+      }
+
+      // 6b. Say Your Answer / Answer by Voice
+      if (transcript === 'answer' || transcript === 'say your answer' || transcript === 'your answer' || transcript === 'speak answer' || transcript.includes('answer by voice') || transcript.includes('start answer')) {
+        speakText("Please speak your answer now. When finished, say DONE.", () => {
+          setTimeout(() => {
+            handleStartExamAnswerDictation();
+          }, 300);
+        });
+        return;
+      }
+
+      // 6c. Done / Finish Answering
+      if (transcript === 'done' || transcript === 'say done' || transcript === 'finish') {
+        handleFinishExamAnswerDictation(currentAnswerInputRef.current || currentAnswerInput);
         return;
       }
 
@@ -6607,13 +6623,13 @@ export default function StudentDashboard() {
       const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
 
       // 1. Submit Viva
-      if (transcript === 'submit' || transcript.includes('submit viva') || transcript.includes('finish viva') || transcript.includes('complete viva')) {
+      if (transcript === 'submit' || transcript.includes('submit viva') || transcript.includes('say submit') || transcript.includes('finish viva') || transcript.includes('complete viva')) {
         handleSubmitVivaExam();
         return;
       }
 
       // 2. Next Question
-      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('next viva') || transcript.includes('save and next')) {
+      if (transcript === 'next' || transcript.includes('next question') || transcript.includes('say next question') || transcript.includes('next viva') || transcript.includes('save and next')) {
         handleNextVivaQuestion();
         return;
       }
@@ -6625,13 +6641,13 @@ export default function StudentDashboard() {
       }
 
       // 4. Repeat Viva Question
-      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say question') || (transcript === 'repeat' && !vivaAnswerInput)) {
+      if (transcript.includes('repeat question') || transcript.includes('read question') || transcript.includes('say repeat question') || transcript.includes('say question') || (transcript === 'repeat' && !vivaAnswerInput)) {
         handleRepeatVivaQuestion();
         return;
       }
 
-      // 5. Repeat / Change Viva Answer
-      if (transcript.includes('repeat answer') || transcript.includes('repeat my answer') || transcript.includes('change answer') || (transcript === 'repeat' && vivaAnswerInput)) {
+      // 5. Repeat Answer / Say Your Answer Again
+      if (transcript.includes('repeat answer') || transcript.includes('say your answer again') || transcript.includes('say answer again') || transcript.includes('your answer again') || transcript.includes('answer again') || transcript.includes('repeat my answer') || transcript.includes('change answer') || (transcript === 'repeat' && vivaAnswerInput)) {
         setVivaAnswerInput('');
         setVivaAnswersRecord(prev => ({ ...prev, [curVivaQIdx]: '' }));
         lastSpokenVivaAnswerRef.current = '';
@@ -6640,6 +6656,22 @@ export default function StudentDashboard() {
             startVivaDictation(false);
           }, 300);
         });
+        return;
+      }
+
+      // 5b. Say Your Answer / Answer Viva
+      if (transcript === 'answer' || transcript === 'say your answer' || transcript === 'your answer' || transcript === 'speak answer' || transcript.includes('answer viva') || transcript.includes('start viva answer')) {
+        speakText("Please speak your viva answer now. When finished, say DONE.", () => {
+          setTimeout(() => {
+            startVivaDictation(false);
+          }, 300);
+        });
+        return;
+      }
+
+      // 5c. Done / Finish Viva Response
+      if (transcript === 'done' || transcript === 'say done' || transcript === 'finish') {
+        stopVivaDictation(true);
         return;
       }
 
@@ -7177,16 +7209,23 @@ export default function StudentDashboard() {
             return;
           }
 
-          // Navigation commands
-          const isNavTrigger = lower === 'next question' || lower === 'previous question' || lower === 'repeat question' || lower === 'repeat' || lower === 'next' || lower === 'previous' || lower === 'submit exam' || lower === 'submit viva' || lower === 'submit' || lower.includes('save and next') || lower.includes('exit exam');
+          // Navigation & Action triggers
+          const isNavTrigger = 
+            lower === 'next question' || lower === 'say next question' || lower === 'next' || lower === 'save and next' || lower === 'next viva' ||
+            lower === 'previous question' || lower === 'say previous question' || lower === 'previous' || lower === 'back' ||
+            lower === 'repeat question' || lower === 'say repeat question' || lower === 'read question' || lower === 'repeat the question' || lower === 'repeat' ||
+            lower === 'submit' || lower === 'say submit' || lower === 'submit exam' || lower === 'submit viva' || lower === 'finish exam' || lower === 'finish viva' ||
+            lower === 'say your answer' || lower === 'your answer' || lower === 'answer' || lower === 'speak answer' || lower === 'answer by voice' ||
+            lower === 'done' || lower === 'say done' || lower === 'finish' ||
+            lower.includes('exit exam');
           if (isNavTrigger) {
             closeVoiceAssistant(false);
             executeCommand(cleaned);
             return;
           }
 
-          // Repeat answer command
-          if (/\b(repeat answer|repeat my answer|re-record|change answer|try again)\b/i.test(lower)) {
+          // Repeat answer / Say your answer again command
+          if (/\b(repeat answer|repeat my answer|say your answer again|say answer again|your answer again|answer again|re-record|change answer|try again)\b/i.test(lower)) {
             closeVoiceAssistant(false);
             executeCommand('repeat answer');
             return;
@@ -7300,30 +7339,25 @@ export default function StudentDashboard() {
 
     let promptText = "";
     if (isPromptExamSession) {
-      const recordedAns = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
-      const currentQ = currentExam?.questions?.[currentQIndex];
-      const qText = currentQ?.text || currentQ?.questionText || '';
       const totalQ = currentExam?.questions?.length || 1;
-      if (recordedAns) {
-        promptText = `You answered: "${recordedAns}". Would you like to repeat your answer, or proceed to the next question? Say REPEAT ANSWER or say NEXT QUESTION.`;
-      } else if (qText) {
-        promptText = `Question ${currentQIndex + 1} of ${totalQ}: ${qText}. Please speak your answer now. When finished, say DONE.`;
+      const isLastQ = currentQIndex >= totalQ - 1;
+      if (isLastQ) {
+        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
       } else {
-        promptText = `Question ${currentQIndex + 1}. Please speak your answer now. When finished, say DONE.`;
+        promptText = "Say your answer, or say repeat question, or next question, or say your answer again.";
       }
     } else if (isPromptVivaSession) {
-      const recordedViva = String(vivaAnswerInput || '').trim();
       const activeVivaList = resolveCurrentVivaList();
+      const totalVivaQ = activeVivaList.length || 1;
       const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
-      const curVivaQ = activeVivaList.length > 0 ? (activeVivaList[curVivaQIdx] || activeVivaList[0]) : null;
-      const currentVivaText = curVivaQ?.text || curVivaQ?.question || '';
-      if (recordedViva) {
-        promptText = `You answered: "${recordedViva}". Would you like to repeat your answer, or proceed to the next viva question? Say REPEAT ANSWER or say NEXT QUESTION.`;
-      } else if (currentVivaText) {
-        promptText = `Oral Viva: ${currentVivaText}. Please speak your answer now. When finished, say DONE.`;
+      const isLastVivaQ = curVivaQIdx >= totalVivaQ - 1;
+      if (isLastVivaQ) {
+        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
       } else {
-        promptText = "Oral Viva question ready. Please speak your answer now. When finished, say DONE.";
+        promptText = "Say your answer and say done when the answer finish, or say repeat question, or next question, or say your answer.";
       }
+    } else if (activeTab === 'My Exams' || (activeTab === 'AI Exam Assistant' && !currentExam)) {
+      promptText = "Written Exams portal. Say START EXAM to start writing your exam, or choose an exam to begin.";
     } else {
       promptText = "Listening. What help can I do for you? Say your command, or say speak all features, or tell me your interested subject.";
     }
@@ -7342,10 +7376,6 @@ export default function StudentDashboard() {
   const handleDashboardGlobalClick = (e) => {
     if (
       !isVoiceAssistantEnabled ||
-      activeTab === 'AI Oral Viva Simulator' ||
-      activeTab === 'AI Exam Assistant' ||
-      activeTab === 'Active Exam' ||
-      isExamActive ||
       e.target.closest('input') || 
       e.target.closest('button') || 
       e.target.closest('a') || 
@@ -8643,7 +8673,15 @@ export default function StudentDashboard() {
               boxSizing: 'border-box'
             }}
           >
-            <div className="orb-3d" style={{ display: 'grid', placeItems: 'center', margin: '0 auto 16px auto', boxShadow: '0 0 30px rgba(2, 132, 199, 0.5)' }}>
+            <div 
+              className="orb-3d" 
+              onClick={() => {
+                cancelSpeech();
+                triggerVoiceCommand();
+              }}
+              style={{ display: 'grid', placeItems: 'center', margin: '0 auto 16px auto', boxShadow: '0 0 30px rgba(2, 132, 199, 0.5)', cursor: 'pointer' }}
+              title="Tap to repeat voice instructions or speak"
+            >
               <Mic size={42} color="#ffffff" style={{ zIndex: 2 }} />
             </div>
 
@@ -8687,19 +8725,25 @@ export default function StudentDashboard() {
                     </div>
                   )}
 
-                  {/* Voice Assistant Confirmation Prompt (Photo 3 requirement) */}
-                  <div style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
-                    <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '800', color: '#0369a1' }}>
-                      {currentAnswerInput 
-                        ? 'Would you like to repeat your answer, or proceed to the next question?' 
-                        : 'Would you like to speak your answer now, or repeat the question?'}
-                    </p>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#0284c7' }}>
-                      {currentAnswerInput
-                        ? 'Say "REPEAT ANSWER" or say "NEXT QUESTION"'
-                        : 'Say "ANSWER", "READ QUESTION", or say "NEXT QUESTION"'}
-                    </div>
-                  </div>
+                  {/* Voice Assistant Confirmation Prompt */}
+                  {(() => {
+                    const totalQ = currentExam?.questions?.length || 1;
+                    const isLastQ = currentQIndex >= totalQ - 1;
+                    return (
+                      <div style={{ background: isLastQ ? '#f0fdf4' : '#e0f2fe', border: isLastQ ? '2px solid #86efac' : '2px solid #bae6fd', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: isLastQ ? '#166534' : '#0369a1' }}>
+                          {isLastQ 
+                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.' 
+                            : '🗣️ Say your answer, or say repeat question, or next question, or say your answer again.'}
+                        </p>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: isLastQ ? '#15803d' : '#0284c7' }}>
+                          {isLastQ
+                            ? 'Commands: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                            : 'Commands: "ANSWER" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Live Speech Detected Transcript */}
@@ -8740,17 +8784,31 @@ export default function StudentDashboard() {
                   >
                     🔄 Repeat Answer
                   </button>
-                  <button 
-                    type="button"
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      closeVoiceAssistant(false); 
-                      handleSaveAndNext(); 
-                    }}
-                    style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    Next Question ➡️
-                  </button>
+                  {currentExam && currentQIndex >= (currentExam.questions?.length || 1) - 1 ? (
+                    <button 
+                      type="button"
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        closeVoiceAssistant(false); 
+                        handleSubmitExam(); 
+                      }}
+                      style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(22, 163, 74, 0.4)' }}
+                    >
+                      🚀 Submit Exam (Say "SUBMIT")
+                    </button>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        closeVoiceAssistant(false); 
+                        handleSaveAndNext(); 
+                      }}
+                      style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      Next Question ➡️
+                    </button>
+                  )}
                   <button 
                     type="button"
                     onClick={(e) => { 
@@ -8771,7 +8829,7 @@ export default function StudentDashboard() {
                     }}
                     style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
-                    🎙️ Answer by Voice
+                    🎙️ Say Your Answer
                   </button>
                 </div>
               </div>
@@ -8806,18 +8864,26 @@ export default function StudentDashboard() {
                   )}
 
                   {/* Voice Assistant Viva Confirmation Prompt */}
-                  <div style={{ background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
-                    <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '800', color: '#6b21a8' }}>
-                      {vivaAnswerInput 
-                        ? 'Would you like to repeat your answer, or proceed to the next viva question?' 
-                        : 'Would you like to speak your answer now, or repeat the viva question?'}
-                    </p>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#7e22ce' }}>
-                      {vivaAnswerInput
-                        ? 'Say "REPEAT ANSWER" or say "NEXT QUESTION"'
-                        : 'Say "ANSWER", "REPEAT QUESTION", or say "NEXT QUESTION"'}
-                    </div>
-                  </div>
+                  {(() => {
+                    const activeVivaList = resolveCurrentVivaList();
+                    const totalVivaQ = activeVivaList.length || 1;
+                    const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
+                    const isLastVivaQ = curVivaQIdx >= totalVivaQ - 1;
+                    return (
+                      <div style={{ background: isLastVivaQ ? '#f0fdf4' : '#f3e8ff', border: isLastVivaQ ? '2px solid #86efac' : '2px solid #e9d5ff', borderRadius: '12px', padding: '12px 14px', textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '800', color: isLastVivaQ ? '#166534' : '#6b21a8' }}>
+                          {isLastVivaQ
+                            ? '🗣️ Say repeat question, or next question, or say your answer, and say submit.'
+                            : '🗣️ Say your answer and say done when the answer finish, or say repeat question, or next question, or say your answer.'}
+                        </p>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: isLastVivaQ ? '#15803d' : '#7e22ce' }}>
+                          {isLastVivaQ
+                            ? 'Say: "REPEAT QUESTION" • "NEXT QUESTION" • "ANSWER" • "SUBMIT"'
+                            : 'Say: "ANSWER (Say DONE when finish)" • "REPEAT QUESTION" • "NEXT QUESTION" • "REPEAT ANSWER"'}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Live Speech Detected Transcript */}
@@ -8850,7 +8916,7 @@ export default function StudentDashboard() {
                       setVivaAnswerInput('');
                       speakText("Clearing previous answer. Please speak your viva answer again now.", () => {
                         setTimeout(() => {
-                          startVivaDictation();
+                          startVivaDictation(false);
                         }, 300);
                       });
                     }}
@@ -8858,17 +8924,37 @@ export default function StudentDashboard() {
                   >
                     🔄 Repeat Viva Answer
                   </button>
-                  <button 
-                    type="button"
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      closeVoiceAssistant(false); 
-                      handleNextVivaQuestion(); 
-                    }}
-                    style={{ background: '#9333ea', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    Next Viva Question ➡️
-                  </button>
+                  {(() => {
+                    const activeVivaList = resolveCurrentVivaList();
+                    const totalVivaQ = activeVivaList.length || 1;
+                    const curVivaQIdx = activeVivaList.length > 0 ? (vivaQIndex % activeVivaList.length) : 0;
+                    const isLastVivaQ = curVivaQIdx >= totalVivaQ - 1;
+                    return isLastVivaQ ? (
+                      <button 
+                        type="button"
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          closeVoiceAssistant(false); 
+                          handleSubmitVivaExam(); 
+                        }}
+                        style={{ background: '#16a34a', color: '#ffffff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 8px rgba(22, 163, 74, 0.4)' }}
+                      >
+                        🚀 Submit Viva (Say "SUBMIT")
+                      </button>
+                    ) : (
+                      <button 
+                        type="button"
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          closeVoiceAssistant(false); 
+                          handleNextVivaQuestion(); 
+                        }}
+                        style={{ background: '#9333ea', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        Next Viva Question ➡️
+                      </button>
+                    );
+                  })()}
                   <button 
                     type="button"
                     onClick={(e) => { 
@@ -8885,7 +8971,7 @@ export default function StudentDashboard() {
                     onClick={(e) => { 
                       e.stopPropagation(); 
                       closeVoiceAssistant(false); 
-                      startVivaDictation(); 
+                      startVivaDictation(false); 
                     }}
                     style={{ background: '#ede9fe', color: '#6b21a8', border: '1px solid #ddd6fe', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
