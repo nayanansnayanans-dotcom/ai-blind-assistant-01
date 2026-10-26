@@ -6096,6 +6096,8 @@ export default function StudentDashboard() {
                 assignedStudents: Array.isArray(ex.assignedStudents) ? ex.assignedStudents : (ex.targetStudentEmail ? [ex.targetStudentEmail] : []),
                 date: ex.date || 'Upcoming',
                 time: ex.time || ex.startTime || '10:00 AM',
+                startTime: ex.startTime || ex.time || '10:00 AM',
+                endTime: ex.endTime || '',
                 duration: `${ex.duration || ex.durationMinutes || 60} min`,
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
                 status: ex.status || 'Published',
@@ -6150,6 +6152,8 @@ export default function StudentDashboard() {
                 assignedStudents: Array.isArray(ex.assignedStudents) ? ex.assignedStudents : (ex.targetStudentEmail ? [ex.targetStudentEmail] : []),
                 date: ex.date || 'Upcoming',
                 time: ex.time || ex.startTime || '10:00 AM',
+                startTime: ex.startTime || ex.time || '10:00 AM',
+                endTime: ex.endTime || '',
                 duration: `${ex.duration || ex.durationMinutes || 60} min`,
                 durationMinutes: Number(ex.duration || ex.durationMinutes || 60),
                 status: ex.status || 'Published',
@@ -12275,7 +12279,7 @@ export default function StudentDashboard() {
                         )}
                         <b style={{ fontSize: '16px', color: '#0f172a', display: 'block' }}>{ex.title}</b>
                         <p style={{ margin: '4px 0', fontSize: '13px', color: '#64748b' }}>
-                          {ex.subject} • Date: {formatDateForVoice(ex.date)} • Time: {ex.time} • Duration: {ex.duration}
+                          {ex.subject} • Date: {formatDateForVoice(ex.date)} • Time: {ex.startTime || ex.time}{ex.endTime ? ` - ${ex.endTime}` : ''} • Duration: {ex.duration}
                         </p>
                         <small style={{ fontSize: '12px', color: ex.status === 'Active' ? '#16a34a' : '#0284c7', fontWeight: '700' }}>
                           Status: {ex.status}

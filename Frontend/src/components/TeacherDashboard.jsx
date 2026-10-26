@@ -3311,6 +3311,7 @@ export default function TeacherDashboard() {
 
             return (
               <div style={{
+                gridColumn: '1 / -1',
                 background: isMatch ? '#ecfdf5' : '#fef2f2',
                 border: isMatch ? '2px solid #10b981' : '2px solid #ef4444',
                 borderRadius: '12px',
@@ -3410,21 +3411,22 @@ export default function TeacherDashboard() {
               }} 
               placeholder="Select Subject" 
             />
-            {exam.targetStudentName && (() => {
+            {(exam.targetStudentEmail || exam.targetStudentName) && (() => {
               const targetStu = registeredStudents.find(s => s.email === exam.targetStudentEmail);
               const studentPrefSub = targetStu?.interestedSubject || targetStu?.subject || exam.targetStudentInterestedSubject || 'Computer Science';
+              const displayName = exam.targetStudentName || targetStu?.username || targetStu?.name || exam.targetStudentEmail;
               const isMatch = isSubjectMatch(exam.subject, studentPrefSub);
 
               if (isMatch) {
                 return (
                   <small style={{ color: '#047857', fontSize: '11px', fontWeight: '700', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', padding: '6px 10px', borderRadius: '6px', border: '1px solid #86efac' }}>
-                    ✓ Matched to {exam.targetStudentName}'s interested subject preference ({studentPrefSub}).
+                    ✓ Matched to {displayName}'s interested subject preference ({studentPrefSub}).
                   </small>
                 );
               }
               return (
                 <small style={{ color: '#991b1b', fontSize: '11px', fontWeight: '800', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', padding: '6px 10px', borderRadius: '6px', border: '1px solid #fca5a5' }}>
-                  ❌ Not matched to {exam.targetStudentName}'s interested subject preference ({studentPrefSub}). Student prefers {studentPrefSub}, but this exam is for {exam.subject}.
+                  ❌ Not matched to {displayName}'s interested subject preference ({studentPrefSub}). Student prefers {studentPrefSub}, but this exam is for {exam.subject}.
                 </small>
               );
             })()}
@@ -4277,36 +4279,44 @@ export default function TeacherDashboard() {
               )}
             </select>
           </Field>
-          {exam.targetStudentEmail && (
-            <div style={{
-              background: '#ecfdf5',
-              border: '1px solid #10b981',
-              borderRadius: '8px',
-              padding: '10px 14px',
-              marginBottom: '14px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <span style={{ fontSize: '13px', color: '#065f46', fontWeight: '800' }}>
-                🎯 Assigned Specifically to: {exam.targetStudentName || exam.targetStudentEmail} ({exam.subject})
-              </span>
-              <button
-                type="button"
-                onClick={handleClearTargetStudent}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#dc2626',
-                  fontSize: '12px',
-                  fontWeight: '800',
-                  cursor: 'pointer'
-                }}
-              >
-                ✕ Switch to All Students
-              </button>
-            </div>
-          )}
+          {exam.targetStudentEmail && (() => {
+            const targetStu = registeredStudents.find(s => s.email === exam.targetStudentEmail);
+            const studentPrefSub = targetStu?.interestedSubject || targetStu?.subject || exam.targetStudentInterestedSubject || 'Computer Science';
+            const isMatch = isSubjectMatch(exam.subject, studentPrefSub);
+            const displayName = exam.targetStudentName || targetStu?.username || targetStu?.name || exam.targetStudentEmail;
+
+            return (
+              <div style={{
+                background: isMatch ? '#ecfdf5' : '#fef2f2',
+                border: isMatch ? '1px solid #10b981' : '1px solid #ef4444',
+                borderRadius: '8px',
+                padding: '10px 14px',
+                marginBottom: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '13px', color: isMatch ? '#065f46' : '#991b1b', fontWeight: '800' }}>
+                  {isMatch ? '🎯 Assigned Specifically to:' : '⚠️ Subject Mismatch for:'} {displayName} ({exam.subject}) • {isMatch ? '✓ Matches Preference' : `❌ Does not match interested subject (${studentPrefSub})`}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearTargetStudent}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#dc2626',
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✕ Switch to All Students
+                </button>
+              </div>
+            );
+          })()}
           <label className="ea-check">
             <input type="checkbox" checked={assignedGroups.bcaSem3} onChange={e => setAssignedGroups({ ...assignedGroups, bcaSem3: e.target.checked })} />
             BCA Semester 3 (28 Students)
