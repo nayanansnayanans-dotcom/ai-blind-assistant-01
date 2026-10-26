@@ -261,6 +261,29 @@ export const computeBiometricSimilarity = (biomA, biomB) => {
   return Math.min(1.0, Math.max(0, pearson));
 };
 
+// Accurately counts how many distinct questions in an exam have a valid non-empty answer (guarantees count <= total questions)
+export const getExamQuestionsAnsweredCount = (exam, answers, currentInput, curQIdx) => {
+  if (!exam || !Array.isArray(exam.questions) || exam.questions.length === 0) return 0;
+  const examId = exam.id || exam._id || '';
+  const ansMap = answers || {};
+  const answeredCount = exam.questions.filter((q, idx) => {
+    const qId = q && q.id !== undefined ? q.id : idx + 1;
+    const live = (idx === curQIdx && currentInput) ? String(currentInput).trim() : '';
+    const saved = (
+      ansMap[`${examId}-${idx}`] ||
+      ansMap[`${exam.id}-${idx}`] ||
+      ansMap[`${exam._id}-${idx}`] ||
+      ansMap[idx] ||
+      ansMap[`q_${idx}`] ||
+      ansMap[`${qId}`] ||
+      ansMap[`q_${qId}`] ||
+      ''
+    );
+    return Boolean(live || String(saved).trim());
+  }).length;
+  return Math.min(answeredCount, exam.questions.length);
+};
+
 // High-Precision Multi-Person & Face Detection from Camera Canvas (Single vs Multiple People)
 export const detectPeopleInCanvas = async (canvas) => {
   if (!canvas) return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
@@ -4332,7 +4355,7 @@ export default function StudentDashboard() {
         const secs = examTimeRemaining % 60;
         const remainingStr = `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
         const totalQs = (currentExam.questions || []).length || 1;
-        const ansCount = Object.keys(studentAnswers || {}).length;
+        const ansCount = getExamQuestionsAnsweredCount(currentExam, studentAnswers, currentAnswerInput, currentQIndex);
         const isWriting = !isOtherPersonDetected && isScannedStudentWriting && !isCameraOff;
         const voiceStatus = isCameraOff
           ? '🔒 Locked (Camera Off)'
@@ -4866,7 +4889,7 @@ export default function StudentDashboard() {
                   statusBadge: '🟢 Verified (All Angles): ' + student.name,
                   started: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                   remaining: '01:00:00',
-                  answered: '0 / 3',
+                  answered: `0 / ${(pendingExamToStart?.questions || []).length || 2}`,
                   voice: 'Active (en-US)',
                   submitted: 'No',
                   faceVerified: true,
@@ -5077,7 +5100,7 @@ export default function StudentDashboard() {
             statusBadge: '🟢 Verified (All Angles): ' + student.name,
             started: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             remaining: '01:00:00',
-            answered: '0 / 3',
+            answered: `0 / ${(pendingExamToStart?.questions || []).length || 2}`,
             voice: 'Active (en-US)',
             submitted: 'No',
             faceVerified: true,
@@ -5420,7 +5443,7 @@ export default function StudentDashboard() {
                     statusBadge: `🔴 ALERT 1/2: ${student.name}`,
                     started: '10:00 AM',
                     remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                    answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
+                    answered: `${getExamQuestionsAnsweredCount(currentExam, studentAnswers, currentAnswerInput, currentQIndex)} / ${currentExam.questions.length}`,
                     voice: '🔒 Locked (Proctor Warning 1)',
                     submitted: 'No',
                     faceVerified: !isCameraOffNow,
@@ -5467,7 +5490,7 @@ export default function StudentDashboard() {
                     statusBadge: `🔴 FINAL WARNING 2/2: ${student.name}`,
                     started: '10:00 AM',
                     remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                    answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions.length}`,
+                    answered: `${getExamQuestionsAnsweredCount(currentExam, studentAnswers, currentAnswerInput, currentQIndex)} / ${currentExam.questions.length}`,
                     voice: '🔒 Locked (Final Warning 2)',
                     submitted: 'No',
                     faceVerified: !isCameraOffNow,
@@ -5515,7 +5538,7 @@ export default function StudentDashboard() {
                     statusBadge: '🔴 TERMINATED: ' + student.name,
                     started: '10:00 AM',
                     remaining: '00:00:00',
-                    answered: `${Object.keys(studentAnswers).length} / ${currentExam.questions?.length || 3}`,
+                    answered: `${getExamQuestionsAnsweredCount(currentExam, studentAnswers, currentAnswerInput, currentQIndex)} / ${currentExam.questions?.length || 2}`,
                     voice: '⛔ Terminated (Disqualified)',
                     submitted: 'Terminated',
                     isTerminated: true,
@@ -5678,6 +5701,9 @@ export default function StudentDashboard() {
     setCurrentExam(exam);
     setCurrentQIndex(0);
     setCurrentAnswerInput('');
+    setStudentAnswers({});
+    currentAnswerInputRef.current = '';
+    lastSpokenExamAnswerRef.current = '';
     setFaceMismatchStrikeCount(0);
     faceMismatchStrikeCountRef.current = 0;
     consecutiveMismatchTicksRef.current = 0;

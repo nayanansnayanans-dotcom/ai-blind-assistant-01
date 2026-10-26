@@ -438,6 +438,29 @@ export const filterLogsForTeacher = (rawLogs, currentTeacher, currentExams) => {
     if (isWritingOrActive) return true;
 
     return false;
+  }).map(log => {
+    let answered = log.answered || '0 / 0';
+    if (answered) {
+      const parts = String(answered).split('/').map(p => parseInt(p.trim(), 10));
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        let ansNum = parts[0];
+        let totalNum = parts[1];
+        if (Array.isArray(currentExams) && currentExams.length > 0) {
+          const matchExam = currentExams.find(e => 
+            (log.examId && (String(e.id) === String(log.examId) || String(e._id) === String(log.examId))) ||
+            (log.examTitle && String(e.title || '').trim().toLowerCase() === String(log.examTitle || '').trim().toLowerCase())
+          );
+          if (matchExam && Array.isArray(matchExam.questions) && matchExam.questions.length > 0) {
+            totalNum = matchExam.questions.length;
+          }
+        }
+        if (ansNum > totalNum) {
+          ansNum = totalNum;
+        }
+        answered = `${ansNum} / ${totalNum}`;
+      }
+    }
+    return { ...log, answered };
   });
 };
 
@@ -808,15 +831,29 @@ export default function TeacherDashboard() {
       localStorage.removeItem('teacher_questions');
       localStorage.removeItem('starter_questions');
 
-      // Purge legacy hardcoded mock entries from shared_live_logs so old browser storage doesn't pollute
+      // Purge legacy hardcoded mock entries from shared_live_logs and fix any overflow answer counts (e.g. 8/2 -> 2/2)
       const rawLogs = localStorage.getItem('shared_live_logs');
       if (rawLogs) {
         const parsed = JSON.parse(rawLogs);
         if (Array.isArray(parsed)) {
+          let hasChange = false;
           const cleaned = parsed.filter(l => 
             !(l.student === 'Lekhanatr' && l.answered === '4 / 3')
-          );
-          if (cleaned.length !== parsed.length) {
+          ).map(l => {
+            if (l && l.answered) {
+              const parts = String(l.answered).split('/').map(p => parseInt(p.trim(), 10));
+              if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                let ansNum = parts[0];
+                let totalNum = parts[1];
+                if (ansNum > totalNum) {
+                  hasChange = true;
+                  return { ...l, answered: `${totalNum} / ${totalNum}` };
+                }
+              }
+            }
+            return l;
+          });
+          if (hasChange || cleaned.length !== parsed.length) {
             localStorage.setItem('shared_live_logs', JSON.stringify(cleaned));
           }
         }
