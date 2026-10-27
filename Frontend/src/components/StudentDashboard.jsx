@@ -5915,6 +5915,18 @@ export default function StudentDashboard() {
     // Cancel any existing TTS
     cancelSpeech();
 
+    // Ensure Voice Assistant overlay recognition is cleanly stopped
+    if (activeVoiceRecognitionRef.current) {
+      try {
+        activeVoiceRecognitionRef.current.onstart = null;
+        activeVoiceRecognitionRef.current.onresult = null;
+        activeVoiceRecognitionRef.current.onerror = null;
+        activeVoiceRecognitionRef.current.onend = null;
+        activeVoiceRecognitionRef.current.abort();
+      } catch (e) {}
+      activeVoiceRecognitionRef.current = null;
+    }
+
     // Request mic permission
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
@@ -5949,6 +5961,7 @@ export default function StudentDashboard() {
       };
 
       recognition.onresult = (event) => {
+        if (isTTSActive()) return;
         resetSilenceTimer();
         let interim = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -7604,13 +7617,14 @@ export default function StudentDashboard() {
     const lower = trimmed.toLowerCase();
     const doneTriggers = [
       'done answer', 'done answering', 'done next', "that's all", 'that is all',
-      'that is my answer', 'save and next', 'next question', 'done', 'finished',
-      'complete', 'completed', 'finish', 'stop'
+      'that is my answer', 'done', 'finished'
     ];
     for (const trigger of doneTriggers) {
-      if (lower === trigger || lower.endsWith(' ' + trigger) || new RegExp(`\\b${trigger}\\b`, 'i').test(lower)) {
-        const regex = new RegExp(`\\s*\\b${trigger}\\b\\s*`, 'gi');
-        const cleanText = trimmed.replace(regex, ' ').replace(/\s+/g, ' ').trim();
+      if (lower === trigger) {
+        return { isDone: true, cleanText: '', trigger };
+      }
+      if (lower.endsWith(' ' + trigger) || lower.endsWith('.' + trigger) || lower.endsWith(',' + trigger) || lower.endsWith('!' + trigger)) {
+        const cleanText = trimmed.slice(0, trimmed.length - trigger.length).replace(/[\s.,!]+$/, '').trim();
         return { isDone: true, cleanText, trigger };
       }
     }
@@ -7698,11 +7712,61 @@ export default function StudentDashboard() {
     }
 
     if (isVoiceListeningRef.current && !forceRestart) return;
+
+    // Cleanly cancel all other active speech recognition instances across dashboard before starting
+    if (examAnswerRecognitionRef.current) {
+      try {
+        examAnswerRecognitionRef.current.onstart = null;
+        examAnswerRecognitionRef.current.onresult = null;
+        examAnswerRecognitionRef.current.onerror = null;
+        examAnswerRecognitionRef.current.onend = null;
+        examAnswerRecognitionRef.current.abort();
+      } catch (e) {}
+      examAnswerRecognitionRef.current = null;
+    }
+    if (vivaRecognitionRef.current) {
+      try {
+        vivaRecognitionRef.current.onstart = null;
+        vivaRecognitionRef.current.onresult = null;
+        vivaRecognitionRef.current.onerror = null;
+        vivaRecognitionRef.current.onend = null;
+        vivaRecognitionRef.current.abort();
+      } catch (e) {}
+      vivaRecognitionRef.current = null;
+    }
+    if (wizardRecognitionRef.current) {
+      try {
+        wizardRecognitionRef.current.onstart = null;
+        wizardRecognitionRef.current.onresult = null;
+        wizardRecognitionRef.current.onerror = null;
+        wizardRecognitionRef.current.onend = null;
+        wizardRecognitionRef.current.abort();
+      } catch (e) {}
+      wizardRecognitionRef.current = null;
+    }
+    if (activeVoiceRecognitionRef.current) {
+      try {
+        activeVoiceRecognitionRef.current.onstart = null;
+        activeVoiceRecognitionRef.current.onresult = null;
+        activeVoiceRecognitionRef.current.onerror = null;
+        activeVoiceRecognitionRef.current.onend = null;
+        activeVoiceRecognitionRef.current.abort();
+      } catch (e) {}
+      activeVoiceRecognitionRef.current = null;
+    }
+
     voiceAssistantIsClosingRef.current = false;
     cancelSpeech();
     setIsVoiceListening(true);
     isVoiceListeningRef.current = true;
     setLiveVoiceTranscript('');
+
+    // Pre-request mic permission so browser speech recognition starts immediately
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {}
+    }
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -7746,6 +7810,7 @@ export default function StudentDashboard() {
 
         recognition.onresult = (e) => {
           if (voiceAssistantIsClosingRef.current || !isVoiceListeningRef.current) return;
+          if (isTTSActive()) return; // Never capture browser voice echo
 
           // STRICT SECURITY GATE: Discard speech if multiple people or unauthorized face is detected during exam
           if (currentExam && (activeTab === 'AI Exam Assistant' || activeTab === 'Active Exam') && !examSubmitted) {
@@ -7811,12 +7876,39 @@ export default function StudentDashboard() {
           const isStudentInStudyTest = Boolean(activeTab === 'Study Materials' && activeLessonTest);
 
           if (isStudentInActiveExam) {
+            // MCQ option selection by voice
+            const currentExamQ = currentExam?.questions?.[currentQIndex];
+            if (currentExamQ?.options && currentExamQ.options.length > 0) {
+              let selectedOption = null;
+              if (/\b(option a|choice a|select a|first option)\b/i.test(lower) || lower === 'a' || lower === 'option 1' || lower === '1') {
+                selectedOption = currentExamQ.options[0];
+              } else if (/\b(option b|choice b|select b|second option)\b/i.test(lower) || lower === 'b' || lower === 'option 2' || lower === '2') {
+                selectedOption = currentExamQ.options[1];
+              } else if (/\b(option c|choice c|select c|third option)\b/i.test(lower) || lower === 'c' || lower === 'option 3' || lower === '3') {
+                selectedOption = currentExamQ.options[2];
+              } else if (/\b(option d|choice d|select d|fourth option)\b/i.test(lower) || lower === 'd' || lower === 'option 4' || lower === '4') {
+                selectedOption = currentExamQ.options[3];
+              }
+              if (selectedOption) {
+                closeVoiceAssistant(false);
+                updateCurrentAnswer(selectedOption);
+                const promptText = `You selected: "${selectedOption}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+                speakText(promptText);
+                return;
+              }
+            }
+
             const cleanAns = cleanText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || cleanText;
             if (cleanAns) {
               setCurrentAnswerInput(cleanAns);
               currentAnswerInputRef.current = cleanAns;
               if (currentExam) {
-                setStudentAnswers(prev => ({ ...prev, [`${currentExam.id}-${currentQIndex}`]: cleanAns }));
+                setStudentAnswers(prev => ({ 
+                  ...prev, 
+                  [`${currentExam.id}-${currentQIndex}`]: cleanAns,
+                  [`${currentExam._id || currentExam.id}-${currentQIndex}`]: cleanAns,
+                  [currentQIndex]: cleanAns
+                }));
               }
             }
 
@@ -7826,7 +7918,17 @@ export default function StudentDashboard() {
               handleFinishExamAnswerDictation(cleanAns);
               return;
             }
-            // Continuous listening: DO NOT EXIT in the middle while candidate speaks!
+
+            // Auto-commit on natural pause (2.8s of silence): save answer and speak confirmation
+            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
+            if (cleanAns.length > 1) {
+              voiceSilenceTimerRef.current = setTimeout(() => {
+                if (!voiceAssistantIsClosingRef.current && isVoiceListeningRef.current) {
+                  closeVoiceAssistant(false);
+                  handleFinishExamAnswerDictation(cleanAns);
+                }
+              }, 2800);
+            }
             return;
           } else if (isStudentInActiveViva) {
             const cleanAns = cleanText.replace(/^(answer|my answer is|viva answer is)\s*/i, '').trim() || cleanText;
@@ -7844,7 +7946,16 @@ export default function StudentDashboard() {
               stopVivaDictation(true);
               return;
             }
-            // Continuous listening: DO NOT EXIT in the middle!
+
+            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
+            if (cleanAns.length > 1) {
+              voiceSilenceTimerRef.current = setTimeout(() => {
+                if (!voiceAssistantIsClosingRef.current && isVoiceListeningRef.current) {
+                  closeVoiceAssistant(false);
+                  stopVivaDictation(true);
+                }
+              }, 2800);
+            }
             return;
           } else if (isStudentInStudyPractice) {
             const cleanAns = cleanText.replace(/^(answer|my answer is|practice answer is)\s*/i, '').trim() || cleanText;
@@ -7858,6 +7969,16 @@ export default function StudentDashboard() {
               speakText(promptText);
               return;
             }
+            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
+            if (cleanAns.length > 1) {
+              voiceSilenceTimerRef.current = setTimeout(() => {
+                if (!voiceAssistantIsClosingRef.current && isVoiceListeningRef.current) {
+                  closeVoiceAssistant(false);
+                  const promptText = `You answered: "${cleanAns}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+                  speakText(promptText);
+                }
+              }, 2800);
+            }
             return;
           } else if (isStudentInStudyTest) {
             const cleanAns = cleanText.replace(/^(answer|my answer is|test answer is)\s*/i, '').trim() || cleanText;
@@ -7869,6 +7990,16 @@ export default function StudentDashboard() {
               const promptText = `You answered: "${cleanAns}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
               speakText(promptText);
               return;
+            }
+            if (voiceSilenceTimerRef.current) clearTimeout(voiceSilenceTimerRef.current);
+            if (cleanAns.length > 1) {
+              voiceSilenceTimerRef.current = setTimeout(() => {
+                if (!voiceAssistantIsClosingRef.current && isVoiceListeningRef.current) {
+                  closeVoiceAssistant(false);
+                  const promptText = `You answered: "${cleanAns}". Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.`;
+                  speakText(promptText);
+                }
+              }, 2800);
             }
             return;
           } else {
@@ -7884,7 +8015,7 @@ export default function StudentDashboard() {
                 closeVoiceAssistant(false);
                 executeCommand(cleaned);
               }
-            }, 3500);
+            }, 3000);
           }
         };
 
@@ -7893,6 +8024,9 @@ export default function StudentDashboard() {
           if (e.error === 'not-allowed') {
             announce("Microphone access denied. Please allow microphone permissions in your browser.");
             closeVoiceAssistant(false);
+            return;
+          }
+          if (e.error === 'no-speech') {
             return;
           }
           if (voiceAssistantIsClosingRef.current) {
@@ -7907,7 +8041,7 @@ export default function StudentDashboard() {
               if (isVoiceListeningRef.current && !voiceAssistantIsClosingRef.current) {
                 startMicrophoneRecognition();
               }
-            }, 100);
+            }, 150);
             return;
           }
           activeVoiceRecognitionRef.current = null;
@@ -7941,11 +8075,11 @@ export default function StudentDashboard() {
       const totalQ = currentExam?.questions?.length || 1;
       const isLastQ = currentQIndex >= totalQ - 1;
       if (hasAnswer) {
-        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+        promptText = "Listening. Say next question, repeat answer, or submit.";
       } else if (isLastQ) {
-        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
+        promptText = "Listening for your answer. Speak now, or say submit.";
       } else {
-        promptText = "Say your answer, or say repeat question, or next question, or say your answer again.";
+        promptText = "Listening for your answer. Speak now, or say repeat question.";
       }
     } else if (isPromptVivaSession) {
       const activeVivaList = resolveCurrentVivaList();
@@ -7954,11 +8088,11 @@ export default function StudentDashboard() {
       const hasVivaAnswer = Boolean((vivaAnswerInput || vivaAnswersRecord[curVivaQIdx] || '').trim());
       const isLastVivaQ = curVivaQIdx >= totalVivaQ - 1;
       if (hasVivaAnswer) {
-        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+        promptText = "Listening. Say next question, repeat answer, or submit.";
       } else if (isLastVivaQ) {
-        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
+        promptText = "Listening for your viva answer. Speak now, or say submit.";
       } else {
-        promptText = "Say your answer and say done when the answer finish, or say repeat question, or next question, or say your answer.";
+        promptText = "Listening for your viva answer. Speak now.";
       }
     } else if (isPromptStudyPracticeSession) {
       const questionsList = (activePracticeMat.questions && activePracticeMat.questions.length > 0)
@@ -7969,22 +8103,22 @@ export default function StudentDashboard() {
       const hasPracticeAnswer = Boolean((practiceAnswerInput || practiceAnswersByQ[safeQIdx] || '').trim());
       const isLastPracticeQ = safeQIdx >= totalQ - 1;
       if (hasPracticeAnswer) {
-        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+        promptText = "Listening. Say next question, repeat answer, or submit.";
       } else if (isLastPracticeQ) {
-        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
+        promptText = "Listening for your practice answer. Speak now, or say submit.";
       } else {
-        promptText = "Say your answer, or say repeat question, or next question, or repeat your answer.";
+        promptText = "Listening for your practice answer. Speak now.";
       }
     } else if (isPromptStudyTestSession) {
       const totalTestQ = activeLessonTest.questions?.length || 1;
       const isLastTestQ = lessonTestQIndex >= totalTestQ - 1;
       const hasTestAnswer = Boolean((lessonTestInput || lessonTestAnswers[activeLessonTest.questions?.[lessonTestQIndex]?.id] || '').trim());
       if (hasTestAnswer) {
-        promptText = "Say your command: repeat answer, or to say answer again, or next question, or repeat question, or submit.";
+        promptText = "Listening. Say next question, repeat answer, or submit.";
       } else if (isLastTestQ) {
-        promptText = "Say repeat question, or next question, or say your answer, and say submit.";
+        promptText = "Listening for your test answer. Speak now, or say submit.";
       } else {
-        promptText = "Say your answer, or say repeat question, or next question, or repeat your answer.";
+        promptText = "Listening for your test answer. Speak now.";
       }
     } else if (activeTab === 'Study Materials') {
       promptText = "Study Materials and Audio Lessons. Say Listen Lesson to hear audio lessons, or say Practice with Voice AI, or take lesson test.";
@@ -8001,7 +8135,7 @@ export default function StudentDashboard() {
     });
 
     if (voiceFallbackTimeoutRef.current) clearTimeout(voiceFallbackTimeoutRef.current);
-    const fallbackTimeout = Math.min(2000, Math.max(900, promptText.length * 30));
+    const fallbackTimeout = Math.min(3000, Math.max(1200, promptText.length * 60));
     voiceFallbackTimeoutRef.current = setTimeout(safeStartMic, fallbackTimeout);
   };
 
@@ -9375,7 +9509,7 @@ export default function StudentDashboard() {
               className="orb-3d" 
               onClick={() => {
                 cancelSpeech();
-                triggerVoiceCommand();
+                triggerVoiceCommand(true);
               }}
               style={{ display: 'grid', placeItems: 'center', margin: '0 auto 16px auto', boxShadow: '0 0 30px rgba(2, 132, 199, 0.5)', cursor: 'pointer' }}
               title="Tap to repeat voice instructions or speak"
@@ -9418,8 +9552,9 @@ export default function StudentDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 14px', marginBottom: '10px', color: '#92400e', fontSize: '13px', fontWeight: '600' }}>
-                      No answer recorded yet. Tap "Answer by Voice" below to speak your answer.
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px 14px', marginBottom: '10px', color: '#92400e', fontSize: '13px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '18px' }}>🎙️</span>
+                      <span>Listening for your answer now. Speak clearly — your answer will automatically save when you pause or say "DONE".</span>
                     </div>
                   )}
 
@@ -9527,12 +9662,13 @@ export default function StudentDashboard() {
                     type="button"
                     onClick={(e) => { 
                       e.stopPropagation(); 
-                      closeVoiceAssistant(false); 
-                      handleStartExamAnswerDictation(); 
+                      cancelSpeech();
+                      triggerVoiceCommand(true); 
                     }}
                     style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Start or restart listening for your answer now"
                   >
-                    🎙️ Say Your Answer
+                    🎙️ Speak Answer Now
                   </button>
                 </div>
               </div>
