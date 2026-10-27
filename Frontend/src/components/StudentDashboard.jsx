@@ -344,6 +344,18 @@ export const getExamQuestionsAnsweredCount = (exam, answers, currentInput, curQI
   return Math.min(answeredCount, exam.questions.length);
 };
 
+// Calculates standard academic grade and UI badge color from percentage score
+export const calculateGradeFromPercentage = (percentage) => {
+  const p = Number(percentage) || 0;
+  if (p >= 90) return { grade: 'A+', label: 'Outstanding', color: '#15803d', bg: '#dcfce7', border: '#86efac' };
+  if (p >= 80) return { grade: 'A', label: 'Excellent', color: '#15803d', bg: '#dcfce7', border: '#86efac' };
+  if (p >= 70) return { grade: 'B+', label: 'Very Good', color: '#0369a1', bg: '#e0f2fe', border: '#7dd3fc' };
+  if (p >= 60) return { grade: 'B', label: 'Good', color: '#0369a1', bg: '#e0f2fe', border: '#7dd3fc' };
+  if (p >= 50) return { grade: 'C', label: 'Satisfactory', color: '#b45309', bg: '#fef3c7', border: '#fde68a' };
+  if (p >= 40) return { grade: 'D', label: 'Pass', color: '#b45309', bg: '#fef3c7', border: '#fde68a' };
+  return { grade: 'F', label: 'Needs Improvement', color: '#b91c1c', bg: '#fee2e2', border: '#fca5a5' };
+};
+
 // High-Precision Multi-Person & Face Detection from Camera Canvas (Single vs Multiple People)
 export const detectPeopleInCanvas = async (canvas) => {
   if (!canvas) return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
@@ -382,13 +394,17 @@ export const detectPeopleInCanvas = async (canvas) => {
             const sorted = [...validFaces].sort((a, b) => (b.boundingBox.width * b.boundingBox.height) - (a.boundingBox.width * a.boundingBox.height));
             const primary = sorted[0].boundingBox;
             const primaryCenterX = primary.x + primary.width / 2;
+            const primaryCenterY = primary.y + primary.height / 2;
 
             let genuineOtherFaces = 0;
             for (let i = 1; i < sorted.length; i++) {
               const sec = sorted[i].boundingBox;
               const secCenterX = sec.x + sec.width / 2;
-              // Distinct separate person requires horizontal separation of >= 28% of frame width
-              if (Math.abs(primaryCenterX - secCenterX) >= W * 0.28) {
+              const secCenterY = sec.y + sec.height / 2;
+              const hDiff = Math.abs(primaryCenterX - secCenterX);
+              const vDiff = Math.abs(primaryCenterY - secCenterY);
+              // Distinct separate person if separated horizontally (>= 10% of frame width) or vertically (>= 10% of frame height)
+              if (hDiff >= W * 0.10 || vDiff >= H * 0.10) {
                 genuineOtherFaces++;
               }
             }
@@ -654,31 +670,27 @@ export const detectPeopleInCanvas = async (canvas) => {
     // Check if there is a distinct genuine SECOND human head in frame
     for (let i = 1; i < headCandidates.length; i++) {
       const secondaryHead = headCandidates[i];
-      // Exclude extreme perimeter border artifacts (wardrobe/cupboard edges, deity stickers, wall corners at column <= 2 or >= 29)
-      const isExtremeBorder = (secondaryHead.minC <= 2 || secondaryHead.maxC >= 29);
+      // Exclude extreme perimeter border artifacts (wall corners at column <= 1 or >= 30)
+      const isExtremeBorder = (secondaryHead.minC <= 1 || secondaryHead.maxC >= 30);
       if (isExtremeBorder) continue;
 
-      // A genuine second person's head must:
-      // 1. Have substantial mass: at least 48 cells and at least 65% the mass of primary head
-      // 2. Be comfortably inside the camera view (centerCol between 4 and 27)
-      // 3. Be at human sitting/standing eye level (vDist <= 6 rows from primary head)
-      // 4. Be horizontally separated (hDist >= 11 columns out of 32)
-      // 5. Have genuine head dimensions: width >= 6 cells, height >= 6 cells, aspect between 0.8 and 2.0
-      // 6. NOT be vertically directly below primary head (e.g. neck or collar)
+      // A genuine second person's head:
+      // 1. Have substantial mass: at least 20 cells (or at least 35% of primary head)
+      // 2. Be inside the camera view (centerCol between 2 and 29)
+      // 3. Be separated from primary head (hDist >= 5 or vDist >= 5)
+      // 4. Have genuine head cluster dimensions (width >= 4, height >= 4)
       const hDist = Math.abs(primaryHead.centerCol - secondaryHead.centerCol);
-      const isBelowPrimary = (hDist < 6 && secondaryHead.centerRow > primaryHead.centerRow);
+      const isDirectlyBelowChest = (hDist < 4 && secondaryHead.centerRow > (primaryHead.centerRow + 5));
       const vDist = Math.abs(primaryHead.centerRow - secondaryHead.centerRow);
       
       if (
-        !isBelowPrimary &&
-        secondaryHead.count >= 48 &&
-        secondaryHead.count >= primaryHead.count * 0.65 &&
-        secondaryHead.centerCol >= 4 && secondaryHead.centerCol <= 27 &&
-        secondaryHead.centerRow <= (rows * 0.55) &&
-        vDist <= 6 &&
-        hDist >= 11 &&
-        secondaryHead.widthCells >= 6 &&
-        secondaryHead.heightCells >= 6
+        !isDirectlyBelowChest &&
+        secondaryHead.count >= 20 &&
+        (secondaryHead.count >= primaryHead.count * 0.35 || secondaryHead.count >= 30) &&
+        secondaryHead.centerCol >= 2 && secondaryHead.centerCol <= 29 &&
+        (hDist >= 5 || vDist >= 5) &&
+        secondaryHead.widthCells >= 4 &&
+        secondaryHead.heightCells >= 4
       ) {
         multiplePeople = true;
         genuineSecondHeadCount++;
@@ -3519,6 +3531,21 @@ export default function StudentDashboard() {
   const lastSpokenTimestampRef = React.useRef(0);
   const hasSpokenMountFeaturesRef = React.useRef(false);
 
+  const studentAnswersRef = React.useRef(studentAnswers);
+  useEffect(() => {
+    studentAnswersRef.current = studentAnswers;
+  }, [studentAnswers]);
+
+  const examTimeRemainingRef = React.useRef(examTimeRemaining);
+  useEffect(() => {
+    examTimeRemainingRef.current = examTimeRemaining;
+  }, [examTimeRemaining]);
+
+  const currentExamRef = React.useRef(currentExam);
+  useEffect(() => {
+    currentExamRef.current = currentExam;
+  }, [currentExam]);
+
   useEffect(() => {
     isScannedStudentWritingRef.current = isScannedStudentWriting;
   }, [isScannedStudentWriting]);
@@ -3649,7 +3676,9 @@ export default function StudentDashboard() {
       if (evaluatedWritten) {
         const teacher = evaluatedWritten.evaluatedBy || evaluatedWritten.teacherName || 'your respected teacher';
         const pct = evaluatedWritten.percentage || Math.round(((evaluatedWritten.score || 0) / (evaluatedWritten.total || 100)) * 100);
-        reportText += `Written exam result evaluated by respected teacher ${teacher}: For ${evaluatedWritten.examName}, your score is ${evaluatedWritten.score} out of ${evaluatedWritten.total}, percentage ${pct} percent. Teacher evaluation note: "${evaluatedWritten.feedback || 'Good attempt and successfully reviewed by teacher'}". `;
+        const gradeObj = calculateGradeFromPercentage(pct);
+        const displayGrade = evaluatedWritten.grade || evaluatedWritten.gradeStatus || gradeObj.grade;
+        reportText += `Written exam result evaluated by respected teacher ${teacher}: For ${evaluatedWritten.examName}, your score for 100 percent is ${pct} out of 100, Grade ${displayGrade}. Raw marks: ${evaluatedWritten.score} out of ${evaluatedWritten.total}. Teacher evaluation note: "${evaluatedWritten.feedback || 'Good attempt and successfully reviewed by teacher'}". `;
       } else {
         const latestWritten = filteredResults[0];
         reportText += `Written exam result for ${latestWritten.examName}: Score is ${latestWritten.score} out of ${latestWritten.total}. Awaiting grading and feedback by your respected teacher. `;
@@ -4838,9 +4867,9 @@ export default function StudentDashboard() {
           setFaceMatchScore(0);
           const stagePrompt = scanStageRef.current === 'center'
             ? '🎯 Step 1: Align your face looking straight into the camera...'
-            : scanStageRef.current === 'left'
-              ? '👈 Step 2: Turn your face slightly to the left...'
-              : '👉 Step 3: Turn your face slightly to the right...';
+            : scanStageRef.current === 'right'
+              ? '👉 Step 2: Turn your face slightly to the right...'
+              : '👈 Step 3: Turn your face slightly to the left...';
           setFaceMatchStatus(stagePrompt);
           setFaceErrorMessage("Please position your face clearly inside the oval target.");
           return;
@@ -4855,9 +4884,9 @@ export default function StudentDashboard() {
         if (scannedExamFaceVectorsRef.current.center && liveVector) {
           centerSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.center, liveVector);
         }
-        let leftSim = 0;
-        if (scannedExamFaceVectorsRef.current.left && liveVector) {
-          leftSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.left, liveVector);
+        let rightSim = 0;
+        if (scannedExamFaceVectorsRef.current.right && liveVector) {
+          rightSim = computeBiometricSimilarity(scannedExamFaceVectorsRef.current.right, liveVector);
         }
 
         const matchPercent = Math.min(99, Math.round(similarity * 100));
@@ -4869,33 +4898,31 @@ export default function StudentDashboard() {
 
         if (currentStage === 'center') {
           // Profile photo is frontal: require strong correlation
-          isStageMatch = Boolean(similarity >= 0.40);
-        } else if (currentStage === 'left') {
-          // Turned left: Candidate MUST rotate head to left profile!
-          // If centerSim is high (>= 0.86), candidate is still looking straight at center!
+          isStageMatch = Boolean(similarity >= 0.38);
+        } else if (currentStage === 'right') {
+          // Turned right: Candidate rotates head to right profile!
           const isStillLookingCenter = centerSim >= 0.86;
-          const isCandidateMatch = (similarity >= 0.22 || (centerSim >= 0.30 && centerSim < 0.86));
+          const isCandidateMatch = (similarity >= 0.20 || (centerSim >= 0.26 && centerSim < 0.86));
           if (isStillLookingCenter) {
             stageStableTicksRef.current = 0;
-            setFaceErrorMessage("⚠️ Turn your head to the LEFT 👈. Currently looking center.");
-            setFaceMatchStatus("👈 Step 2: Please turn your face slightly to the left...");
+            setFaceErrorMessage("⚠️ Turn your head to the RIGHT 👉. Currently looking center.");
+            setFaceMatchStatus("👉 Step 2: Please turn your face slightly to the right...");
           } else if (isCandidateMatch) {
             isStageMatch = true;
           }
-        } else if (currentStage === 'right') {
-          // Turned right: Candidate MUST rotate head to right profile!
-          // If centerSim >= 0.86 (looking center) or leftSim >= 0.86 (looking left), reject!
+        } else if (currentStage === 'left') {
+          // Turned left: Candidate rotates head to left profile!
           const isStillLookingCenter = centerSim >= 0.86;
-          const isStillLookingLeft = leftSim >= 0.86;
-          const isCandidateMatch = (similarity >= 0.22 || (centerSim >= 0.30 && centerSim < 0.86));
+          const isStillLookingRight = rightSim >= 0.86;
+          const isCandidateMatch = (similarity >= 0.20 || (centerSim >= 0.26 && centerSim < 0.86));
           if (isStillLookingCenter) {
             stageStableTicksRef.current = 0;
-            setFaceErrorMessage("⚠️ Turn your head to the RIGHT 👉. Please turn away from center.");
-            setFaceMatchStatus("👉 Step 3: Please turn your face slightly to the right...");
-          } else if (isStillLookingLeft) {
+            setFaceErrorMessage("⚠️ Turn your head to the LEFT 👈. Currently looking center.");
+            setFaceMatchStatus("👈 Step 3: Please turn your face slightly to the left...");
+          } else if (isStillLookingRight) {
             stageStableTicksRef.current = 0;
-            setFaceErrorMessage("⚠️ Turn your head to the RIGHT 👉. Left profile is already locked.");
-            setFaceMatchStatus("👉 Step 3: Please turn your face slightly to the right...");
+            setFaceErrorMessage("⚠️ Turn your head to the LEFT 👈. Right profile is already locked.");
+            setFaceMatchStatus("👈 Step 3: Please turn your face slightly to the left...");
           } else if (isCandidateMatch) {
             isStageMatch = true;
           }
@@ -4920,38 +4947,18 @@ export default function StudentDashboard() {
               setFaceSnapshotUrl(snap);
               setScannedExamFaceUrl(snap);
 
-              scanStageRef.current = 'left';
-              setFaceScanStage('left');
-              stageStableTicksRef.current = 0;
-              setFaceScanProgress(34);
-              setFaceMatchStatus("✓ Center Angle Captured! Step 2: Now turn your face slightly to the left 👈");
-              announce("Center angle verified. Now turn your face slightly to the left.");
-              speakText("Center angle verified. Now turn your face slightly to the left.");
-            }
-          } else if (currentStage === 'left') {
-            const leftProg = 33 + Math.min(33, stageStableTicksRef.current * 11);
-            setFaceScanProgress(leftProg);
-            setFaceMatchStatus(`🟢 Step 2: Scanning Left Angle (${leftProg}%)... Candidate: ${student.name}`);
-
-            if (stageStableTicksRef.current >= 3) {
-              const snap = canvas.toDataURL('image/jpeg', 0.88);
-              scannedExamFaceVectorsRef.current.left = liveVector;
-              scannedAnglesStateRef.current.left = true;
-              setScannedAnglesState(prev => ({ ...prev, left: true }));
-              setScannedAnglesThumbs(prev => ({ ...prev, left: snap }));
-
               scanStageRef.current = 'right';
               setFaceScanStage('right');
               stageStableTicksRef.current = 0;
-              setFaceScanProgress(67);
-              setFaceMatchStatus("✓ Left Angle Captured! Step 3: Now turn your face slightly to the right 👉");
-              announce("Left angle verified. Now turn your face slightly to the right.");
-              speakText("Left angle verified. Now turn your face slightly to the right.");
+              setFaceScanProgress(34);
+              setFaceMatchStatus("✓ Center Angle Captured! Step 2: Now turn your face slightly to the right 👉");
+              announce("Center angle verified. Now turn your face slightly to the right.");
+              speakText("Center angle verified. Now turn your face slightly to the right.");
             }
           } else if (currentStage === 'right') {
-            const rightProg = 66 + Math.min(34, stageStableTicksRef.current * 12);
+            const rightProg = 33 + Math.min(33, stageStableTicksRef.current * 11);
             setFaceScanProgress(rightProg);
-            setFaceMatchStatus(`🟢 Step 3: Scanning Right Angle (${rightProg}%)... Candidate: ${student.name}`);
+            setFaceMatchStatus(`🟢 Step 2: Scanning Right Angle (${rightProg}%)... Candidate: ${student.name}`);
 
             if (stageStableTicksRef.current >= 3) {
               const snap = canvas.toDataURL('image/jpeg', 0.88);
@@ -4959,6 +4966,26 @@ export default function StudentDashboard() {
               scannedAnglesStateRef.current.right = true;
               setScannedAnglesState(prev => ({ ...prev, right: true }));
               setScannedAnglesThumbs(prev => ({ ...prev, right: snap }));
+
+              scanStageRef.current = 'left';
+              setFaceScanStage('left');
+              stageStableTicksRef.current = 0;
+              setFaceScanProgress(67);
+              setFaceMatchStatus("✓ Right Angle Captured! Step 3: Now turn your face slightly to the left 👈");
+              announce("Right angle verified. Now turn your face slightly to the left.");
+              speakText("Right angle verified. Now turn your face slightly to the left.");
+            }
+          } else if (currentStage === 'left') {
+            const leftProg = 66 + Math.min(34, stageStableTicksRef.current * 12);
+            setFaceScanProgress(leftProg);
+            setFaceMatchStatus(`🟢 Step 3: Scanning Left Angle (${leftProg}%)... Candidate: ${student.name}`);
+
+            if (stageStableTicksRef.current >= 3) {
+              const snap = canvas.toDataURL('image/jpeg', 0.88);
+              scannedExamFaceVectorsRef.current.left = liveVector;
+              scannedAnglesStateRef.current.left = true;
+              setScannedAnglesState(prev => ({ ...prev, left: true }));
+              setScannedAnglesThumbs(prev => ({ ...prev, left: snap }));
 
               scanStageRef.current = 'complete';
               setFaceScanStage('complete');
@@ -5002,7 +5029,7 @@ export default function StudentDashboard() {
                 window.dispatchEvent(new Event('storage'));
               } catch (e) {}
 
-              const successMsg = `Multi-angle biometric scan complete. Center, left, and right verified for ${student.name}. Entering exam now.`;
+              const successMsg = `Multi-angle biometric scan complete. Center, right, and left verified for ${student.name}. Entering exam now.`;
               announce(successMsg);
               speakText(successMsg, () => {
                 setFaceAuthModalOpen(false);
@@ -5017,9 +5044,9 @@ export default function StudentDashboard() {
           setFaceErrorMessage('');
           const stagePrompt = currentStage === 'center'
             ? `⏳ Aligning center face features... (${matchPercent}% match)`
-            : currentStage === 'left'
-              ? `👈 Aligning left face profile... (${matchPercent}% match)`
-              : `👉 Aligning right face profile... (${matchPercent}% match)`;
+            : currentStage === 'right'
+              ? `👉 Aligning right face profile... (${matchPercent}% match)`
+              : `👈 Aligning left face profile... (${matchPercent}% match)`;
           setFaceMatchStatus(stagePrompt);
         } else {
           // Mismatch against candidate
@@ -5491,9 +5518,9 @@ export default function StudentDashboard() {
         if (isViolation) {
           consecutiveMismatchTicksRef.current++;
 
-          // For camera_off or face_absent, lock inputs quickly (~2.4s) because candidate is not on camera!
-          // For subtle face posture shifts, require sustained threshold (~6-7s)
-          const lockTicks = (violationType === 'camera_off' || violationType === 'face_absent') ? 2 : 5;
+          // For camera_off, face_absent, or multiple_people, lock inputs quickly (~1.2s)
+          // For subtle face posture shifts, require sustained threshold (~3s)
+          const lockTicks = (violationType === 'camera_off' || violationType === 'face_absent' || violationType === 'multiple_people') ? 2 : 5;
           if (consecutiveMismatchTicksRef.current >= lockTicks) {
             setIsScannedStudentWriting(false);
             setIsOtherPersonDetected(true);
@@ -5504,9 +5531,9 @@ export default function StudentDashboard() {
           const timeSinceLastAlert = now - lastMismatchAlertTimeRef.current;
           const strikeCooldown = faceMismatchStrikeCountRef.current === 0 
             ? 0 
-            : ((violationType === 'camera_off' || violationType === 'face_absent') ? 12000 : 20000);
+            : ((violationType === 'camera_off' || violationType === 'face_absent' || violationType === 'multiple_people') ? 10000 : 15000);
 
-          const minRequiredTicks = (violationType === 'camera_off' || violationType === 'face_absent') ? 3 : 6;
+          const minRequiredTicks = (violationType === 'camera_off' || violationType === 'face_absent' || violationType === 'multiple_people') ? 3 : 5;
           if (consecutiveMismatchTicksRef.current >= minRequiredTicks && timeSinceLastAlert >= strikeCooldown) {
             lastMismatchAlertTimeRef.current = now;
             consecutiveMismatchTicksRef.current = 0;
@@ -5543,8 +5570,8 @@ export default function StudentDashboard() {
                     status: `⚠️ ${violationTitle}: Warning 1 of 2 Issued`,
                     statusBadge: `🔴 ALERT 1/2: ${student.name}`,
                     started: '10:00 AM',
-                    remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                    answered: `${getExamQuestionsAnsweredCount(currentExam, studentAnswers, currentAnswerInput, currentQIndex)} / ${currentExam.questions.length}`,
+                    remaining: `${Math.floor((examTimeRemainingRef.current || 0) / 60)}m`,
+                    answered: `${getExamQuestionsAnsweredCount(currentExam, studentAnswersRef.current || {}, currentAnswerInput, currentQIndex)} / ${(currentExam?.questions || []).length || 1}`,
                     voice: '🔒 Locked (Proctor Warning 1)',
                     submitted: 'No',
                     faceVerified: !isCameraOffNow,
@@ -5591,8 +5618,8 @@ export default function StudentDashboard() {
                     status: `🚨 ${violationTitle}: Final Warning 2 of 2 Issued`,
                     statusBadge: `🔴 FINAL WARNING 2/2: ${student.name}`,
                     started: '10:00 AM',
-                    remaining: `${Math.floor(examTimeRemaining / 60)}m`,
-                    answered: `${getExamQuestionsAnsweredCount(currentExam, studentAnswers, currentAnswerInput, currentQIndex)} / ${currentExam.questions.length}`,
+                    remaining: `${Math.floor((examTimeRemainingRef.current || 0) / 60)}m`,
+                    answered: `${getExamQuestionsAnsweredCount(currentExam, studentAnswersRef.current || {}, currentAnswerInput, currentQIndex)} / ${(currentExam?.questions || []).length || 1}`,
                     voice: '🔒 Locked (Final Warning 2)',
                     submitted: 'No',
                     faceVerified: !isCameraOffNow,
@@ -5681,7 +5708,7 @@ export default function StudentDashboard() {
         proctorScanIntervalRef.current = null;
       }
     };
-  }, [currentExam, examSubmitted, student, examTimeRemaining, studentAnswers]);
+  }, [currentExam?.id || currentExam?._id, examSubmitted, student?.name]);
 
   // Cleanly exit an ongoing exam session without recording any completed exam results
   const handleExitExamWithoutSubmitting = (e) => {
@@ -8893,7 +8920,7 @@ export default function StudentDashboard() {
                 </button>
               </div>
 
-              {/* 3-Step Multi-Angle Enrollment Indicator (Center -> Left -> Right) */}
+              {/* 3-Step Multi-Angle Enrollment Indicator (Center -> Right -> Left) */}
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
@@ -8917,22 +8944,6 @@ export default function StudentDashboard() {
                 </div>
 
                 <div style={{
-                  background: scannedAnglesState.left ? '#f0fdf4' : faceScanStage === 'left' ? '#eff6ff' : '#f8fafc',
-                  border: scannedAnglesState.left ? '2px solid #22c55e' : faceScanStage === 'left' ? '2px solid #0284c7' : '1px solid #e2e8f0',
-                  borderRadius: '12px',
-                  padding: '8px 10px',
-                  textAlign: 'center',
-                  transition: 'all 0.3s ease'
-                }}>
-                  <div style={{ fontSize: '11px', fontWeight: '800', color: scannedAnglesState.left ? '#15803d' : faceScanStage === 'left' ? '#0369a1' : '#64748b' }}>
-                    👈 Step 2: Left {scannedAnglesState.left ? '✓' : faceScanStage === 'left' ? '●' : '○'}
-                  </div>
-                  <div style={{ fontSize: '10px', color: scannedAnglesState.left ? '#16a34a' : '#94a3b8', marginTop: '2px', fontWeight: '600' }}>
-                    {scannedAnglesState.left ? 'Locked ✓' : faceScanStage === 'left' ? 'Turn Face Left' : 'Pending'}
-                  </div>
-                </div>
-
-                <div style={{
                   background: scannedAnglesState.right ? '#f0fdf4' : faceScanStage === 'right' ? '#eff6ff' : '#f8fafc',
                   border: scannedAnglesState.right ? '2px solid #22c55e' : faceScanStage === 'right' ? '2px solid #0284c7' : '1px solid #e2e8f0',
                   borderRadius: '12px',
@@ -8941,10 +8952,26 @@ export default function StudentDashboard() {
                   transition: 'all 0.3s ease'
                 }}>
                   <div style={{ fontSize: '11px', fontWeight: '800', color: scannedAnglesState.right ? '#15803d' : faceScanStage === 'right' ? '#0369a1' : '#64748b' }}>
-                    👉 Step 3: Right {scannedAnglesState.right ? '✓' : faceScanStage === 'right' ? '●' : '○'}
+                    👉 Step 2: Right {scannedAnglesState.right ? '✓' : faceScanStage === 'right' ? '●' : '○'}
                   </div>
                   <div style={{ fontSize: '10px', color: scannedAnglesState.right ? '#16a34a' : '#94a3b8', marginTop: '2px', fontWeight: '600' }}>
                     {scannedAnglesState.right ? 'Locked ✓' : faceScanStage === 'right' ? 'Turn Face Right' : 'Pending'}
+                  </div>
+                </div>
+
+                <div style={{
+                  background: scannedAnglesState.left ? '#f0fdf4' : faceScanStage === 'left' ? '#eff6ff' : '#f8fafc',
+                  border: scannedAnglesState.left ? '2px solid #22c55e' : faceScanStage === 'left' ? '2px solid #0284c7' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '8px 10px',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: scannedAnglesState.left ? '#15803d' : faceScanStage === 'left' ? '#0369a1' : '#64748b' }}>
+                    👈 Step 3: Left {scannedAnglesState.left ? '✓' : faceScanStage === 'left' ? '●' : '○'}
+                  </div>
+                  <div style={{ fontSize: '10px', color: scannedAnglesState.left ? '#16a34a' : '#94a3b8', marginTop: '2px', fontWeight: '600' }}>
+                    {scannedAnglesState.left ? 'Locked ✓' : faceScanStage === 'left' ? 'Turn Face Left' : 'Pending'}
                   </div>
                 </div>
               </div>
@@ -9007,9 +9034,9 @@ export default function StudentDashboard() {
                     ? 'rgba(22, 163, 74, 0.95)' 
                     : faceScanStage === 'center' 
                       ? 'rgba(2, 132, 199, 0.92)' 
-                      : faceScanStage === 'left' 
-                        ? 'rgba(126, 34, 206, 0.92)' 
-                        : 'rgba(217, 119, 6, 0.92)',
+                      : faceScanStage === 'right' 
+                        ? 'rgba(217, 119, 6, 0.92)' 
+                        : 'rgba(126, 34, 206, 0.92)',
                   color: '#ffffff',
                   padding: '5px 14px',
                   borderRadius: '20px',
@@ -9024,8 +9051,8 @@ export default function StudentDashboard() {
                   whiteSpace: 'nowrap'
                 }}>
                   {faceScanStage === 'center' && '🎯 STEP 1: LOOK STRAIGHT INTO CAMERA'}
-                  {faceScanStage === 'left' && '👈 STEP 2: TURN FACE SLIGHTLY LEFT'}
-                  {faceScanStage === 'right' && '👉 STEP 3: TURN FACE SLIGHTLY RIGHT'}
+                  {faceScanStage === 'right' && '👉 STEP 2: TURN FACE SLIGHTLY RIGHT'}
+                  {faceScanStage === 'left' && '👈 STEP 3: TURN FACE SLIGHTLY LEFT'}
                   {faceScanStage === 'complete' && '✓ ALL 3 ANGLES SCANNED & VERIFIED!'}
                 </div>
 
@@ -9036,14 +9063,14 @@ export default function StudentDashboard() {
                       <img src={scannedAnglesThumbs.center} alt="C" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                   )}
-                  {scannedAnglesThumbs.left && (
-                    <div title="Left angle captured" style={{ width: '28px', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #22c55e', background: '#000' }}>
-                      <img src={scannedAnglesThumbs.left} alt="L" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-                  )}
                   {scannedAnglesThumbs.right && (
                     <div title="Right angle captured" style={{ width: '28px', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #22c55e', background: '#000' }}>
                       <img src={scannedAnglesThumbs.right} alt="R" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                  {scannedAnglesThumbs.left && (
+                    <div title="Left angle captured" style={{ width: '28px', height: '28px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #22c55e', background: '#000' }}>
+                      <img src={scannedAnglesThumbs.left} alt="L" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                   )}
                 </div>
@@ -12944,13 +12971,18 @@ export default function StudentDashboard() {
                     filteredResults.map((res, rIdx) => {
                       const isEvaluated = res.status === 'Corrected & Graded' || Boolean(res.evaluatedAt);
                       const evaluatorTitle = res.evaluatedBy || res.teacherName || 'Course Instructor';
+                      const pct = res.percentage !== undefined && res.percentage !== null
+                        ? Number(res.percentage)
+                        : Math.round(((Number(res.score) || 0) / (Number(res.total) || 100)) * 100);
+                      const gradeObj = calculateGradeFromPercentage(pct);
+                      const displayGrade = res.grade || res.gradeStatus || gradeObj.grade;
 
                       return (
                         <div
                           key={res.id || `written_res_${rIdx}`}
-                          onMouseEnter={() => speakHover(`Written Exam result for ${res.examName}. Score: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}.`)}
-                          data-speech={`Written Exam result for ${res.examName}. Score: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}. Teacher note: ${res.feedback || (isEvaluated ? 'Exam evaluated by teacher with full technical review.' : 'Pending teacher review.')}`}
-                          data-narrate={`Written Exam result for ${res.examName}. Score: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}.`}
+                          onMouseEnter={() => speakHover(`Written Exam result for ${res.examName}. Score for 100 percent is ${pct} out of 100, Grade: ${displayGrade}. Raw marks: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}.`)}
+                          data-speech={`Written Exam result for ${res.examName}. Score for 100 percent is ${pct} out of 100, Grade: ${displayGrade}. Raw marks: ${res.score} out of ${res.total}. Evaluated by respected teacher ${evaluatorTitle}. Teacher note: ${res.feedback || (isEvaluated ? 'Exam evaluated by teacher with full technical review.' : 'Pending teacher review.')}`}
+                          data-narrate={`Written Exam result for ${res.examName}. Score for 100 percent is ${pct} out of 100, Grade: ${displayGrade}. Evaluated by respected teacher ${evaluatorTitle}.`}
                           style={{
                             background: isEvaluated ? '#f0fdf4' : '#ffffff',
                             border: isEvaluated ? '1.5px solid #86efac' : '1.5px solid #fde68a',
@@ -12983,12 +13015,32 @@ export default function StudentDashboard() {
                               </p>
                             </div>
 
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ fontSize: '20px', fontWeight: '900', color: isEvaluated ? '#16a34a' : '#b45309' }}>
-                                {res.score}/{res.total}
-                              </span>
+                            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '22px', fontWeight: '900', color: isEvaluated ? (pct >= 40 ? '#16a34a' : '#dc2626') : '#b45309' }}>
+                                  {pct} / 100
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: '900',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    background: gradeObj.bg,
+                                    color: gradeObj.color,
+                                    border: `1px solid ${gradeObj.border}`,
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  title={`Grade: ${displayGrade} (${gradeObj.label})`}
+                                >
+                                  Grade: {displayGrade}
+                                </span>
+                              </div>
                               <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-                                {isEvaluated ? `${res.percentage || Math.round(((res.score || 0) / (res.total || 100)) * 100)}% Published` : 'Preliminary Score'}
+                                {isEvaluated ? `Score: ${res.score}/${res.total} (${pct}% for 100%) • Published` : `Score: ${res.score}/${res.total} (${pct}% for 100%) • Preliminary`}
                               </div>
                             </div>
                           </div>
@@ -13001,7 +13053,7 @@ export default function StudentDashboard() {
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                speakText(`Teacher Feedback for ${res.examName} by respected teacher ${evaluatorTitle}: ${res.feedback || 'Exam evaluated by teacher with full technical review.'}`);
+                                speakText(`Teacher Feedback for ${res.examName} by respected teacher ${evaluatorTitle}: For 100 percent, your score is ${pct} out of 100, Grade: ${displayGrade}. Teacher evaluation note: ${res.feedback || 'Exam evaluated by teacher with full technical review.'}`);
                               }}
                               onMouseEnter={() => speakHover(`Listen teacher evaluation feedback button for ${res.examName} by respected teacher ${evaluatorTitle}.`)}
                               data-speech={`Listen teacher evaluation feedback button for ${res.examName} by respected teacher ${evaluatorTitle}.`}
@@ -13780,12 +13832,8 @@ export default function StudentDashboard() {
               const scoreVal = r.score || 0;
               const pct = Math.round((scoreVal / totalMarks) * 100);
 
-              let grade = 'Pass';
-              if (pct >= 90) grade = 'Grade A+ (Distinction)';
-              else if (pct >= 80) grade = 'Grade A (First Class)';
-              else if (pct >= 70) grade = 'Grade B+ (Merit)';
-              else if (pct >= 60) grade = 'Grade B (Pass)';
-              else grade = 'Pass';
+              const gradeObj = calculateGradeFromPercentage(pct);
+              let grade = r.grade || r.gradeStatus ? `Grade ${r.grade || r.gradeStatus} (${gradeObj.label})` : `Grade ${gradeObj.grade} (${gradeObj.label})`;
 
               const cleanSubject = String(r.subject || 'General').toUpperCase().replace(/[^A-Z]/g, '');
               const subCode = cleanSubject.length >= 2 ? cleanSubject.substring(0, 3) : 'EXAM';

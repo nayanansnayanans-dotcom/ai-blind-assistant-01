@@ -755,6 +755,18 @@ export default function TeacherDashboard() {
   const [activeCorrection, setActiveCorrection] = useState(null);
   const [correctionQuestions, setCorrectionQuestions] = useState([]);
   const [overallFeedbackInput, setOverallFeedbackInput] = useState('');
+  const [correctionGrade, setCorrectionGrade] = useState('A');
+
+  const calculateDefaultGrade = (percentage) => {
+    const p = Number(percentage) || 0;
+    if (p >= 90) return 'A+';
+    if (p >= 80) return 'A';
+    if (p >= 70) return 'B+';
+    if (p >= 60) return 'B';
+    if (p >= 50) return 'C';
+    if (p >= 40) return 'D';
+    return 'F';
+  };
 
   // Exam & Viva Evaluations Hub States
   const [evaluationTab, setEvaluationTab] = useState('all'); // 'all' | 'written' | 'viva'
@@ -2344,6 +2356,10 @@ export default function TeacherDashboard() {
     }
 
     setCorrectionQuestions(qs);
+    const initialTotal = qs.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || submission.total || 100;
+    const initialAwarded = qs.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0);
+    const initialPct = Math.round((initialAwarded / initialTotal) * 100);
+    setCorrectionGrade(submission.grade || submission.gradeStatus || calculateDefaultGrade(initialPct));
     setOverallFeedbackInput(submission.feedback && !submission.feedback.includes('Pending Teacher') ? submission.feedback : 'Great conceptual clarity and accurate voice responses.');
     say(`Loaded exam submission from ${submission.student || submission.studentName} for evaluation.`);
   };
@@ -2354,6 +2370,10 @@ export default function TeacherDashboard() {
     const clamped = Math.max(0, Math.min(max, Number(newMark) || 0));
     updated[idx].marksAwarded = clamped;
     setCorrectionQuestions(updated);
+    const sumAwarded = updated.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0);
+    const totalPossible = updated.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100;
+    const pct = Math.round((sumAwarded / totalPossible) * 100);
+    setCorrectionGrade(calculateDefaultGrade(pct));
   };
 
   const handleQuickMark = (idx, multiplier) => {
@@ -2361,6 +2381,10 @@ export default function TeacherDashboard() {
     const max = updated[idx].maxMarks || 5;
     updated[idx].marksAwarded = Math.round(max * multiplier);
     setCorrectionQuestions(updated);
+    const sumAwarded = updated.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0);
+    const totalPossible = updated.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100;
+    const pct = Math.round((sumAwarded / totalPossible) * 100);
+    setCorrectionGrade(calculateDefaultGrade(pct));
   };
 
   const handleUpdateQuestionComment = (idx, comment) => {
@@ -2375,6 +2399,7 @@ export default function TeacherDashboard() {
     const totalPossible = correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100;
     const sumAwarded = correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0);
     const percentage = Math.round((sumAwarded / totalPossible) * 100);
+    const assignedGrade = correctionGrade || calculateDefaultGrade(percentage);
 
     const sName = activeCorrection.student || activeCorrection.studentName || 'Student';
     const eTitle = activeCorrection.examName || activeCorrection.examTitle || 'Theory Assessment';
@@ -2385,6 +2410,8 @@ export default function TeacherDashboard() {
       total: totalPossible,
       totalMarks: totalPossible,
       percentage: percentage,
+      grade: assignedGrade,
+      gradeStatus: assignedGrade,
       status: 'Corrected & Graded',
       feedback: overallFeedbackInput.trim() || 'Exam corrected by teacher. Official grade published.',
       teacherFeedback: overallFeedbackInput.trim() || 'Exam corrected by teacher.',
@@ -2417,7 +2444,7 @@ export default function TeacherDashboard() {
       const notifItem = {
         id: `notif_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         title: `📝 Exam Graded: ${eTitle}`,
-        detail: `${evaluatorName} evaluated your submitted exam '${eTitle}'. Final Score: ${sumAwarded}/${totalPossible} (${percentage}%). Your official certificate has been updated!`,
+        detail: `${evaluatorName} evaluated your submitted exam '${eTitle}'. Final Score: ${percentage}/100 (${percentage}%, Raw: ${sumAwarded}/${totalPossible}) with Grade ${assignedGrade}. Your official certificate has been updated!`,
         date: 'Just now',
         type: 'Result Published',
         read: false
@@ -2429,7 +2456,7 @@ export default function TeacherDashboard() {
     } catch (e) {}
 
     setActiveCorrection(null);
-    say(`✓ Corrected exam for ${sName}! Score: ${sumAwarded}/${totalPossible} (${percentage}%). Grade and certificates published live to student dashboard.`);
+    say(`✓ Corrected exam for ${sName}! Score: ${percentage} out of 100 (${percentage}%) with Grade ${assignedGrade}. Grade and certificates published live to student dashboard.`);
   };
 
   const handleDeleteSubmission = (submissionId) => {
@@ -5868,8 +5895,10 @@ export default function TeacherDashboard() {
                       </span>
 
                       <div style={{ background: '#f8fafc', padding: '6px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', textAlign: 'right' }}>
-                        <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{percentage}% Score</span>
-                        <b style={{ fontSize: '15px', color: isCorrected ? '#15803d' : '#9333ea' }}>{scoreVal} / {totalVal}</b>
+                        <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>Score: {percentage} / 100 ({percentage}%)</span>
+                        <b style={{ fontSize: '14px', color: isCorrected ? '#15803d' : '#9333ea' }}>
+                          Raw: {scoreVal}/{totalVal} • Grade: {res.grade || res.gradeStatus || calculateDefaultGrade(percentage)}
+                        </b>
                       </div>
 
                       <button
@@ -8178,6 +8207,53 @@ export default function TeacherDashboard() {
                   </div>
                 ))}
 
+                {/* Academic Grade Award & 100% Scale Option */}
+                <div style={{ background: '#f8fafc', border: '2px solid #cbd5e1', borderRadius: '14px', padding: '16px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', display: 'block', marginBottom: '4px' }}>
+                      🏅 Award Academic Grade & Score Scale:
+                    </label>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                      Auto-calculated for 100% scale ({Math.round((correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0) / (correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100)) * 100)}%). Select or override grade:
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <select
+                      value={correctionGrade}
+                      onChange={(e) => setCorrectionGrade(e.target.value)}
+                      style={{
+                        padding: '10px 16px',
+                        borderRadius: '10px',
+                        border: '2px solid #7e22ce',
+                        background: '#ffffff',
+                        fontSize: '14px',
+                        fontWeight: '800',
+                        color: '#7e22ce',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="A+">Grade A+ (90-100% - Outstanding)</option>
+                      <option value="A">Grade A (80-89% - Excellent)</option>
+                      <option value="B+">Grade B+ (70-79% - Very Good)</option>
+                      <option value="B">Grade B (60-69% - Good)</option>
+                      <option value="C">Grade C (50-59% - Satisfactory)</option>
+                      <option value="D">Grade D (40-49% - Pass)</option>
+                      <option value="F">Grade F (&lt;40% - Needs Improvement)</option>
+                    </select>
+                    <div style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      background: '#ede9fe',
+                      border: '1px solid #c4b5fd',
+                      color: '#6d28d9',
+                      fontWeight: '800',
+                      fontSize: '13px'
+                    }}>
+                      Scale: {Math.round((correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0) / (correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100)) * 100)} / 100 ({Math.round((correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0) / (correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100)) * 100)}% for 100%)
+                    </div>
+                  </div>
+                </div>
+
                 {/* Overall Teacher Remarks */}
                 <div style={{ background: '#ffffff', border: '2px solid #e9d5ff', borderRadius: '14px', padding: '18px' }}>
                   <label style={{ fontSize: '13px', fontWeight: '800', color: '#7e22ce', display: 'block', marginBottom: '6px' }}>
@@ -8214,7 +8290,7 @@ export default function TeacherDashboard() {
 
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                   <span style={{ fontSize: '14px', fontWeight: '800', color: '#7e22ce' }}>
-                    Final Score: {correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0)} / {correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0)} ({Math.round((correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0) / (correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100)) * 100)}%)
+                    Score: {Math.round((correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0) / (correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100)) * 100)} / 100 ({Math.round((correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0) / (correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0) || 100)) * 100)}% for 100%) • Raw: {correctionQuestions.reduce((acc, q) => acc + (Number(q.marksAwarded) || 0), 0)}/{correctionQuestions.reduce((acc, q) => acc + (Number(q.maxMarks) || 5), 0)} • Grade: {correctionGrade}
                   </span>
                   <button
                     type="button"
