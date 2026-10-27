@@ -18,8 +18,30 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// 1. API routes
-app.get('/api/health', (_req, res) => res.json({ success: true, message: 'Backend is running' }));
+// 1. API routes & Database Health Check
+app.get('/api/health', (_req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const states = { 0: 'Disconnected', 1: 'Connected', 2: 'Connecting', 3: 'Disconnecting' };
+  res.json({ 
+    success: true, 
+    message: 'Backend is running',
+    database: {
+      status: states[dbState] || 'Unknown',
+      isConnected: dbState === 1,
+      name: mongoose.connection.name || 'ai_blind_assistant',
+      host: mongoose.connection.host || 'MongoDB Atlas'
+    }
+  });
+});
+app.get('/api/db-status', (_req, res) => {
+  const isConnected = mongoose.connection.readyState === 1;
+  res.json({
+    database: 'MongoDB',
+    status: isConnected ? 'Connected' : 'Disconnected',
+    name: mongoose.connection.name || 'ai_blind_assistant',
+    host: mongoose.connection.host || 'cluster0.ekpioxa.mongodb.net'
+  });
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/tts', ttsRoutes);
 app.use('/api', teacherRoutes);
@@ -58,7 +80,10 @@ app.use((req, res, next) => {
 const port = process.env.PORT || 5000;
 connectDB().then(() => {
   if (!process.env.VERCEL) {
-    app.listen(port, () => console.log(`Backend running at http://localhost:${port}`));
+    app.listen(port, () => {
+      console.log(`🚀 Backend running at http://localhost:${port}`);
+      console.log(`📡 Database Health Check: http://localhost:${port}/api/health`);
+    });
   }
 }).catch((err) => {
   console.error('Database connection error:', err);
