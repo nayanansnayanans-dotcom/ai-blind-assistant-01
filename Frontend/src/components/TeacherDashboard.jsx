@@ -4574,6 +4574,13 @@ export default function TeacherDashboard() {
                     (log.status || '').includes('CAMERA') || 
                     (log.statusBadge || '').includes('CAMERA')
                   );
+                  const isFaceAbsent = Boolean(
+                    log.isFaceAbsent ||
+                    (log.status || '').includes('Absent') || 
+                    (log.status || '').includes('Missing') || 
+                    (log.status || '').includes('NOT DETECTED') ||
+                    (log.status || '').includes('NO PERSON')
+                  );
                   const isMultiplePeople = Boolean(
                     log.isMultiplePeople || 
                     (log.status || '').includes('MULTIPLE') || 
@@ -4581,6 +4588,7 @@ export default function TeacherDashboard() {
                   );
                   const isOtherAlert = Boolean(
                     isCameraOff ||
+                    isFaceAbsent ||
                     isMultiplePeople ||
                     log.isOtherPerson || 
                     (log.status || '').includes('OTHERS') || 
@@ -4609,11 +4617,13 @@ export default function TeacherDashboard() {
                           <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOtherAlert ? '#dc2626' : '#22c55e' }}></span>
                           {isCameraOff 
                             ? '🔴 Camera Turned Off' 
-                            : isMultiplePeople 
-                              ? `🚨 Multiple People (${log.peopleCount || 2} detected)` 
-                              : isOtherAlert 
-                                ? '🚨 Face Mismatch' 
-                                : (log.faceVerified ? '✓ Verified (Live)' : '✓ Biometric Verified')}
+                            : isFaceAbsent
+                              ? '🔴 Face Absent / Missing'
+                              : isMultiplePeople 
+                                ? `🚨 Multiple People (${log.peopleCount || 2} detected)` 
+                                : isOtherAlert 
+                                  ? '🚨 Face Mismatch' 
+                                  : (log.faceVerified ? '✓ Verified (Live)' : '✓ Biometric Verified')}
                         </span>
                       </td>
                       <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: '800' }}>
@@ -4629,20 +4639,22 @@ export default function TeacherDashboard() {
                         }}>
                           {isCameraOff 
                             ? '🔴 CAMERA OFF (ALERT)' 
-                            : isMultiplePeople 
-                              ? '🔴 MULTIPLE PEOPLE (ALERT)' 
-                              : isOtherAlert 
-                                ? '🔴 OTHERS WRITING (ALERT)' 
-                                : ((log.status || log.statusBadge || '').includes('Writing') || (log.status || '').includes('Active') 
-                                  ? '🟢 Writing' 
-                                  : (log.statusBadge || log.status || '🔵 Completed'))}
+                            : isFaceAbsent
+                              ? '🔴 FACE ABSENT (ALERT)'
+                              : isMultiplePeople 
+                                ? '🔴 MULTIPLE PEOPLE (ALERT)' 
+                                : isOtherAlert 
+                                  ? '🔴 OTHERS WRITING (ALERT)' 
+                                  : ((log.status || log.statusBadge || '').includes('Writing') || (log.status || '').includes('Active') 
+                                    ? '🟢 Writing' 
+                                    : (log.statusBadge || log.status || '🔵 Completed'))}
                         </span>
                       </td>
                       <td style={{ padding: '14px 16px', fontSize: '13px', color: '#334155', fontWeight: '600' }}>{log.started || log.start || '—'}</td>
                       <td style={{ padding: '14px 16px', fontSize: '13px', color: '#9333ea', fontWeight: '800', fontFamily: 'monospace' }}>{log.remaining || '—'}</td>
                       <td style={{ padding: '14px 16px', fontSize: '13px', color: '#0f172a', fontWeight: '800' }}>{log.answered || '0/0'}</td>
                       <td style={{ padding: '14px 16px', fontSize: '13px', color: isOtherAlert ? '#dc2626' : '#16a34a', fontWeight: '800' }}>
-                        {isCameraOff ? '🔒 Locked (Camera Off)' : isOtherAlert ? '🔒 Locked (Unauthorized Person)' : (log.voice || 'Enabled')}
+                        {isCameraOff ? '🔒 Locked (Camera Off)' : isFaceAbsent ? '🔒 Locked (Face Absent)' : isOtherAlert ? '🔒 Locked (Unauthorized Person)' : (log.voice || 'Enabled')}
                       </td>
                       <td style={{ padding: '14px 16px', fontSize: '13px', color: (log.submitted === 'Yes' || log.status === 'Submitted') ? '#15803d' : '#dc2626', fontWeight: '800' }}>
                         {log.submitted || ((log.status === 'Submitted' || log.status === 'Completed') ? 'Yes' : 'No')}
@@ -4673,8 +4685,22 @@ export default function TeacherDashboard() {
             (firstLog?.status || '').includes('CAMERA') || 
             (firstLog?.statusBadge || '').includes('CAMERA')
           );
+          const isFaceAbsent = Boolean(
+            firstLog?.isFaceAbsent ||
+            (firstLog?.status || '').includes('Absent') || 
+            (firstLog?.status || '').includes('Missing') || 
+            (firstLog?.status || '').includes('NOT DETECTED') ||
+            (firstLog?.status || '').includes('NO PERSON')
+          );
+          const isMultiplePeople = Boolean(
+            firstLog?.isMultiplePeople || 
+            (firstLog?.status || '').includes('MULTIPLE') || 
+            (firstLog?.statusBadge || '').includes('MULTIPLE')
+          );
           const isOtherAlert = Boolean(
             isCameraOff ||
+            isFaceAbsent ||
+            isMultiplePeople ||
             firstLog?.isOtherPerson || 
             (firstLog?.status || '').includes('OTHERS') || 
             (firstLog?.status || '').includes('Mismatch') || 
@@ -4694,13 +4720,25 @@ export default function TeacherDashboard() {
                 <h3 style={{ margin: 0, fontSize: '16px', color: isOtherAlert ? '#b91c1c' : '#7e22ce', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {isCameraOff 
                     ? '🚨 Examinee Security Alert: Camera Turned Off' 
-                    : isOtherAlert 
-                      ? '🚨 Examinee Security Alert: Unauthorized Person Detected' 
-                      : '📌 Examinee Exam Monitoring Card'}
+                    : isFaceAbsent
+                      ? '🚨 Examinee Security Alert: Candidate Face Absent / Missing'
+                      : isMultiplePeople
+                        ? '🚨 Examinee Security Alert: Multiple People Detected'
+                        : isOtherAlert 
+                          ? '🚨 Examinee Security Alert: Unauthorized Person Detected' 
+                          : '📌 Examinee Exam Monitoring Card'}
                 </h3>
                 {isCameraOff ? (
                   <span style={{ background: '#dc2626', color: '#ffffff', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase' }}>
                     🔴 CAMERA OFF
+                  </span>
+                ) : isFaceAbsent ? (
+                  <span style={{ background: '#dc2626', color: '#ffffff', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase' }}>
+                    🔴 FACE ABSENT
+                  </span>
+                ) : isMultiplePeople ? (
+                  <span style={{ background: '#dc2626', color: '#ffffff', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase' }}>
+                    🔴 MULTIPLE PEOPLE
                   </span>
                 ) : isOtherAlert ? (
                   <span style={{ background: '#dc2626', color: '#ffffff', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase' }}>
@@ -4711,11 +4749,11 @@ export default function TeacherDashboard() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                 {[
                   { label: 'Student', val: (firstLog?.student || firstLog?.studentName || 'Examinee'), color: '#0f172a' },
-                  { label: 'Status', val: isCameraOff ? '🔴 CAMERA TURNED OFF (ALERT)' : isOtherAlert ? '🔴 OTHERS WRITING (ALERT)' : (firstLog?.status || '🟢 Writing'), color: isOtherAlert ? '#dc2626' : '#15803d' },
+                  { label: 'Status', val: isCameraOff ? '🔴 CAMERA TURNED OFF (ALERT)' : isFaceAbsent ? '🔴 FACE ABSENT (ALERT)' : isMultiplePeople ? '🔴 MULTIPLE PEOPLE (ALERT)' : isOtherAlert ? '🔴 OTHERS WRITING (ALERT)' : (firstLog?.status || '🟢 Writing'), color: isOtherAlert ? '#dc2626' : '#15803d' },
                   { label: 'Started', val: (firstLog?.started || firstLog?.start || '—'), color: '#334155' },
                   { label: 'Time remaining', val: (firstLog?.remaining || '—'), color: '#9333ea' },
                   { label: 'Questions answered', val: (firstLog?.answered || '0/0'), color: '#0f172a' },
-                  { label: 'Voice input', val: isCameraOff ? '🔒 Locked (Camera Off)' : isOtherAlert ? '🔒 Locked (Unauthorized Person)' : (firstLog?.voice || 'Enabled'), color: isOtherAlert ? '#dc2626' : '#16a34a' },
+                  { label: 'Voice input', val: isCameraOff ? '🔒 Locked (Camera Off)' : isFaceAbsent ? '🔒 Locked (Face Absent)' : isOtherAlert ? '🔒 Locked (Unauthorized Person)' : (firstLog?.voice || 'Enabled'), color: isOtherAlert ? '#dc2626' : '#16a34a' },
                   { label: 'Submitted', val: (firstLog?.submitted || 'No'), color: '#dc2626' }
                 ].map((item, i) => (
                   <div key={i} style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '10px', border: isOtherAlert ? '1px solid #fecaca' : '1px solid #f3e8ff' }}>

@@ -291,12 +291,19 @@ export const detectPeopleInCanvas = async (canvas) => {
   const W = canvas.width || 320;
   const H = canvas.height || 240;
 
+  let nativeRan = false;
+  let nativeFoundZero = false;
+
   // 1. Check Native Browser FaceDetector (Chromium Shape Detection API)
   if (typeof window !== 'undefined' && 'FaceDetector' in window) {
     try {
       const faceDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 10 });
       const detectedFaces = await faceDetector.detect(canvas);
+      nativeRan = true;
       if (Array.isArray(detectedFaces)) {
+        if (detectedFaces.length === 0) {
+          nativeFoundZero = true;
+        }
         // Discard tiny false-positive boxes / noise (each real face must be >= 18% frame width and height)
         const minW = W * 0.18;
         const minH = H * 0.18;
@@ -304,6 +311,10 @@ export const detectPeopleInCanvas = async (canvas) => {
           const b = f.boundingBox || {};
           return (b.width >= minW && b.height >= minH);
         });
+
+        if (validFaces.length === 0) {
+          nativeFoundZero = true;
+        }
 
         if (validFaces.length > 0) {
           // If multiple faces are reported, ensure they are distinct and horizontally separated
@@ -350,7 +361,7 @@ export const detectPeopleInCanvas = async (canvas) => {
   // 2. High-Precision Computer Vision (Adaptive Lighting + YCbCr Skin Segmentation + Head Geometry Analysis)
   try {
     const ctx = canvas.getContext('2d');
-    if (!ctx) return { count: 1, isMultiple: false, isPresent: true, primaryFaceBox: null };
+    if (!ctx) return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
 
     const imgData = ctx.getImageData(0, 0, W, H).data;
     const cols = 32;
@@ -454,8 +465,8 @@ export const detectPeopleInCanvas = async (canvas) => {
     const overallSkinRatio = totalSampled > 0 ? (totalSkinPixels / totalSampled) : 0;
     const ovalSkinRatio = ovalTotalPixels > 0 ? (ovalSkinPixels / ovalTotalPixels) : 0;
 
-    // Check if the central oval has candidate face presence
-    const isOvalFacePresent = (ovalSkinRatio >= 0.06 || (ovalSkinRatio >= 0.035 && overallSkinRatio >= 0.018));
+    // Check if the central oval has candidate face presence (substantial skin concentration)
+    const isOvalFacePresent = (ovalSkinRatio >= 0.22);
 
     // Connected Component Analysis on Upper Screen (Head Search Region)
     const searchMaxRow = Math.floor(rows * 0.70);
@@ -500,13 +511,16 @@ export const detectPeopleInCanvas = async (canvas) => {
           const widthCells = maxC - minC + 1;
           const heightCells = maxR - minR + 1;
           const aspect = heightCells / Math.max(1, widthCells);
+          const centerC = sumC / count;
+          const centerR = sumR / count;
 
-          // A valid human head/face has substantial mass, oval aspect ratio, and width >= 3 cells
-          if (count >= 12 && widthCells >= 3 && heightCells >= 3 && aspect >= 0.65 && aspect <= 2.5) {
+          // A valid human head/face has substantial mass (>= 24 cells), oval aspect ratio, width >= 4 cells, height >= 4 cells,
+          // and is positioned in the camera view (not stuck on extreme perimeter borders like column <= 2 or >= 29)
+          if (count >= 24 && widthCells >= 4 && heightCells >= 4 && aspect >= 0.65 && aspect <= 2.5 && centerC >= 4 && centerC <= 27) {
             headCandidates.push({
               count,
-              centerCol: sumC / count,
-              centerRow: sumR / count,
+              centerCol: centerC,
+              centerRow: centerR,
               widthCells,
               heightCells,
               minC, maxC, minR, maxR
@@ -518,9 +532,24 @@ export const detectPeopleInCanvas = async (canvas) => {
 
     headCandidates.sort((a, b) => b.count - a.count);
 
-    // If no distinct connected component was formed, but central oval contains significant skin:
+    // If native FaceDetector was active and explicitly found 0 faces:
+    // Only accept fallback if a very strong central head mass is detected (low-light recovery).
+    if (nativeRan && nativeFoundZero) {
+      if (headCandidates.length === 0 || headCandidates[0].count < 38 || ovalSkinRatio < 0.16) {
+        return {
+          count: 0,
+          isMultiple: false,
+          isPresent: false,
+          primaryFaceBox: null,
+          lightingQuality: avgCenterLum < 65 ? 'low' : avgCenterLum > 210 ? 'overexposed' : 'good',
+          avgLuminance: Math.round(avgCenterLum)
+        };
+      }
+    }
+
+    // If no distinct connected component was formed:
     if (headCandidates.length === 0) {
-      if (isOvalFacePresent || overallSkinRatio >= 0.018) {
+      if (isOvalFacePresent && !nativeFoundZero) {
         return {
           count: 1,
           isMultiple: false,
@@ -547,6 +576,18 @@ export const detectPeopleInCanvas = async (canvas) => {
     }
 
     const primaryHead = headCandidates[0];
+
+    // Check if primary head has sufficient mass to be a real human head in webcam
+    if (primaryHead.count < 28 && ovalSkinRatio < 0.20) {
+      return {
+        count: 0,
+        isMultiple: false,
+        isPresent: false,
+        primaryFaceBox: null,
+        lightingQuality: 'none',
+        avgLuminance: Math.round(avgCenterLum)
+      };
+    }
     let multiplePeople = false;
     let genuineSecondHeadCount = 0;
 
@@ -605,7 +646,7 @@ export const detectPeopleInCanvas = async (canvas) => {
       }
     };
   } catch (err) {
-    return { count: 1, isMultiple: false, isPresent: true, primaryFaceBox: null };
+    return { count: 0, isMultiple: false, isPresent: false, primaryFaceBox: null };
   }
 };
 
@@ -5392,7 +5433,7 @@ export default function StudentDashboard() {
 
           // For camera_off or face_absent, lock inputs quickly (~2.4s) because candidate is not on camera!
           // For subtle face posture shifts, require sustained threshold (~6-7s)
-          const lockTicks = (violationType === 'camera_off') ? 2 : 5;
+          const lockTicks = (violationType === 'camera_off' || violationType === 'face_absent') ? 2 : 5;
           if (consecutiveMismatchTicksRef.current >= lockTicks) {
             setIsScannedStudentWriting(false);
             setIsOtherPersonDetected(true);
@@ -5403,9 +5444,9 @@ export default function StudentDashboard() {
           const timeSinceLastAlert = now - lastMismatchAlertTimeRef.current;
           const strikeCooldown = faceMismatchStrikeCountRef.current === 0 
             ? 0 
-            : (violationType === 'camera_off' ? 12000 : 20000);
+            : ((violationType === 'camera_off' || violationType === 'face_absent') ? 12000 : 20000);
 
-          const minRequiredTicks = (violationType === 'camera_off') ? 3 : 6;
+          const minRequiredTicks = (violationType === 'camera_off' || violationType === 'face_absent') ? 3 : 6;
           if (consecutiveMismatchTicksRef.current >= minRequiredTicks && timeSinceLastAlert >= strikeCooldown) {
             lastMismatchAlertTimeRef.current = now;
             consecutiveMismatchTicksRef.current = 0;
@@ -5450,6 +5491,7 @@ export default function StudentDashboard() {
                     facePresent: isCameraOffNow ? false : Boolean(peopleCheck.isPresent),
                     isOtherPerson: true,
                     isCameraOff: isCameraOffNow,
+                    isFaceAbsent: (violationType === 'face_absent'),
                     isMultiplePeople: isCameraOffNow ? false : Boolean(peopleCheck.isMultiple),
                     strikeCount: 1
                   };
@@ -5497,6 +5539,7 @@ export default function StudentDashboard() {
                     facePresent: isCameraOffNow ? false : Boolean(peopleCheck.isPresent),
                     isOtherPerson: true,
                     isCameraOff: isCameraOffNow,
+                    isFaceAbsent: (violationType === 'face_absent'),
                     isMultiplePeople: isCameraOffNow ? false : Boolean(peopleCheck.isMultiple),
                     strikeCount: 2
                   };
@@ -11491,8 +11534,8 @@ export default function StudentDashboard() {
                               top: 0,
                               left: 0,
                               right: 0,
-                              zIndex: 10,
-                              background: 'rgba(15, 23, 42, 0.85)',
+                              zIndex: 15,
+                              background: 'rgba(15, 23, 42, 0.90)',
                               color: '#f8fafc',
                               fontSize: '8px',
                               fontWeight: '900',
@@ -11504,8 +11547,19 @@ export default function StudentDashboard() {
                               textTransform: 'uppercase'
                             }}>
                               <span>📷 EXAM WEBCAM</span>
-                              <span style={{ color: (isCameraOff || isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#ef4444' : '#22c55e' }}>
-                                {isCameraOff ? '✕ CAMERA OFF' : '● LIVE'}
+                              <span style={{ 
+                                color: (isCameraOff || isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#ef4444' : '#22c55e',
+                                fontWeight: '900'
+                              }}>
+                                {isCameraOff 
+                                  ? '✕ CAMERA OFF' 
+                                  : !isFacePresentInExam 
+                                    ? '✕ NO PERSON' 
+                                    : isMultiplePeopleDetected 
+                                      ? '✕ MULTIPLE' 
+                                      : (isOtherPersonDetected || !isScannedStudentWriting) 
+                                        ? '✕ MISMATCH' 
+                                        : '● LIVE'}
                               </span>
                             </div>
 
@@ -11523,6 +11577,79 @@ export default function StudentDashboard() {
                             />
                             <canvas ref={proctorCanvasRef} style={{ display: 'none' }} />
 
+                            {/* Prominent Overlay Inside Webcam when No Person Detected */}
+                            {(!isFacePresentInExam && !isCameraOff) && (
+                              <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'rgba(220, 38, 38, 0.55)',
+                                backdropFilter: 'blur(2px)',
+                                zIndex: 12,
+                                textAlign: 'center',
+                                padding: '4px',
+                                pointerEvents: 'none'
+                              }}>
+                                <span style={{ fontSize: '20px', lineHeight: 1 }}>⚠️</span>
+                                <b style={{
+                                  color: '#ffffff',
+                                  fontSize: '9px',
+                                  fontWeight: '900',
+                                  letterSpacing: '0.4px',
+                                  background: '#b91c1c',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  marginTop: '3px',
+                                  boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  NO PERSON DETECTED
+                                </b>
+                                <span style={{ color: '#fef2f2', fontSize: '8px', fontWeight: '800', marginTop: '2px', textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                                  Face camera now!
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Prominent Overlay Inside Webcam when Camera is Off */}
+                            {isCameraOff && (
+                              <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'rgba(15, 23, 42, 0.90)',
+                                zIndex: 12,
+                                textAlign: 'center',
+                                padding: '4px',
+                                pointerEvents: 'none'
+                              }}>
+                                <span style={{ fontSize: '20px', lineHeight: 1 }}>🚫</span>
+                                <b style={{
+                                  color: '#ffffff',
+                                  fontSize: '9px',
+                                  fontWeight: '900',
+                                  letterSpacing: '0.4px',
+                                  background: '#dc2626',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  marginTop: '3px',
+                                  boxShadow: '0 2px 6px rgba(0,0,0,0.5)',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  CAMERA OFF
+                                </b>
+                                <span style={{ color: '#fca5a5', fontSize: '8px', fontWeight: '800', marginTop: '2px' }}>
+                                  Webcam disconnected
+                                </span>
+                              </div>
+                            )}
+
                             {/* Live Face Bounding Box Overlay Drawn Over Camera Feed */}
                             <div style={{
                               position: 'absolute',
@@ -11538,7 +11665,8 @@ export default function StudentDashboard() {
                               boxShadow: (isCameraOff || isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam)
                                 ? 'inset 0 0 10px rgba(239, 68, 68, 0.6)'
                                 : 'inset 0 0 6px rgba(34, 197, 94, 0.3)',
-                              transition: 'all 0.3s ease'
+                              transition: 'all 0.3s ease',
+                              zIndex: 11
                             }}>
                               <span style={{
                                 position: 'absolute',
@@ -11556,7 +11684,7 @@ export default function StudentDashboard() {
                                 {isCameraOff
                                   ? '🔴 CAMERA OFF'
                                   : !isFacePresentInExam 
-                                    ? '🔴 NO FACE' 
+                                    ? '🔴 NO PERSON' 
                                     : isMultiplePeopleDetected 
                                       ? (detectedPeopleCount > 1 ? `🚨 MULTIPLE (${detectedPeopleCount})` : '🚨 MULTIPLE') 
                                       : (isOtherPersonDetected || !isScannedStudentWriting) 
@@ -11572,6 +11700,7 @@ export default function StudentDashboard() {
                               width: '10px',
                               height: '10px',
                               borderRadius: '50%',
+                              zIndex: 16,
                               background: (isCameraOff || isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '#ef4444' : '#22c55e',
                               boxShadow: (isCameraOff || isMultiplePeopleDetected || isOtherPersonDetected || !isScannedStudentWriting || !isFacePresentInExam) ? '0 0 8px #ef4444' : '0 0 6px #22c55e'
                             }} />
