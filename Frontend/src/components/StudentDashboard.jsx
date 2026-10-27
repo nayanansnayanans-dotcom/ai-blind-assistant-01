@@ -261,25 +261,85 @@ export const computeBiometricSimilarity = (biomA, biomB) => {
   return Math.min(1.0, Math.max(0, pearson));
 };
 
+// Safely retrieves recorded answer for a specific question index without numeric key collisions
+export const getSavedAnswerForIndex = (exam, answers, idx) => {
+  if (!exam || !answers || idx === undefined || idx === null || idx < 0) return '';
+  const examId = String(exam.id || exam._id || '');
+  const altExamId = String(exam._id || exam.id || '');
+  const q = exam.questions?.[idx];
+
+  const candidateKeys = [
+    `${examId}-${idx}`,
+    `${altExamId}-${idx}`,
+    `exam_${examId}_q_${idx}`
+  ];
+
+  if (q && q.id && typeof q.id === 'string' && isNaN(Number(q.id))) {
+    candidateKeys.push(`${examId}-${q.id}`);
+    candidateKeys.push(q.id);
+  }
+  if (q && q._id && typeof q._id === 'string' && isNaN(Number(q._id))) {
+    candidateKeys.push(`${examId}-${q._id}`);
+    candidateKeys.push(q._id);
+  }
+
+  for (const k of candidateKeys) {
+    if (k && answers[k] !== undefined && answers[k] !== null && String(answers[k]).trim() !== '') {
+      return String(answers[k]);
+    }
+  }
+  return '';
+};
+
+// Safely stores answer under exam-scoped index keys and removes legacy numeric collision keys
+export const storeAnswerForIndex = (exam, answers, idx, answerText) => {
+  const base = answers ? { ...answers } : {};
+  if (!exam || idx === undefined || idx === null || idx < 0) return base;
+  const examId = String(exam.id || exam._id || '');
+  const altExamId = String(exam._id || exam.id || '');
+  const val = answerText !== undefined && answerText !== null ? String(answerText) : '';
+  const q = exam.questions?.[idx];
+
+  if (examId) {
+    base[`${examId}-${idx}`] = val;
+  }
+  if (altExamId && altExamId !== examId) {
+    base[`${altExamId}-${idx}`] = val;
+  }
+  base[`exam_${examId || 'current'}_q_${idx}`] = val;
+
+  if (q && q.id && typeof q.id === 'string' && isNaN(Number(q.id))) {
+    base[`${examId}-${q.id}`] = val;
+    base[q.id] = val;
+  }
+  if (q && q._id && typeof q._id === 'string' && isNaN(Number(q._id))) {
+    base[`${examId}-${q._id}`] = val;
+    base[q._id] = val;
+  }
+
+  // Purge any ambiguous bare numeric keys that cause cross-question answer bleeding
+  delete base[idx];
+  delete base[`${idx}`];
+  delete base[`q_${idx}`];
+  delete base[idx + 1];
+  delete base[`${idx + 1}`];
+  delete base[`q_${idx + 1}`];
+  if (q && q.id !== undefined) {
+    delete base[q.id];
+    delete base[`${q.id}`];
+    delete base[`q_${q.id}`];
+  }
+
+  return base;
+};
+
 // Accurately counts how many distinct questions in an exam have a valid non-empty answer (guarantees count <= total questions)
 export const getExamQuestionsAnsweredCount = (exam, answers, currentInput, curQIdx) => {
   if (!exam || !Array.isArray(exam.questions) || exam.questions.length === 0) return 0;
-  const examId = exam.id || exam._id || '';
-  const ansMap = answers || {};
   const answeredCount = exam.questions.filter((q, idx) => {
-    const qId = q && q.id !== undefined ? q.id : idx + 1;
     const live = (idx === curQIdx && currentInput) ? String(currentInput).trim() : '';
-    const saved = (
-      ansMap[`${examId}-${idx}`] ||
-      ansMap[`${exam.id}-${idx}`] ||
-      ansMap[`${exam._id}-${idx}`] ||
-      ansMap[idx] ||
-      ansMap[`q_${idx}`] ||
-      ansMap[`${qId}`] ||
-      ansMap[`q_${qId}`] ||
-      ''
-    );
-    return Boolean(live || String(saved).trim());
+    const saved = getSavedAnswerForIndex(exam, answers, idx);
+    return Boolean(live || (saved && saved.trim()));
   }).length;
   return Math.min(answeredCount, exam.questions.length);
 };
@@ -5809,17 +5869,7 @@ export default function StudentDashboard() {
     currentAnswerInputRef.current = newAnswer;
     setCurrentAnswerInput(newAnswer);
     if (currentExam) {
-      const q = currentExam.questions?.[currentQIndex];
-      const qId = q && q.id !== undefined ? q.id : currentQIndex + 1;
-      setStudentAnswers(prev => ({
-        ...prev,
-        [`${currentExam.id}-${currentQIndex}`]: newAnswer,
-        [`${currentExam._id || currentExam.id}-${currentQIndex}`]: newAnswer,
-        [currentQIndex]: newAnswer,
-        [`q_${currentQIndex}`]: newAnswer,
-        [`${qId}`]: newAnswer,
-        [`q_${qId}`]: newAnswer
-      }));
+      setStudentAnswers(prev => storeAnswerForIndex(currentExam, prev, currentQIndex, newAnswer));
     }
   };
 
@@ -6196,34 +6246,15 @@ export default function StudentDashboard() {
   // Exam navigation with synchronized answer persistence & voice feedback
   const handleSaveAndNext = () => {
     if (!currentExam) return;
-    const q = currentExam.questions?.[currentQIndex];
-    const qId = q && q.id !== undefined ? q.id : currentQIndex + 1;
-
     const savedAns = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
-    const updatedAnswers = {
-      ...studentAnswers,
-      [`${currentExam.id}-${currentQIndex}`]: savedAns,
-      [`${currentExam._id || currentExam.id}-${currentQIndex}`]: savedAns,
-      [currentQIndex]: savedAns,
-      [`q_${currentQIndex}`]: savedAns,
-      [`${qId}`]: savedAns,
-      [`q_${qId}`]: savedAns
-    };
+    const updatedAnswers = storeAnswerForIndex(currentExam, studentAnswers, currentQIndex, savedAns);
     setStudentAnswers(updatedAnswers);
 
     if (currentQIndex < currentExam.questions.length - 1) {
       const nextIndex = currentQIndex + 1;
       setCurrentQIndex(nextIndex);
-      const nextQ = currentExam.questions[nextIndex];
-      const nextQId = nextQ && nextQ.id !== undefined ? nextQ.id : nextIndex + 1;
       
-      const existingNextAns = updatedAnswers[`${currentExam.id}-${nextIndex}`]
-        || updatedAnswers[`${currentExam._id || currentExam.id}-${nextIndex}`]
-        || updatedAnswers[nextIndex]
-        || updatedAnswers[`q_${nextIndex}`]
-        || updatedAnswers[`${nextQId}`]
-        || updatedAnswers[`q_${nextQId}`]
-        || '';
+      const existingNextAns = getSavedAnswerForIndex(currentExam, updatedAnswers, nextIndex);
         
       setCurrentAnswerInput(existingNextAns);
       currentAnswerInputRef.current = existingNextAns;
@@ -6243,66 +6274,34 @@ export default function StudentDashboard() {
 
   const handlePreviousQ = () => {
     if (!currentExam || currentQIndex <= 0) return;
-    const q = currentExam.questions?.[currentQIndex];
-    const qId = q && q.id !== undefined ? q.id : currentQIndex + 1;
-
-    const updatedAnswers = {
-      ...studentAnswers,
-      [`${currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [`${currentExam._id || currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [currentQIndex]: currentAnswerInput,
-      [`q_${currentQIndex}`]: currentAnswerInput,
-      [`${qId}`]: currentAnswerInput,
-      [`q_${qId}`]: currentAnswerInput
-    };
+    const savedAns = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
+    const updatedAnswers = storeAnswerForIndex(currentExam, studentAnswers, currentQIndex, savedAns);
     setStudentAnswers(updatedAnswers);
 
     const prevIndex = currentQIndex - 1;
     setCurrentQIndex(prevIndex);
-    const prevQ = currentExam.questions[prevIndex];
-    const prevQId = prevQ && prevQ.id !== undefined ? prevQ.id : prevIndex + 1;
 
-    const existingPrevAns = updatedAnswers[`${currentExam.id}-${prevIndex}`]
-      || updatedAnswers[`${currentExam._id || currentExam.id}-${prevIndex}`]
-      || updatedAnswers[prevIndex]
-      || updatedAnswers[`q_${prevIndex}`]
-      || updatedAnswers[`${prevQId}`]
-      || updatedAnswers[`q_${prevQId}`]
-      || '';
+    const existingPrevAns = getSavedAnswerForIndex(currentExam, updatedAnswers, prevIndex);
 
     setCurrentAnswerInput(existingPrevAns);
+    currentAnswerInputRef.current = existingPrevAns;
+    lastSpokenExamAnswerRef.current = existingPrevAns;
     handleReadExamQuestionStepByStep(prevIndex, "Moving back.");
   };
 
   const handleJumpToQuestion = (targetIdx) => {
     if (!currentExam || targetIdx < 0 || targetIdx >= currentExam.questions.length) return;
-    const q = currentExam.questions?.[currentQIndex];
-    const qId = q && q.id !== undefined ? q.id : currentQIndex + 1;
-
-    const updatedAnswers = {
-      ...studentAnswers,
-      [`${currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [`${currentExam._id || currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [currentQIndex]: currentAnswerInput,
-      [`q_${currentQIndex}`]: currentAnswerInput,
-      [`${qId}`]: currentAnswerInput,
-      [`q_${qId}`]: currentAnswerInput
-    };
+    const savedAns = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
+    const updatedAnswers = storeAnswerForIndex(currentExam, studentAnswers, currentQIndex, savedAns);
     setStudentAnswers(updatedAnswers);
 
     setCurrentQIndex(targetIdx);
-    const targetQ = currentExam.questions[targetIdx];
-    const targetQId = targetQ && targetQ.id !== undefined ? targetQ.id : targetIdx + 1;
 
-    const existingAns = updatedAnswers[`${currentExam.id}-${targetIdx}`]
-      || updatedAnswers[`${currentExam._id || currentExam.id}-${targetIdx}`]
-      || updatedAnswers[targetIdx]
-      || updatedAnswers[`q_${targetIdx}`]
-      || updatedAnswers[`${targetQId}`]
-      || updatedAnswers[`q_${targetQId}`]
-      || '';
+    const existingAns = getSavedAnswerForIndex(currentExam, updatedAnswers, targetIdx);
 
     setCurrentAnswerInput(existingAns);
+    currentAnswerInputRef.current = existingAns;
+    lastSpokenExamAnswerRef.current = existingAns;
     handleReadExamQuestionStepByStep(targetIdx, `Jumping to Question ${targetIdx + 1}.`);
   };
 
@@ -6713,36 +6712,23 @@ export default function StudentDashboard() {
     setExamSubmitted(true);
     if (!currentExam) return;
 
-    const finalAnswers = {
-      ...studentAnswers,
-      [`${currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [`${currentExam._id || currentExam.id}-${currentQIndex}`]: currentAnswerInput,
-      [currentQIndex]: currentAnswerInput,
-      [`q_${currentQIndex}`]: currentAnswerInput,
-      [`${currentExam.questions?.[currentQIndex]?.id || currentQIndex + 1}`]: currentAnswerInput
-    };
+    const savedAns = String(currentAnswerInputRef.current || currentAnswerInput || '').trim();
+    const finalAnswers = storeAnswerForIndex(currentExam, studentAnswers, currentQIndex, savedAns);
     setStudentAnswers(finalAnswers);
 
     // Compute question-by-question breakdown for teacher correction
     const totalPossibleMarks = (currentExam.questions || []).reduce((acc, q) => acc + (Number(q.marks) || 5), 0) || 100;
     
     const formattedQuestions = (currentExam.questions || []).map((q, idx) => {
-      const qId = q.id !== undefined ? q.id : idx + 1;
-      const studentAns = finalAnswers[`${currentExam.id}-${idx}`]
-        || finalAnswers[`${currentExam._id || currentExam.id}-${idx}`]
-        || finalAnswers[qId]
-        || finalAnswers[`${qId}`]
-        || finalAnswers[`q_${qId}`]
-        || finalAnswers[idx]
-        || finalAnswers[`q_${idx}`]
-        || (idx === currentQIndex ? currentAnswerInput : '')
-        || 'No answer recorded';
+      const studentAns = (idx === currentQIndex && savedAns)
+        ? savedAns
+        : (getSavedAnswerForIndex(currentExam, finalAnswers, idx) || 'No answer recorded');
       const qMarks = Number(q.marks) || 5;
       
       // Auto-scoring logic for preliminary mark
       let initialAwarded = 0;
       if (q.type === 'MCQ' || q.type === 'True/False') {
-        const isMatch = q.correctAnswer && studentAns && (
+        const isMatch = q.correctAnswer && studentAns && studentAns !== 'No answer recorded' && (
           studentAns.toLowerCase().trim() === q.correctAnswer.toLowerCase().trim() ||
           studentAns.toLowerCase().includes(q.correctAnswer.toLowerCase().trim()) ||
           q.correctAnswer.toLowerCase().includes(studentAns.toLowerCase().trim())
@@ -6857,7 +6843,7 @@ export default function StudentDashboard() {
         started: priorLog?.started || priorLog?.start || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         start: priorLog?.started || priorLog?.start || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         remaining: '00:00:00',
-        answered: `${Object.keys(finalAnswers).length} / ${(currentExam.questions || []).length || 3}`,
+        answered: `${getExamQuestionsAnsweredCount(currentExam, finalAnswers, savedAns, currentQIndex)} / ${(currentExam.questions || []).length || 1}`,
         voice: 'Completed',
         submitted: 'Yes',
         faceVerified: true,
@@ -7900,16 +7886,7 @@ export default function StudentDashboard() {
 
             const cleanAns = cleanText.replace(/^(answer|my answer is|option)\s*/i, '').trim() || cleanText;
             if (cleanAns) {
-              setCurrentAnswerInput(cleanAns);
-              currentAnswerInputRef.current = cleanAns;
-              if (currentExam) {
-                setStudentAnswers(prev => ({ 
-                  ...prev, 
-                  [`${currentExam.id}-${currentQIndex}`]: cleanAns,
-                  [`${currentExam._id || currentExam.id}-${currentQIndex}`]: cleanAns,
-                  [currentQIndex]: cleanAns
-                }));
-              }
+              updateCurrentAnswer(cleanAns);
             }
 
             if (isDone) {
@@ -12001,17 +11978,10 @@ export default function StudentDashboard() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '12px', fontWeight: '800', color: '#475569', marginRight: '4px' }}>Question Navigator:</span>
                         {currentExam.questions.map((q, idx) => {
-                          const qId = q && q.id !== undefined ? q.id : idx + 1;
-                          const hasAnswer = Boolean(
-                            (idx === currentQIndex ? currentAnswerInput : (
-                              studentAnswers[`${currentExam.id}-${idx}`] ||
-                              studentAnswers[`${currentExam._id || currentExam.id}-${idx}`] ||
-                              studentAnswers[idx] ||
-                              studentAnswers[`q_${idx}`] ||
-                              studentAnswers[`${qId}`] ||
-                              studentAnswers[`q_${qId}`]
-                            ))?.trim()
-                          );
+                          const ansForQ = (idx === currentQIndex)
+                            ? String(currentAnswerInputRef.current || currentAnswerInput || '').trim()
+                            : getSavedAnswerForIndex(currentExam, studentAnswers, idx);
+                          const hasAnswer = Boolean(ansForQ && ansForQ.length > 0);
                           const isActive = idx === currentQIndex;
 
                           return (
