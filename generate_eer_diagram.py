@@ -1,0 +1,444 @@
+# generate_eer_diagram.py
+# Generates both a high-res SVG and uses PowerShell System.Drawing to render a 4K PNG photo of the EER Diagram.
+
+import os
+import subprocess
+
+def create_svg():
+    svg_content = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2800 2000" width="100%" height="100%" style="background-color: #0F172A; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#818CF8" />
+    </linearGradient>
+    <linearGradient id="userGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="studentGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E3A8A" />
+      <stop offset="100%" stop-color="#172554" />
+    </linearGradient>
+    <linearGradient id="teacherGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#064E3B" />
+      <stop offset="100%" stop-color="#022C22" />
+    </linearGradient>
+    <linearGradient id="adminGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4C1D95" />
+      <stop offset="100%" stop-color="#2E1065" />
+    </linearGradient>
+    <linearGradient id="examGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="weakGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#312E81" />
+      <stop offset="100%" stop-color="#1E1B4B" />
+    </linearGradient>
+
+    <!-- Filter for soft shadow -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+
+    <!-- Marker for arrowheads -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#94A3B8" />
+    </marker>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38BDF8" />
+    </marker>
+  </defs>
+
+  <!-- Title & Banner -->
+  <rect x="60" y="40" width="2680" height="90" rx="16" fill="#1E293B" stroke="#334155" stroke-width="2" filter="url(#dropShadow)" />
+  <text x="1400" y="82" text-anchor="middle" font-size="28" font-weight="bold" fill="url(#headerGrad)">VISIONASSIST AI — ENHANCED ENTITY-RELATIONSHIP (EER) CONCEPTUAL SCHEMA</text>
+  <text x="1400" y="112" text-anchor="middle" font-size="16" fill="#94A3B8">Comprehensive Conceptual &amp; Logical Data Architecture for Voice-Guided Assistive Testing &amp; Multi-Person Proctoring Subsystem</text>
+
+  <!-- ================= LINES & CONNECTORS (Underneath boxes) ================= -->
+  <!-- USER to ISA Circle -->
+  <line x1="1400" y1="310" x2="1400" y2="350" stroke="#38BDF8" stroke-width="4" />
+  <line x1="1396" y1="310" x2="1396" y2="350" stroke="#38BDF8" stroke-width="2" />
+  <line x1="1404" y1="310" x2="1404" y2="350" stroke="#38BDF8" stroke-width="2" />
+
+  <!-- ISA Circle to Subclasses -->
+  <line x1="1400" y1="390" x2="1400" y2="450" stroke="#38BDF8" stroke-width="3" />
+  <line x1="1400" y1="410" x2="880" y2="410" stroke="#38BDF8" stroke-width="3" />
+  <line x1="880" y1="410" x2="880" y2="450" stroke="#38BDF8" stroke-width="3" />
+  <line x1="1400" y1="410" x2="1920" y2="410" stroke="#38BDF8" stroke-width="3" />
+  <line x1="1920" y1="410" x2="1920" y2="450" stroke="#38BDF8" stroke-width="3" />
+
+  <!-- Subclass Labels -->
+  <text x="1400" y="430" text-anchor="middle" font-size="13" font-weight="bold" fill="#38BDF8">TOTAL DISJOINT SPECIALIZATION (d)</text>
+
+  <!-- TEACHER to CREATES (1) to EXAM (N) -->
+  <line x1="1400" y1="620" x2="1400" y2="670" stroke="#94A3B8" stroke-width="3" />
+  <text x="1415" y="650" font-size="14" font-weight="bold" fill="#38BDF8">1</text>
+  <line x1="1400" y1="730" x2="1400" y2="780" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="1415" y="760" font-size="14" font-weight="bold" fill="#F59E0B">N (Total)</text>
+
+  <!-- EXAM to CONTAINS (1) to QUESTION (N) -->
+  <line x1="1580" y1="880" x2="1710" y2="880" stroke="#94A3B8" stroke-width="3" />
+  <text x="1630" y="870" font-size="14" font-weight="bold" fill="#38BDF8">1</text>
+  <line x1="1790" y1="880" x2="1900" y2="880" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="1830" y="870" font-size="14" font-weight="bold" fill="#F59E0B">N (Identifying)</text>
+
+  <!-- STUDENT to ATTEMPTS (1) to RESULT (N) -->
+  <line x1="880" y1="620" x2="880" y2="670" stroke="#94A3B8" stroke-width="3" />
+  <text x="895" y="650" font-size="14" font-weight="bold" fill="#38BDF8">1</text>
+  <line x1="880" y1="730" x2="880" y2="780" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="895" y="760" font-size="14" font-weight="bold" fill="#F59E0B">N</text>
+
+  <!-- EXAM to EVALUATES to RESULT -->
+  <line x1="1220" y1="880" x2="1060" y2="880" stroke="#94A3B8" stroke-width="2" stroke-dasharray="6,4" />
+  <text x="1140" y="870" text-anchor="middle" font-size="12" fill="#94A3B8">evaluates</text>
+
+  <!-- RESULT to RECORDS to ANSWER_LOG -->
+  <line x1="780" y1="990" x2="550" y2="1080" stroke="#94A3B8" stroke-width="3" />
+  <line x1="550" y1="1140" x2="550" y2="1190" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="565" y="1170" font-size="14" font-weight="bold" fill="#F59E0B">N (Identifying)</text>
+
+  <!-- RESULT to CAPTURES to PROCTORING_LOG -->
+  <line x1="880" y1="990" x2="880" y2="1080" stroke="#94A3B8" stroke-width="3" />
+  <line x1="880" y1="1140" x2="880" y2="1190" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="895" y="1170" font-size="14" font-weight="bold" fill="#F59E0B">N</text>
+
+  <!-- STUDENT to TRIGGERS to ASSISTANCE_REQUEST -->
+  <line x1="700" y1="535" x2="480" y2="535" stroke="#94A3B8" stroke-width="3" />
+  <line x1="420" y1="535" x2="300" y2="535" stroke="#94A3B8" stroke-width="3" />
+  <line x1="300" y1="535" x2="300" y2="620" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="320" y="580" font-size="14" font-weight="bold" fill="#EF4444">N (SOS)</text>
+
+  <!-- TEACHER to RESOLVES to ASSISTANCE_REQUEST -->
+  <path d="M 1220 570 Q 300 570 300 620" fill="none" stroke="#F59E0B" stroke-width="2" stroke-dasharray="6,4" />
+  <text x="600" y="565" font-size="12" fill="#F59E0B">resolves / voice assist</text>
+
+  <!-- USER to SUBMITS to CONTACT_MESSAGE -->
+  <line x1="1580" y1="210" x2="1880" y2="210" stroke="#94A3B8" stroke-width="3" />
+  <line x1="1940" y1="210" x2="2250" y2="210" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="2100" y="200" font-size="14" font-weight="bold" fill="#38BDF8">N (Queries)</text>
+
+  <!-- TEACHER to UPLOADS to PDF_DOCUMENT -->
+  <line x1="1400" y1="990" x2="1400" y2="1080" stroke="#94A3B8" stroke-width="3" />
+  <line x1="1400" y1="1140" x2="1400" y2="1190" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+  <text x="1415" y="1170" font-size="14" font-weight="bold" fill="#38BDF8">N</text>
+
+  <!-- ADMIN to MANAGES to USER / SYSTEM -->
+  <line x1="2080" y1="535" x2="2250" y2="535" stroke="#94A3B8" stroke-width="3" />
+  <line x1="2310" y1="535" x2="2420" y2="535" stroke="#94A3B8" stroke-width="3" marker-end="url(#arrow)" />
+
+  <!-- ================= ENTITY BOXES ================= -->
+
+  <!-- 1. SUPERCLASS: USER -->
+  <g filter="url(#dropShadow)">
+    <rect x="1220" y="160" width="360" height="150" rx="12" fill="url(#userGrad)" stroke="#38BDF8" stroke-width="3" />
+    <rect x="1220" y="160" width="360" height="38" rx="12" fill="#0284C7" />
+    <text x="1400" y="186" text-anchor="middle" font-size="18" font-weight="bold" fill="#FFFFFF">USER (Superclass)</text>
+    
+    <text x="1235" y="220" font-size="13" font-weight="bold" fill="#38BDF8">PK  user_id : ObjectId / Int</text>
+    <line x1="1235" y1="223" x2="1395" y2="223" stroke="#38BDF8" stroke-width="1.2" />
+    
+    <text x="1235" y="240" font-size="13" fill="#E2E8F0">     full_name : String</text>
+    <text x="1235" y="258" font-size="13" fill="#E2E8F0">UK  email : String (Unique)</text>
+    <text x="1235" y="276" font-size="13" fill="#E2E8F0">     password_hash : String</text>
+    <text x="1235" y="294" font-size="13" fill="#E2E8F0">     phone : String  |  role : Enum</text>
+  </g>
+
+  <!-- ISA Circle (Disjoint / Total) -->
+  <circle cx="1400" cy="370" r="24" fill="#0F172A" stroke="#38BDF8" stroke-width="3" filter="url(#dropShadow)" />
+  <text x="1400" y="377" text-anchor="middle" font-size="20" font-weight="bold" fill="#38BDF8">d</text>
+
+  <!-- 2. SUBCLASS: STUDENT -->
+  <g filter="url(#dropShadow)">
+    <rect x="700" y="450" width="360" height="170" rx="12" fill="url(#studentGrad)" stroke="#60A5FA" stroke-width="2.5" />
+    <rect x="700" y="450" width="360" height="36" rx="12" fill="#2563EB" />
+    <text x="880" y="474" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">STUDENT (Subclass)</text>
+    
+    <text x="715" y="505" font-size="13" font-weight="bold" fill="#93C5FD">FK  user_id : ObjectId (Ref USER)</text>
+    <text x="715" y="525" font-size="13" fill="#F8FAFC">SK  student_id : String (Roll No)</text>
+    <text x="715" y="545" font-size="13" fill="#E2E8F0">     course : String</text>
+    <text x="715" y="565" font-size="13" fill="#E2E8F0">     interested_subject : String</text>
+    <text x="715" y="585" font-size="13" fill="#E2E8F0">     preferred_language : String (en, hi..)</text>
+    <text x="715" y="605" font-size="13" fill="#E2E8F0">     face_biometric_hash : String</text>
+  </g>
+
+  <!-- 3. SUBCLASS: TEACHER -->
+  <g filter="url(#dropShadow)">
+    <rect x="1220" y="450" width="360" height="170" rx="12" fill="url(#teacherGrad)" stroke="#34D399" stroke-width="2.5" />
+    <rect x="1220" y="450" width="360" height="36" rx="12" fill="#059669" />
+    <text x="1400" y="474" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">TEACHER / PROCTOR (Subclass)</text>
+    
+    <text x="1235" y="505" font-size="13" font-weight="bold" fill="#6EE7B7">FK  user_id : ObjectId (Ref USER)</text>
+    <text x="1235" y="525" font-size="13" fill="#F8FAFC">     creator_email : String</text>
+    <text x="1235" y="545" font-size="13" fill="#E2E8F0">     department : String</text>
+    <text x="1235" y="565" font-size="13" fill="#E2E8F0">     designation : String</text>
+    <text x="1235" y="585" font-size="13" fill="#E2E8F0">     office_contact : String</text>
+    <text x="1235" y="605" font-size="13" fill="#E2E8F0">     assigned_subject : String</text>
+  </g>
+
+  <!-- 4. SUBCLASS: ADMINISTRATOR -->
+  <g filter="url(#dropShadow)">
+    <rect x="1740" y="450" width="360" height="170" rx="12" fill="url(#adminGrad)" stroke="#C084FC" stroke-width="2.5" />
+    <rect x="1740" y="450" width="360" height="36" rx="12" fill="#7C3AED" />
+    <text x="1920" y="474" text-anchor="middle" font-size="16" font-weight="bold" fill="#FFFFFF">ADMINISTRATOR (Subclass)</text>
+    
+    <text x="1755" y="505" font-size="13" font-weight="bold" fill="#D8B4FE">FK  user_id : ObjectId (Ref USER)</text>
+    <text x="1755" y="525" font-size="13" fill="#F8FAFC">     admin_level : String (SuperAdmin)</text>
+    <text x="1755" y="545" font-size="13" fill="#E2E8F0">     privileges : [User, Exams, Audit]</text>
+    <text x="1755" y="565" font-size="13" fill="#E2E8F0">     otp_recovery_bypass : Boolean</text>
+    <text x="1755" y="585" font-size="13" fill="#E2E8F0">     system_backup_access : Boolean</text>
+    <text x="1755" y="605" font-size="13" fill="#E2E8F0">     last_login_timestamp : DateTime</text>
+  </g>
+
+  <!-- ================= RELATIONSHIP DIAMONDS ================= -->
+  <!-- CREATES (Teacher -> Exam) -->
+  <polygon points="1400,670 1445,700 1400,730 1355,700" fill="#0F172A" stroke="#38BDF8" stroke-width="2.5" />
+  <text x="1400" y="705" text-anchor="middle" font-size="12" font-weight="bold" fill="#38BDF8">CREATES</text>
+
+  <!-- CONTAINS (Exam -> Question) IDENTIFYING -->
+  <polygon points="1750,850 1795,880 1750,910 1705,880" fill="#0F172A" stroke="#F59E0B" stroke-width="3" />
+  <polygon points="1750,856 1787,880 1750,904 1713,880" fill="none" stroke="#F59E0B" stroke-width="1.5" />
+  <text x="1750" y="884" text-anchor="middle" font-size="11" font-weight="bold" fill="#F59E0B">CONTAINS</text>
+
+  <!-- ATTEMPTS (Student -> Result) -->
+  <polygon points="880,670 925,700 880,730 835,700" fill="#0F172A" stroke="#60A5FA" stroke-width="2.5" />
+  <text x="880" y="705" text-anchor="middle" font-size="11" font-weight="bold" fill="#60A5FA">ATTEMPTS</text>
+
+  <!-- RECORDS (Result -> AnswerLog) IDENTIFYING -->
+  <polygon points="550,1080 595,1110 550,1140 505,1110" fill="#0F172A" stroke="#F59E0B" stroke-width="3" />
+  <polygon points="550,1086 587,1110 550,1134 513,1110" fill="none" stroke="#F59E0B" stroke-width="1.5" />
+  <text x="550" y="1114" text-anchor="middle" font-size="11" font-weight="bold" fill="#F59E0B">RECORDS</text>
+
+  <!-- CAPTURES (Result -> ProctoringLog) -->
+  <polygon points="880,1080 925,1110 880,1140 835,1110" fill="#0F172A" stroke="#EC4899" stroke-width="2.5" />
+  <text x="880" y="1114" text-anchor="middle" font-size="11" font-weight="bold" fill="#EC4899">CAPTURES</text>
+
+  <!-- TRIGGERS (Student -> AssistanceRequest) -->
+  <polygon points="450,510 495,535 450,560 405,535" fill="#0F172A" stroke="#EF4444" stroke-width="2.5" />
+  <text x="450" y="539" text-anchor="middle" font-size="11" font-weight="bold" fill="#EF4444">TRIGGERS</text>
+
+  <!-- SUBMITS (User -> ContactMessage) -->
+  <polygon points="1910,185 1955,210 1910,235 1865,210" fill="#0F172A" stroke="#A855F7" stroke-width="2.5" />
+  <text x="1910" y="214" text-anchor="middle" font-size="11" font-weight="bold" fill="#A855F7">SUBMITS</text>
+
+  <!-- UPLOADS (Teacher -> PdfDocument) -->
+  <polygon points="1400,1080 1445,1110 1400,1140 1355,1110" fill="#0F172A" stroke="#34D399" stroke-width="2.5" />
+  <text x="1400" y="1114" text-anchor="middle" font-size="11" font-weight="bold" fill="#34D399">UPLOADS</text>
+
+  <!-- MANAGES (Admin -> System) -->
+  <polygon points="2280,510 2325,535 2280,560 2235,535" fill="#0F172A" stroke="#C084FC" stroke-width="2.5" />
+  <text x="2280" y="539" text-anchor="middle" font-size="11" font-weight="bold" fill="#C084FC">MANAGES</text>
+
+  <!-- ================= CORE ENTITIES (ROW 2 & 3) ================= -->
+
+  <!-- 5. STRONG ENTITY: EXAM -->
+  <g filter="url(#dropShadow)">
+    <rect x="1220" y="780" width="360" height="210" rx="12" fill="url(#examGrad)" stroke="#38BDF8" stroke-width="3" />
+    <rect x="1220" y="780" width="360" height="38" rx="12" fill="#0369A1" />
+    <text x="1400" y="805" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">EXAM (Strong Entity)</text>
+    
+    <text x="1235" y="840" font-size="13" font-weight="bold" fill="#38BDF8">PK  exam_id : ObjectId</text>
+    <line x1="1235" y1="843" x2="1395" y2="843" stroke="#38BDF8" stroke-width="1.2" />
+    
+    <text x="1235" y="860" font-size="13" fill="#E2E8F0">FK  created_by : ObjectId (Ref USER)</text>
+    <text x="1235" y="878" font-size="13" fill="#E2E8F0">     title : String  |  subject : String</text>
+    <text x="1235" y="896" font-size="13" fill="#E2E8F0">     duration_minutes : Integer (45)</text>
+    <text x="1235" y="914" font-size="13" fill="#E2E8F0">     passing_marks : Integer</text>
+    <text x="1235" y="932" font-size="13" fill="#E2E8F0">     status : Enum [Draft, Scheduled, Published]</text>
+    <text x="1235" y="950" font-size="13" fill="#F472B6">{languages} : Multivalued [en, hi, kn...]</text>
+    <text x="1235" y="968" font-size="13" fill="#F472B6">{assigned_students} : Multivalued [emails]</text>
+  </g>
+
+  <!-- 6. WEAK ENTITY: QUESTION (Double Border) -->
+  <g filter="url(#dropShadow)">
+    <rect x="1900" y="780" width="360" height="210" rx="12" fill="url(#weakGrad)" stroke="#F59E0B" stroke-width="3.5" />
+    <rect x="1906" y="786" width="348" height="198" rx="8" fill="none" stroke="#F59E0B" stroke-width="1.5" />
+    <rect x="1900" y="780" width="360" height="38" rx="12" fill="#B45309" />
+    <text x="2080" y="805" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">QUESTION (Weak Entity)</text>
+    
+    <text x="1915" y="840" font-size="13" font-weight="bold" fill="#FDE68A">FK  exam_id : ObjectId (Parent PK)</text>
+    <text x="1915" y="860" font-size="13" font-weight="bold" fill="#FBBF24">PPK question_number : Int (Discriminator)</text>
+    <line x1="1915" y1="863" x2="2185" y2="863" stroke="#FBBF24" stroke-width="1.2" stroke-dasharray="4,2" />
+    
+    <text x="1915" y="880" font-size="13" fill="#E2E8F0">     question_text : String (Audio Dictated)</text>
+    <text x="1915" y="898" font-size="13" fill="#E2E8F0">     question_type : Enum [MCQ, Descriptive]</text>
+    <text x="1915" y="916" font-size="13" fill="#E2E8F0">     marks : Integer  |  difficulty : String</text>
+    <text x="1915" y="934" font-size="13" fill="#F472B6">{options} : Multivalued Array [A, B, C, D]</text>
+    <text x="1915" y="952" font-size="13" fill="#E2E8F0">     correct_answer : String</text>
+    <text x="1915" y="970" font-size="13" fill="#93C5FD">     translations : Composite JSON [hi, kn...]</text>
+  </g>
+
+  <!-- 7. STRONG ENTITY: EXAM_SESSION_RESULT -->
+  <g filter="url(#dropShadow)">
+    <rect x="700" y="780" width="360" height="210" rx="12" fill="url(#userGrad)" stroke="#38BDF8" stroke-width="3" />
+    <rect x="700" y="780" width="360" height="38" rx="12" fill="#0284C7" />
+    <text x="880" y="805" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">EXAM_SESSION / RESULT</text>
+    
+    <text x="715" y="840" font-size="13" font-weight="bold" fill="#38BDF8">PK  session_id : ObjectId / UUID</text>
+    <line x1="715" y1="843" x2="930" y2="843" stroke="#38BDF8" stroke-width="1.2" />
+    
+    <text x="715" y="860" font-size="13" fill="#E2E8F0">FK  student_id : ObjectId (Ref USER)</text>
+    <text x="715" y="878" font-size="13" fill="#E2E8F0">FK  exam_id : ObjectId (Ref EXAM)</text>
+    <text x="715" y="896" font-size="13" fill="#E2E8F0">     score : Float  |  total_marks : Float</text>
+    <text x="715" y="914" font-size="13" font-style="italic" fill="#A7F3D0">DER percentage : Float ((score/total)*100)</text>
+    <text x="715" y="932" font-size="13" fill="#E2E8F0">     status : Enum [PROGRESS, SUBMITTED]</text>
+    <text x="715" y="950" font-size="13" fill="#E2E8F0">     exam_language : String (Default: en)</text>
+    <text x="715" y="968" font-size="13" fill="#E2E8F0">     submitted_at : DateTime</text>
+  </g>
+
+  <!-- ================= TELEMETRY & LOG ENTITIES (ROW 4) ================= -->
+
+  <!-- 8. WEAK ENTITY: ANSWER_LOG (Double Border) -->
+  <g filter="url(#dropShadow)">
+    <rect x="370" y="1190" width="360" height="190" rx="12" fill="url(#weakGrad)" stroke="#F59E0B" stroke-width="3.5" />
+    <rect x="376" y="1196" width="348" height="178" rx="8" fill="none" stroke="#F59E0B" stroke-width="1.5" />
+    <rect x="370" y="1190" width="360" height="38" rx="12" fill="#B45309" />
+    <text x="550" y="1215" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">ANSWER_LOG (Weak Entity)</text>
+    
+    <text x="385" y="1250" font-size="13" font-weight="bold" fill="#FDE68A">FK  session_id : ObjectId (Parent PK)</text>
+    <text x="385" y="1270" font-size="13" font-weight="bold" fill="#FBBF24">PPK question_index : Int (Discriminator)</text>
+    <line x1="385" y1="1273" x2="640" y2="1273" stroke="#FBBF24" stroke-width="1.2" stroke-dasharray="4,2" />
+    
+    <text x="385" y="1290" font-size="13" fill="#E2E8F0">     question_text : String</text>
+    <text x="385" y="1308" font-size="13" fill="#E2E8F0">     student_answer : Text (Dictated Voice)</text>
+    <text x="385" y="1326" font-size="13" fill="#E2E8F0">     audio_transcript : Text (Speech-to-Text)</text>
+    <text x="385" y="1344" font-size="13" fill="#E2E8F0">     translated_answer : Text</text>
+    <text x="385" y="1362" font-size="13" fill="#E2E8F0">     is_correct : Boolean</text>
+  </g>
+
+  <!-- 9. PROCTORING_LOG (AI Telemetry) -->
+  <g filter="url(#dropShadow)">
+    <rect x="750" y="1190" width="360" height="190" rx="12" fill="url(#userGrad)" stroke="#EC4899" stroke-width="2.5" />
+    <rect x="750" y="1190" width="360" height="38" rx="12" fill="#BE185D" />
+    <text x="930" y="1215" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">PROCTORING_LOG (AI Telemetry)</text>
+    
+    <text x="765" y="1250" font-size="13" font-weight="bold" fill="#F472B6">PK  log_id : ObjectId / Auto-Int</text>
+    <line x1="765" y1="1253" x2="945" y2="1253" stroke="#F472B6" stroke-width="1.2" />
+    
+    <text x="765" y="1270" font-size="13" fill="#E2E8F0">FK  session_id : ObjectId (Ref SESSION)</text>
+    <text x="765" y="1288" font-size="13" fill="#FBBF24">     event_type : Multi-Person | Face Lost</text>
+    <text x="765" y="1306" font-size="13" fill="#E2E8F0">     confidence_score : Float (0.00 to 1.00)</text>
+    <text x="765" y="1324" font-size="13" font-weight="bold" fill="#EF4444">     warning_count : Int [1, 2, 3 -> Auto Term]</text>
+    <text x="765" y="1342" font-size="13" fill="#E2E8F0">     occupant_count : Int (>=2 triggers alert)</text>
+    <text x="765" y="1360" font-size="13" fill="#E2E8F0">     timestamp : DateTime (Millisecond)</text>
+  </g>
+
+  <!-- 10. ASSISTANCE_REQUEST (Emergency SOS) -->
+  <g filter="url(#dropShadow)">
+    <rect x="120" y="620" width="360" height="190" rx="12" fill="url(#userGrad)" stroke="#EF4444" stroke-width="3" />
+    <rect x="120" y="620" width="360" height="38" rx="12" fill="#B91C1C" />
+    <text x="300" y="645" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">ASSISTANCE_REQUEST (Emergency SOS)</text>
+    
+    <text x="135" y="680" font-size="13" font-weight="bold" fill="#FCA5A5">PK  request_id : ObjectId</text>
+    <line x1="135" y1="683" x2="295" y2="683" stroke="#FCA5A5" stroke-width="1.2" />
+    
+    <text x="135" y="700" font-size="13" fill="#E2E8F0">FK  student_id : ObjectId (Ref USER)</text>
+    <text x="135" y="718" font-size="13" fill="#E2E8F0">     student_name : String</text>
+    <text x="135" y="736" font-size="13" fill="#E2E8F0">     exam_title : String</text>
+    <text x="135" y="754" font-size="13" fill="#FCA5A5">     request_type : Emergency SOS / Voice</text>
+    <text x="135" y="772" font-size="13" fill="#E2E8F0">     status : Pending | Responded | Resolved</text>
+    <text x="135" y="790" font-size="13" fill="#E2E8F0">     created_at : DateTime</text>
+  </g>
+
+  <!-- 11. PDF_DOCUMENT (Resources) -->
+  <g filter="url(#dropShadow)">
+    <rect x="1220" y="1190" width="360" height="170" rx="12" fill="url(#userGrad)" stroke="#34D399" stroke-width="2.5" />
+    <rect x="1220" y="1190" width="360" height="38" rx="12" fill="#047857" />
+    <text x="1400" y="1215" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">PDF_DOCUMENT (Study Resource)</text>
+    
+    <text x="1235" y="1250" font-size="13" font-weight="bold" fill="#6EE7B7">PK  document_id : ObjectId</text>
+    <line x1="1235" y1="1253" x2="415" y2="1253" stroke="#6EE7B7" stroke-width="1.2" />
+    
+    <text x="1235" y="1270" font-size="13" fill="#E2E8F0">FK  uploaded_by : ObjectId (Ref TEACHER)</text>
+    <text x="1235" y="1290" font-size="13" fill="#E2E8F0">     title : String</text>
+    <text x="1235" y="1310" font-size="13" fill="#E2E8F0">     subject : String</text>
+    <text x="1235" y="1330" font-size="13" fill="#E2E8F0">     file_url : String (Local/S3 Path)</text>
+    <text x="1235" y="1350" font-size="13" fill="#E2E8F0">     uploaded_at : DateTime</text>
+  </g>
+
+  <!-- 12. CONTACT_MESSAGE (Support Desk) -->
+  <g filter="url(#dropShadow)">
+    <rect x="2250" y="140" width="360" height="180" rx="12" fill="url(#userGrad)" stroke="#A855F7" stroke-width="2.5" />
+    <rect x="2250" y="140" width="360" height="38" rx="12" fill="#7E22CE" />
+    <text x="2430" y="165" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">CONTACT_MESSAGE (Support Desk)</text>
+    
+    <text x="2265" y="200" font-size="13" font-weight="bold" fill="#D8B4FE">PK  message_id : ObjectId</text>
+    <line x1="2265" y1="203" x2="2435" y2="203" stroke="#D8B4FE" stroke-width="1.2" />
+    
+    <text x="2265" y="220" font-size="13" fill="#E2E8F0">     sender_name : String</text>
+    <text x="2265" y="238" font-size="13" fill="#E2E8F0">     sender_email : String</text>
+    <text x="2265" y="256" font-size="13" fill="#E2E8F0">     role : Student | Teacher | Visitor</text>
+    <text x="2265" y="274" font-size="13" fill="#E2E8F0">     subject : String  |  message : Text</text>
+    <text x="2265" y="292" font-size="13" fill="#E2E8F0">     status : Unread | In Review | Resolved</text>
+    <text x="2265" y="310" font-size="13" fill="#E2E8F0">     created_at : DateTime</text>
+  </g>
+
+  <!-- 13. SYSTEM_SETTINGS (Admin Config) -->
+  <g filter="url(#dropShadow)">
+    <rect x="2380" y="470" width="360" height="150" rx="12" fill="url(#userGrad)" stroke="#C084FC" stroke-width="2.5" />
+    <rect x="2380" y="470" width="360" height="38" rx="12" fill="#6B21A8" />
+    <text x="2560" y="495" text-anchor="middle" font-size="17" font-weight="bold" fill="#FFFFFF">SYSTEM_SETTINGS (Admin)</text>
+    
+    <text x="2395" y="530" font-size="13" font-weight="bold" fill="#D8B4FE">PK  setting_id : ObjectId</text>
+    <line x1="2395" y1="533" x2="2555" y2="533" stroke="#D8B4FE" stroke-width="1.2" />
+    
+    <text x="2395" y="550" font-size="13" fill="#E2E8F0">     speech_engine_rate : Float (0.95)</text>
+    <text x="2395" y="568" font-size="13" fill="#E2E8F0">     max_proctor_warnings : Int (3)</text>
+    <text x="2395" y="586" font-size="13" fill="#E2E8F0">     database_backup_json : String</text>
+    <text x="2395" y="604" font-size="13" fill="#E2E8F0">     last_updated : DateTime</text>
+  </g>
+
+  <!-- ================= LEGEND & NOTATION CONVENTIONS ================= -->
+  <g filter="url(#dropShadow)">
+    <rect x="60" y="1480" width="2680" height="420" rx="16" fill="#1E293B" stroke="#334155" stroke-width="2" />
+    <rect x="60" y="1480" width="2680" height="45" rx="16" fill="#334155" />
+    <text x="1400" y="1510" text-anchor="middle" font-size="18" font-weight="bold" fill="#F8FAFC">FORMAL ENHANCED ENTITY-RELATIONSHIP (EER) NOTATION &amp; DESIGN CONVENTIONS</text>
+
+    <!-- Legend Items (Columns) -->
+    <!-- Col 1: Strong vs Weak Entities -->
+    <rect x="100" y="1560" width="130" height="45" rx="8" fill="#0F172A" stroke="#38BDF8" stroke-width="2" />
+    <text x="165" y="1587" text-anchor="middle" font-size="13" fill="#FFFFFF">Strong Entity</text>
+    <text x="250" y="1587" font-size="14" fill="#E2E8F0">Single solid rectangle: Regular entity with independent existence (e.g. USER, EXAM, RESULT)</text>
+
+    <rect x="100" y="1625" width="130" height="45" rx="8" fill="#0F172A" stroke="#F59E0B" stroke-width="3" />
+    <rect x="104" y="1629" width="122" height="37" rx="6" fill="none" stroke="#F59E0B" stroke-width="1.5" />
+    <text x="165" y="1652" text-anchor="middle" font-size="13" fill="#FDE68A">Weak Entity</text>
+    <text x="250" y="1652" font-size="14" fill="#E2E8F0">Double rectangle: Existence-dependent entity relying on parent primary key (QUESTION, ANSWER_LOG)</text>
+
+    <!-- Col 2: Relationships -->
+    <polygon points="165,1700 200,1722 165,1744 130,1722" fill="#0F172A" stroke="#38BDF8" stroke-width="2" />
+    <text x="165" y="1726" text-anchor="middle" font-size="11" fill="#38BDF8">REL</text>
+    <text x="250" y="1726" font-size="14" fill="#E2E8F0">Single diamond: Standard relationship with (1:N) or (M:N) cardinalities and participation constraints</text>
+
+    <polygon points="165,1770 200,1792 165,1814 130,1792" fill="#0F172A" stroke="#F59E0B" stroke-width="3" />
+    <polygon points="165,1775 194,1792 165,1809 136,1792" fill="none" stroke="#F59E0B" stroke-width="1.5" />
+    <text x="165" y="1795" text-anchor="middle" font-size="10" fill="#F59E0B">IDENT</text>
+    <text x="250" y="1795" font-size="14" fill="#E2E8F0">Double diamond: Identifying relationship linking weak entity to its owner entity</text>
+
+    <!-- Col 3: Specialization -->
+    <circle cx="1450" cy="1582" r="20" fill="#0F172A" stroke="#38BDF8" stroke-width="2.5" />
+    <text x="1450" y="1588" text-anchor="middle" font-size="16" font-weight="bold" fill="#38BDF8">d</text>
+    <text x="1500" y="1587" font-size="14" fill="#E2E8F0"><tspan font-weight="bold" fill="#38BDF8">Disjoint Specialization (d):</tspan> An entity instance can belong to at most one subclass (Student OR Teacher OR Admin)</text>
+
+    <!-- Col 4: Keys and Multivalued -->
+    <text x="1450" y="1652" font-size="14" font-weight="bold" fill="#38BDF8">PK</text>
+    <text x="1500" y="1652" font-size="14" fill="#E2E8F0"><tspan font-weight="bold" fill="#38BDF8">Primary Key (PK):</tspan> Solid underline — unique identifier for entity instances</text>
+
+    <text x="1450" y="1726" font-size="14" font-weight="bold" fill="#FBBF24">PPK</text>
+    <text x="1500" y="1726" font-size="14" fill="#E2E8F0"><tspan font-weight="bold" fill="#FBBF24">Partial Primary Key (PPK / Discriminator):</tspan> Dashed underline — identifies weak entity instances in owner scope</text>
+
+    <text x="1450" y="1795" font-size="14" font-weight="bold" fill="#F472B6">{attr}</text>
+    <text x="1500" y="1795" font-size="14" fill="#E2E8F0"><tspan font-weight="bold" fill="#F472B6">Multivalued Attributes:</tspan> Encapsulated in braces / double ellipses (e.g. {options}, {languages})</text>
+
+    <!-- Col 5: Authorship & Project Tag -->
+    <text x="2680" y="1860" text-anchor="end" font-size="13" font-weight="bold" fill="#94A3B8">VisionAssist AI | Authors: NAYANA N S &amp; LAKSHMI K | Department of Computer Science &amp; Engineering</text>
+  </g>
+</svg>"""
+    
+    with open("EER_Diagram_VisionAssist_AI.svg", "w", encoding="utf-8") as f:
+        f.write(svg_content)
+    print("SVG generated successfully: EER_Diagram_VisionAssist_AI.svg")
+
+if __name__ == "__main__":
+    create_svg()
